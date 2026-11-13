@@ -1126,7 +1126,9 @@ function renderModal() {
       const dis = host ? '' : 'disabled';
       const seg = (attr, opts, cur) => `<div class="seg rr-seg">${opts.map(([val, lbl, tip]) => `<button data-${attr}="${val}" class="${cur === val ? 'on' : ''}" ${dis} ${tip ? `title="${tip}"` : ''}>${lbl}</button>`).join('')}</div>`;
       const autoTxt = `Automático · ahora ${Engine.mapKind(R, n) === 'big' ? 'grande' : 'normal'}`;
-      const warn = R.map === 'normal' && n > 4 ? '<p class="rr-warn">Con más de 4 jugadores el mapa normal queda muy apretado: mejor el grande.</p>' : '';
+      const forced = n >= Engine.BIG_ONLY;
+      const warn = forced ? `<p class="rr-warn">Con ${n} jugadores solo se puede jugar en el mapa grande.</p>` : R.map === 'normal' && n > 4 ? '<p class="rr-warn">Con 5 jugadores el mapa normal queda muy apretado: mejor el grande.</p>' : '';
+      const shownMap = forced && R.map === 'normal' ? 'big' : R.map;
       const specials = Engine.SPECIAL_RULES.map((x) => `<button class="rr-sp ${R[x.key] ? 'on' : ''}" data-rsp="${x.key}" ${dis}>
           <span class="ic">${x.icon}</span><span class="tx"><b>${x.name}</b><small>${x.desc}</small></span><span class="sw"><i></i></span></button>`).join('');
       const nOn = Engine.SPECIAL_RULES.filter((x) => R[x.key]).length;
@@ -1134,7 +1136,7 @@ function renderModal() {
         ${host ? '' : '<p class="muted">Solo el anfitrión puede cambiarlas. Se aplican al empezar la partida.</p>'}
         <div class="rr">
           <div class="rr-row"><div class="rr-lbl"><b>Mapa</b><small>El grande tiene 30 casillas, 11 puertos y más cartas.</small></div>
-            ${seg('rmap', [['auto', autoTxt, 'Normal hasta 4 jugadores, grande con 5 o 6'], ['normal', 'Normal (2-4)'], ['big', 'Grande (5-6)']], R.map)}</div>
+            ${seg('rmap', [['auto', autoTxt, 'Normal hasta 4 jugadores, grande con 5 o más'], ['normal', 'Normal (2-5)', forced ? 'Con 6 o más jugadores no se puede elegir' : ''], ['big', 'Grande (5-7)']], shownMap).replace('data-rmap="normal"', forced ? 'data-rmap="normal" disabled data-off="1"' : 'data-rmap="normal"')}</div>
           ${warn}
           <div class="rr-row"><div class="rr-lbl"><b>Puntos para ganar</b><small>Lo normal son 10 (de 5 a 16). ${piecesTxt(R.vp)}</small></div>
             <div class="rr-step"><button data-rvp="-1" ${dis}>−</button><b>${R.vp}</b><button data-rvp="1" ${dis}>+</button></div></div>
@@ -1175,7 +1177,7 @@ function renderModal() {
     }
     case 'rules': {
       h = `<h2>CÓMO SE JUEGA</h2><div class="rules">
-        <p>Cada partida genera una <b>isla aleatoria</b>: 19 casillas en el mapa normal (2-4 jugadores) o 30 en el grande (5-6 jugadores). Hay bosque (madera), cantera (ladrillo), pradera (lana), campo (trigo), montaña (mineral) y desierto.</p>
+        <p>Cada partida genera una <b>isla aleatoria</b>: 19 casillas en el mapa normal (2-5 jugadores) o 30 en el grande (5-7 jugadores; con 6 o 7 es obligatorio). Hay bosque (madera), cantera (ladrillo), pradera (lana), campo (trigo), montaña (mineral) y desierto.</p>
         <p><b>Inicio:</b> cada jugador coloca 2 poblados y 2 caminos (orden de ida y vuelta). El segundo poblado da recursos.</p>
         <p><b>Turno:</b> tira los dados → las casillas con ese número producen para los poblados (1) y ciudades (2) que las tocan. Después construye, comercia con el banco (4:1 o mejor con puertos) o con otros jugadores, y juega una carta de desarrollo.</p>
         <p><b>7:</b> quien tenga más de 7 cartas descarta la mitad y el jugador mueve al <b>ladrón</b>, que bloquea una casilla y roba una carta.</p>

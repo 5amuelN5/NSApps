@@ -554,3 +554,4 @@ input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(58,163,217,0
 .rr-ul { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
 .rr-ul b { color: var(--text); }
 .tr-note { font-size: 13px; }
+.rr-seg button[data-off] { opacity: 0.35; text-decoration: line-through; cursor: not-allowed; }

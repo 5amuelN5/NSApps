@@ -16,9 +16,10 @@
   };
   const PIPS = { 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 8: 5, 9: 4, 10: 3, 11: 2, 12: 1 };
   const DEV_NAMES = { knight: 'Caballero', vp: 'Punto de victoria', roadBuilding: 'Construcción de caminos', yop: 'Año de abundancia', monopoly: 'Monopolio' };
-  const COLORS = ['#ff3b6b', '#2ec5ff', '#ffc21e', '#3dff8b', '#b57bff', '#f2efe6'];
+  const COLORS = ['#ff3b6b', '#2ec5ff', '#ffc21e', '#3dff8b', '#b57bff', '#f2efe6', '#ff8a3d'];
   const WIN_VP = 10;
-  const MAX_PLAYERS = 6;
+  const MAX_PLAYERS = 7;
+  const BIG_ONLY = 6; // con 6 o más jugadores solo se puede jugar en el mapa grande
 
   // ---------- reglas de la partida ----------
   const DEFAULT_RULES = {
@@ -80,7 +81,7 @@
   // ---------- tablero ----------
   const HEX_COORDS = [];
   for (let r = -2; r <= 2; r++) for (let q = -2; q <= 2; q++) if (Math.abs(q + r) <= 2) HEX_COORDS.push({ q, r });
-  // mapa grande (5-6 jugadores): filas de 3-4-5-6-5-4-3 casillas
+  // mapa grande (5-7 jugadores): filas de 3-4-5-6-5-4-3 casillas
   const HEX_COORDS_BIG = [];
   for (let r = -3; r <= 3; r++) {
     const w = 6 - Math.abs(r), q0 = 0.5 - (w - 1) / 2 - r / 2;
@@ -102,7 +103,7 @@
       bank: 24, deck: { knight: 20, vp: 5, roadBuilding: 3, yop: 3, monopoly: 3 },
     },
   };
-  function mapKind(rules, n) { return rules.map === 'big' || (rules.map === 'auto' && n > 4) ? 'big' : 'normal'; }
+  function mapKind(rules, n) { return rules.map === 'big' || n >= BIG_ONLY || (rules.map === 'auto' && n > 4) ? 'big' : 'normal'; }
 
   function buildBoard(s, kind) {
     const M = MAPS[kind] || MAPS.normal;
@@ -830,7 +831,7 @@
 
   return {
     RES, RES_NAMES, COST, PIPS, DEV_NAMES, COLORS, WIN_VP, MAX_PLAYERS, DEFAULT_RULES, SPECIAL_RULES, HAND_OPTS,
-    normRules, winVP, rulesOf: R, piecesFor, piecesOf, robberHexOk, mapKind,
+    BIG_ONLY, normRules, winVP, rulesOf: R, piecesFor, piecesOf, robberHexOk, mapKind,
     createGame, apply, viewFor, filterEvents,
     canSettle, canRoad, legalSettlements, legalRoads, legalCities, tradeRatios, robberVictims,
     vp, total, has, emptyRes, longestRoadFor, fmtRes,
