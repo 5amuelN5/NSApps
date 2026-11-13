@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>HEXÓPOLIS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="board"></canvas>
+
+<!-- ============ MENÚ ============ -->
+<section id="scr-menu" class="screen">
+  <div class="menu-box">
+    <h1 class="logo"><span>Hex</span>ópolis</h1>
+    <p class="tag">Coloniza · Comercia · Conquista</p>
+    <label class="field">TU NOMBRE
+      <input id="in-name" maxlength="14" autocomplete="off" spellcheck="false">
+    </label>
+    <div id="invite" class="invite hidden">Te han invitado a la sala <b id="invite-code"></b></div>
+    <button class="btn big green hidden" id="btn-invite">▶ UNIRSE A LA SALA</button>
+    <button class="btn big pink" id="btn-local">▶ JUGAR CONTRA BOTS</button>
+    <button class="btn big cyan" id="btn-online">◆ SALAS ONLINE</button>
+    <button class="btn small ghost" id="btn-rules">? REGLAS</button>
+  </div>
+</section>
+
+<!-- ============ LOBBY ONLINE ============ -->
+<section id="scr-lobby" class="screen hidden">
+  <div class="panel wide">
+    <div class="row between">
+      <h2>SALAS ONLINE</h2>
+      <button class="btn small ghost" data-back>✕ VOLVER</button>
+    </div>
+    <div class="row gap wrap">
+      <input id="in-roomname" placeholder="Nombre de la sala" maxlength="22">
+      <label class="chk"><input type="checkbox" id="in-public" checked> Pública</label>
+      <button class="btn pink" id="btn-create">+ CREAR SALA</button>
+    </div>
+    <div class="row gap wrap">
+      <input id="in-code" placeholder="CÓDIGO" maxlength="4" class="code-in">
+      <button class="btn cyan" id="btn-join">UNIRSE</button>
+    </div>
+    <div id="room-list" class="room-list"></div>
+    <p class="muted" id="net-status">Conectando…</p>
+  </div>
+</section>
+
+<!-- ============ SALA ============ -->
+<section id="scr-room" class="screen hidden">
+  <div class="panel wide">
+    <div class="row between">
+      <h2 id="room-title">SALA</h2>
+      <button class="btn small ghost" id="btn-leave">✕ SALIR</button>
+    </div>
+    <div id="room-code-box" class="share-box">
+      <div class="share-head"><span>Invita a tus amigos con este enlace</span><span class="share-code">Código <b id="room-code">----</b></span></div>
+      <div class="share-row">
+        <input id="room-link" readonly>
+        <button class="btn cyan" id="btn-copy">Copiar</button>
+      </div>
+      <div class="share-row">
+        <button class="btn small" id="btn-share">Compartir…</button>
+        <a class="btn small green" id="btn-wa" target="_blank" rel="noopener">WhatsApp</a>
+      </div>
+      <p class="share-warn hidden" id="link-warn"></p>
+    </div>
+    <div id="seats" class="seats"></div>
+    <div class="row gap wrap" id="host-tools">
+      <span class="muted">Añadir bot:</span>
+      <button class="btn small" data-addbot="1"><span class="st">★</span> NOVATO</button>
+      <button class="btn small" data-addbot="2"><span class="st">★★</span> NORMAL</button>
+      <button class="btn small" data-addbot="3"><span class="st">★★★</span> DIFÍCIL</button>
+      <button class="btn small pink" data-addbot="4"><span class="st">★★★★</span> EXPERTO</button>
+    </div>
+    <div class="row gap" id="speed-row">
+      <span class="muted">Velocidad de los bots:</span>
+      <button class="btn small" data-speed="0.6">LENTA</button>
+      <button class="btn small" data-speed="1">NORMAL</button>
+      <button class="btn small" data-speed="1.8">RÁPIDA</button>
+    </div>
+    <button class="btn big pink" id="btn-start">▶ EMPEZAR PARTIDA</button>
+    <p class="muted" id="room-wait"></p>
+    <div class="chatbox" id="room-chatbox">
+      <div class="chat-log" id="room-chat"></div>
+      <input id="room-chat-in" placeholder="Escribe y pulsa Enter…" maxlength="200">
+    </div>
+  </div>
+</section>
+
+<!-- ============ PARTIDA ============ -->
+<section id="scr-game" class="screen hidden nopad">
+  <div id="players" class="players"></div>
+  <div id="banner" class="banner"></div>
+  <div id="topright" class="topright">
+    <div id="dice-mini" class="dice-mini"></div>
+    <button class="icon-btn" id="btn-size" title="Ajustes: tamaño y colocación">⚙</button>
+    <button class="icon-btn" id="btn-mute" title="Sonido">♪</button>
+    <button class="icon-btn" id="btn-help" title="Costes">?</button>
+    <button class="icon-btn" id="btn-side" title="Registro">☰</button>
+    <button class="icon-btn" id="btn-quit" title="Salir">✕</button>
+  </div>
+  <div id="size-pop" class="size-pop hidden">
+    <h4 class="sz-title">Ajustes</h4>
+    <div class="sz-row"><span>Interfaz</span><button class="btn small" data-sz="ui:-1">−</button><b id="sz-ui">100%</b><button class="btn small" data-sz="ui:1">+</button></div>
+    <div class="sz-row"><span>Tablero</span><button class="btn small" data-sz="board:-1">−</button><b id="sz-board">100%</b><button class="btn small" data-sz="board:1">+</button></div>
+    <div class="sz-opt"><span>Construcciones</span>
+      <div class="seg"><button data-bpos="top" title="La barra de construcciones va encima de tus cartas de materiales">Encima de las cartas</button><button data-bpos="right" title="La barra de construcciones va a la derecha de tus cartas de materiales">A la derecha</button></div>
+      <small class="muted sz-note">En el móvil siempre van encima.</small>
+    </div>
+    <div class="sz-foot"><button class="btn small ghost" id="sz-reset">Restablecer</button><button class="btn small ghost" id="sz-center">Centrar tablero</button></div>
+    <p class="muted">También puedes hacer zoom con la rueda del ratón (o pellizcando en el móvil) y arrastrar el tablero para moverlo. Teclas + y −.</p>
+  </div>
+  <aside id="side" class="side">
+    <h3>REGISTRO</h3>
+    <div id="log" class="log"></div>
+    <div id="chat-wrap" class="chat-wrap">
+      <input id="chat-in" placeholder="Chat…" maxlength="200">
+    </div>
+  </aside>
+  <div id="offer-pop" class="offer-pop hidden"></div>
+  <div id="bottom" class="bottom">
+    <div class="centercol" id="centercol">
+      <div id="build" class="buildbar"></div>
+      <div class="handrow">
+        <div id="hand" class="hand"></div>
+        <div id="devs" class="devs"></div>
+      </div>
+    </div>
+    <div class="rightcol">
+      <div id="info" class="info">
+        <div class="info-card"><h4>Tiradas</h4><div id="roll-chart" class="roll-chart"></div></div>
+        <div class="info-card"><h4>Costes</h4><div id="cost-card" class="cost-card"></div></div>
+      </div>
+      <div id="actions" class="actions"></div>
+    </div>
+  </div>
+</section>
+
+<div id="modal" class="modal hidden"><div class="modal-box" id="modal-box"></div></div>
+<div id="toast" class="toast"></div>
+<div id="bigmsg" class="bigmsg"></div>
+<canvas id="fx"></canvas>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<script src="shared/engine.js"></script>
+<script src="shared/bots.js"></script>
+<script src="shared/room.js"></script>
+<script src="p2p.js"></script>
+<script src="audio.js"></script>
+<script src="render.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

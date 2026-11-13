@@ -15,6 +15,6 @@ Para regenerar la web tras un cambio:
 
 ```bash
 cd src/hexopolis
-SERVER_URL=https://<servidor>.onrender.com npm run build
+SERVER_URL=https://hexopolis.onrender.com npm run build
 rm -rf ../../hexopolis && cp -R dist ../../hexopolis
 ```
