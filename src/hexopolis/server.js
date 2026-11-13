@@ -4,7 +4,46 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { WebSocketServer } = require('ws');
+const crypto = require('crypto');
+const zlib = require('zlib');
 const Room = require('./shared/room');
+
+// ---- copias de seguridad de las partidas ----
+// El servidor gratuito puede reiniciarse y perder la memoria. Cada pocos segundos manda a los jugadores
+// una copia cifrada de su partida; si la sala ya no existe al volver, el primero que se conecta la reconstruye.
+// La clave sale de HX_SAVE_KEY (ponla fija en el servidor); sin ella, las copias solo valen hasta el próximo reinicio.
+const SAVE_KEY = crypto.createHash('sha256').update(process.env.HX_SAVE_KEY || crypto.randomBytes(32)).digest();
+if (!process.env.HX_SAVE_KEY) console.warn('  Aviso: sin HX_SAVE_KEY las partidas no se pueden recuperar tras un reinicio.');
+const SAVE_MAX_AGE = 3 * 24 * 3600 * 1000;
+function sealSave(obj) {
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', SAVE_KEY, iv);
+  const data = Buffer.concat([c.update(zlib.deflateRawSync(JSON.stringify(obj))), c.final()]);
+  return Buffer.concat([iv, c.getAuthTag(), data]).toString('base64');
+}
+function openSave(b64) {
+  try {
+    const buf = Buffer.from(String(b64), 'base64');
+    if (buf.length < 30) return null;
+    const d = crypto.createDecipheriv('aes-256-gcm', SAVE_KEY, buf.subarray(0, 12));
+    d.setAuthTag(buf.subarray(12, 28));
+    const snap = JSON.parse(zlib.inflateRawSync(Buffer.concat([d.update(buf.subarray(28)), d.final()])));
+    if (!snap || snap.v !== 1 || !snap.state || !Array.isArray(snap.seats) || Date.now() - snap.savedAt > SAVE_MAX_AGE) return null;
+    return snap;
+  } catch (e) { return null; }
+}
+const saveTimers = new Map();
+function scheduleSave(r) {
+  if (saveTimers.has(r)) return;
+  saveTimers.set(r, setTimeout(() => {
+    saveTimers.delete(r);
+    if (!rooms.has(r.code) || !r.state) return;
+    const over = r.state.phase === 'gameOver';
+    const blob = over ? null : sealSave(r.snapshot());
+    r.seats.forEach((x) => x.kind === 'human' && x.client && x.client.send({ t: 'save', code: r.code, blob }));
+  }, 700));
+}
+function makeRoom(opts) { const r = new Room({ ...opts, onChange: pushRoomList, onState: () => scheduleSave(r) }); return r; }
 
 const PORT = +process.env.PORT || 3000;
 const ROOT = __dirname;
@@ -78,12 +117,41 @@ wss.on('connection', (ws) => {
         c.send({ t: 'rooms', list: roomList() });
         break;
       }
+      case 'restore': {
+        // un jugador trae la copia de su partida: si la sala ya no existe (reinicio del servidor), se reconstruye
+        if (!c.token || typeof m.blob !== 'string' || m.blob.length > 300000) return;
+        const snap = openSave(m.blob);
+        if (!snap) return c.send({ t: 'restoreFail', code: m.code });
+        const seat = snap.seats.findIndex((x) => x.kind === 'human' && x.token === c.token);
+        if (seat < 0 || snap.state.phase === 'gameOver') return c.send({ t: 'restoreFail', code: snap.code });
+        let r = rooms.get(snap.code);
+        if (r && r.restoredSeq != null && r.state && r.state.seq === r.restoredSeq && snap.state.seq > r.restoredSeq) {
+          // otra copia más reciente llega antes de que nadie haya jugado: nos quedamos con la más nueva
+          r.state = snap.state; r.restoredSeq = snap.state.seq; r.lastTurn = snap.lastTurn;
+          r.broadcast([]);
+        }
+        if (!r) {
+          r = Room.fromSnapshot(snap, { onChange: pushRoomList });
+          r.onState = () => scheduleSave(r);
+          rooms.set(r.code, r);
+          console.log(`  Partida ${r.code} recuperada de una copia (${snap.seats.length} jugadores)`);
+        } else if (r.seatOf(c.token) < 0) return c.send({ t: 'restoreFail', code: snap.code });
+        if (c.room !== r) {
+          if (c.room) c.room.leave(c.token);
+          c.room = r;
+          r.join(c, c.token, c.name);
+          c.send({ t: 'joined', code: r.code });
+          c.send({ t: 'restored', code: r.code });
+          pushRoomList();
+        }
+        break;
+      }
       case 'setName': c.name = String(m.name || 'Jugador').slice(0, 16).trim() || 'Jugador'; break;
       case 'listRooms': c.send({ t: 'rooms', list: roomList() }); break;
       case 'createRoom': {
         if (!c.token) return;
         if (c.room) c.room.leave(c.token);
-        const r = new Room({ code: code(), name: String(m.name || `Sala de ${c.name}`).slice(0, 24), isPublic: m.isPublic !== false, onChange: pushRoomList });
+        const r = makeRoom({ code: code(), name: String(m.name || `Sala de ${c.name}`).slice(0, 24), isPublic: m.isPublic !== false });
         rooms.set(r.code, r);
         c.room = r;
         r.join(c, c.token, c.name);

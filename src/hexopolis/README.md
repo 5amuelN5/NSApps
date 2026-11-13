@@ -57,6 +57,8 @@ Si tienes una dirección fija propia, arranca con `PUBLIC_URL=https://tu-direcci
 
 Si alguien se desconecta, un bot juega por él hasta que vuelva (se reconecta solo al recargar).
 
+**Partidas que no se pierden:** el servidor manda cada poco a los jugadores una copia cifrada de su partida, que se guarda en su navegador. Si el servidor se reinicia (o se duerme), el primero que vuelve la reconstruye y los demás entran en su sitio; en el menú aparece «Volver a tu partida online». La clave de cifrado sale de la variable `HX_SAVE_KEY`, que debe ser fija en el servidor. Las partidas contra bots se guardan en el navegador y se pueden continuar con «Continuar partida contra bots».
+
 ## Bots
 
 | Nivel | Comportamiento |

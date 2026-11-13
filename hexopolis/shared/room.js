@@ -10,7 +10,7 @@
   const TRADE_TIMEOUT = 12000;
 
   class Room {
-    constructor({ code, name, isPublic = true, local = false, onChange }) {
+    constructor({ code, name, isPublic = true, local = false, onChange, onState }) {
       this.code = code; this.name = name; this.isPublic = isPublic; this.local = local;
       this.seats = []; // {kind, token, name, level, client, connected, discAt}
       this.spectators = new Map();
@@ -22,6 +22,7 @@
       this.tradeTimer = null;
       this.lastTurn = -1;
       this.onChange = onChange || (() => {});
+      this.onState = onState || (() => {}); // cada vez que cambia la partida (para guardarla)
       this.speed = 1;
     }
 
@@ -126,6 +127,7 @@
       this.sendRoom();
       this.broadcast([{ type: 'start' }]);
       this.schedule();
+      this.onState();
     }
 
     // ----- chat -----
@@ -159,6 +161,7 @@
       this.broadcast(events);
       if (s.phase === 'gameOver') { this.sendRoom(); this.onChange(); }
       this.schedule();
+      this.onState();
     }
 
     broadcast(events) {
@@ -232,6 +235,26 @@
       this.timer = setTimeout(() => this.schedule(), 1500);
     }
     pushBotTradeChat() { /* reservado para mensajes de bots */ }
+
+    // ----- guardar y recuperar la partida (si el servidor se reinicia o se recarga la página) -----
+    snapshot() {
+      return {
+        v: 1, code: this.code, name: this.name, isPublic: this.isPublic, local: this.local, speed: this.speed,
+        host: this.host, lastTurn: this.lastTurn, chat: this.chat.slice(-30), state: this.state, savedAt: Date.now(),
+        seats: this.seats.map((x) => ({ kind: x.kind, token: x.token, name: x.name, level: x.level, left: !!x.left })),
+      };
+    }
+    static fromSnapshot(snap, opts = {}) {
+      const r = new Room({ code: snap.code, name: snap.name, isPublic: snap.isPublic, local: snap.local, ...opts });
+      const now = Date.now();
+      r.speed = snap.speed || 1; r.host = snap.host; r.lastTurn = snap.lastTurn; r.chat = snap.chat || []; r.state = snap.state;
+      // los humanos vuelven como desconectados: si alguien no regresa, un bot juega por él pasado el tiempo de gracia
+      r.seats = snap.seats.map((x) => (x.kind === 'bot' ? { kind: 'bot', name: x.name, level: x.level, connected: true }
+        : { kind: 'human', token: x.token, name: x.name, connected: false, client: null, left: x.left, discAt: x.left ? now - AUTO_GRACE : now }));
+      r.restoredSeq = snap.state && snap.state.seq;
+      if (!r.local) setTimeout(() => r.schedule(), AUTO_GRACE + 50);
+      return r;
+    }
 
     destroy() { clearTimeout(this.timer); clearTimeout(this.tradeTimer); }
   }

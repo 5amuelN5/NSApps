@@ -70,6 +70,7 @@ function show(name) {
   if (name !== 'game') { closeModal(); $('#offer-pop').classList.add('hidden'); }
   if (name === 'menu' || name === 'lobby' || name === 'room') showDemo();
   if (name !== 'game') $('#size-pop').classList.add('hidden');
+  if (name === 'menu') renderResume();
   layout();
   if (name === 'game') { board.zoom = Prefs.board; board.panX = 0; board.panY = 0; board.applyCamera(true); showBoardZoom(Prefs.board); }
   else { board.zoom = 1; board.panX = 0; board.panY = 0; board.applyCamera(true); }
@@ -119,15 +120,73 @@ $('#btn-online').onclick = () => { Sfx.unlock(); Sfx.click(); goOnline(); };
 $('#btn-rules').onclick = () => { Sfx.click(); openModal({ kind: 'rules' }); };
 document.querySelectorAll('[data-back]').forEach((b) => (b.onclick = () => { Sfx.click(); show('menu'); }));
 
+// ================= PARTIDAS GUARDADAS =================
+// Online: el servidor manda una copia cifrada de la partida; la guardamos para poder reconstruirla si se reinicia.
+// Contra bots: guardamos la partida entera en este navegador para poder continuarla tras recargar o cerrar.
+const SAVE_AGE = 3 * 864e5;
+const Saves = {
+  all() { try { return JSON.parse(store.get('hx_saves', '{}')) || {}; } catch (e) { return {}; } },
+  set(token, code, blob) {
+    const a = this.all();
+    if (blob) a[token] = { code, blob, at: Date.now() }; else if (!code || (a[token] && a[token].code === code)) delete a[token];
+    for (const k in a) if (Date.now() - a[k].at > SAVE_AGE) delete a[k];
+    store.set('hx_saves', JSON.stringify(a));
+  },
+  mine() { const v = this.all()[App.token]; return v && Date.now() - v.at < SAVE_AGE ? v : null; },
+  // la partida online más reciente guardada en este navegador (aunque la pestaña se cerrara): [token, copia]
+  latest(code) {
+    return Object.entries(this.all()).filter(([, v]) => Date.now() - v.at < SAVE_AGE && (!code || v.code === code)).sort((a, b) => b[1].at - a[1].at)[0] || null;
+  },
+  // usar la identidad guardada con esa partida (si se cerró la pestaña, el token de sesión se perdió)
+  adopt(token) { App.token = token; try { sessionStorage.setItem('hx_tok', token); } catch (e) { /* */ } },
+};
+const LocalSave = {
+  get() { try { const v = JSON.parse(store.get('hx_local', 'null')); return v && v.snap && v.snap.state && v.snap.state.phase !== 'gameOver' && Date.now() - v.at < 14 * 864e5 ? v : null; } catch (e) { return null; } },
+  t: null,
+  save(r) {
+    clearTimeout(this.t);
+    this.t = setTimeout(() => {
+      if (App.localRoom !== r || !r.state) return;
+      if (r.state.phase === 'gameOver') { this.clear(); return; }
+      try { localStorage.setItem('hx_local', JSON.stringify({ snap: r.snapshot(), at: Date.now() })); } catch (e) { /* */ }
+    }, 300);
+  },
+  clear() { clearTimeout(this.t); try { localStorage.removeItem('hx_local'); } catch (e) { /* */ } },
+};
+function localClient() { return { send: (m) => setTimeout(() => onMsg(JSON.parse(JSON.stringify(m))), 0) }; }
+function resumeLocal() {
+  const sv = LocalSave.get(); if (!sv) return startLocal();
+  if (App.ws) { try { App.ws.close(); } catch (e) { /* */ } App.ws = null; }
+  App.mode = 'local';
+  if (App.localRoom) App.localRoom.destroy();
+  const snap = sv.snap;
+  const me = snap.seats.findIndex((x) => x.kind === 'human');
+  if (me >= 0) { if (snap.host === snap.seats[me].token) snap.host = App.token; snap.seats[me].token = App.token; snap.seats[me].left = false; }
+  let r = null;
+  r = Room.fromSnapshot(snap, { onState: () => LocalSave.save(r) });
+  App.localRoom = r;
+  r.join(localClient(), App.token, App.name);
+}
+function renderResume() {
+  const loc = LocalSave.get();
+  $('#btn-resume-local').classList.toggle('hidden', !loc);
+  const on = Saves.latest();
+  const b = $('#btn-resume-online');
+  b.classList.toggle('hidden', !on || !!new URLSearchParams(location.search).get('sala'));
+  if (on) b.textContent = '↻ VOLVER A TU PARTIDA ONLINE (' + on[1].code + ')';
+}
+$('#btn-resume-local').onclick = () => { Sfx.unlock(); Sfx.click(); resumeLocal(); };
+$('#btn-resume-online').onclick = () => { Sfx.unlock(); Sfx.click(); const on = Saves.latest(); if (!on) return renderResume(); Saves.adopt(on[0]); goOnline(on[1].code); };
+
 // ================= MODO LOCAL =================
 function startLocal() {
   if (App.ws) { try { App.ws.close(); } catch (e) { /* */ } App.ws = null; }
   App.mode = 'local';
   if (App.localRoom) App.localRoom.destroy();
-  const r = new Room({ code: 'LOCAL', name: 'PARTIDA LOCAL', isPublic: false, local: true });
+  LocalSave.clear();
+  const r = new Room({ code: 'LOCAL', name: 'PARTIDA LOCAL', isPublic: false, local: true, onState: () => LocalSave.save(r) });
   App.localRoom = r;
-  const client = { send: (m) => setTimeout(() => onMsg(JSON.parse(JSON.stringify(m))), 0) };
-  r.join(client, App.token, App.name);
+  r.join(localClient(), App.token, App.name);
   r.addBot(App.token, 2); r.addBot(App.token, 3); r.addBot(App.token, 4);
   show('room');
 }
@@ -168,6 +227,8 @@ function connect() {
   ws.onopen = () => {
     $('#net-status').textContent = 'Conectado ✔';
     ws.send(JSON.stringify({ t: 'hello', token: App.token, name: App.name }));
+    const sv = Saves.mine();
+    if (sv) ws.send(JSON.stringify({ t: 'restore', code: sv.code, blob: sv.blob }));
     if (App.pendingJoin) { send({ t: 'joinRoom', code: App.pendingJoin }); App.pendingJoin = null; }
   };
   ws.onmessage = (e) => { try { onMsg(JSON.parse(e.data)); } catch (err) { console.error(err); } };
@@ -286,6 +347,8 @@ $('#room-chat-in').addEventListener('keydown', (e) => { if (e.key === 'Enter' &&
 
 function leaveRoom() {
   send({ t: 'leaveRoom' });
+  if (App.mode === 'local') LocalSave.clear();
+  else if (App.room) Saves.set(App.token, App.room.code, null);
   App.room = null; App.view = null; App.queue = []; App.busy = false;
   if (App.mode === 'local') { App.mode = null; show('menu'); }
   else show('lobby');
@@ -350,6 +413,9 @@ function onMsg(m) {
       if (!m.msg.sys && App.screen === 'game') Sfx.hover();
       break;
     case 'state': enqueue(m.view, m.events || []); break;
+    case 'save': Saves.set(App.token, m.code, m.blob); break;
+    case 'restored': toast('Partida recuperada: seguimos donde lo dejasteis', true); break;
+    case 'restoreFail': Saves.set(App.token, m.code, null); break;
     case 'error': toast(m.msg); Sfx.error(); break;
     case 'joinFail': App.room = null; if (App.mode === 'p2p') P2P.close(); show('lobby'); $('#net-status').textContent = m.msg || 'No se pudo entrar en la sala'; break;
     case 'kicked': toast('Te han expulsado de la sala'); App.room = null; if (App.mode === 'p2p') P2P.close(); show('lobby'); if (App.mode === 'online') send({ t: 'listRooms' }); break;
@@ -1226,7 +1292,10 @@ function loop(now) {
   document.documentElement.style.setProperty("--rc", Prefs.rc); $("#sz-rc").textContent = Math.round(Prefs.rc * 100) + "%";
   applyUiScale();
   applyBuildPos();
+  renderResume();
   if (/^[A-Z0-9]{4}$/.test(code)) {
+    // si en este navegador hay una partida guardada de esa sala, volvemos con la misma identidad
+    const sv = Saves.latest(code); if (sv && sv[0] !== App.token && !Saves.mine()) Saves.adopt(sv[0]);
     $('#invite-code').textContent = code;
     $('#invite').classList.remove('hidden');
     const b = $('#btn-invite');
