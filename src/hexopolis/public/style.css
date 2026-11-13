@@ -508,3 +508,7 @@ input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(58,163,217,0
   .side h3 { margin-bottom: 4px; }
 }
 @media (min-width: 1101px) { .side { width: calc(400px * var(--ui)); } }
+
+/* ---------- tamaño propio de la columna derecha (Ajustes → Gráfica y botones) ---------- */
+.rightcol { zoom: calc(var(--ui) * var(--rc, 1)); }
+@media (max-width: 800px) { .rightcol { width: calc(100% / var(--rc, 1)); max-width: calc(420px / var(--rc, 1)); } }

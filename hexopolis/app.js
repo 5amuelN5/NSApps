@@ -30,7 +30,8 @@ const App = {
 const board = new BoardRenderer($('#board'));
 // ---- preferencias de tamaño (se guardan en este navegador) ----
 const UI_STEPS = [0.8, 0.9, 1, 1.1, 1.2, 1.35, 1.5, 1.7];
-const Prefs = { ui: +store.get('hx_ui', 1) || 1, board: +store.get('hx_board', 1) || 1, build: store.get('hx_build', 'right') === 'top' ? 'top' : 'right' };
+const RC_STEPS = [0.75, 0.85, 1, 1.1, 1.2, 1.35, 1.5];
+const Prefs = { rc: +store.get('hx_rc', 1) || 1, ui: +store.get('hx_ui', 1) || 1, board: +store.get('hx_board', 1) || 1, build: store.get('hx_build', 'right') === 'top' ? 'top' : 'right' };
 function applyBuildPos() {
   document.body.classList.toggle('build-top', Prefs.build === 'top');
   document.querySelectorAll('[data-bpos]').forEach((b) => b.classList.toggle('on', b.dataset.bpos === Prefs.build));
@@ -40,6 +41,17 @@ function applyUiScale() {
   document.documentElement.style.setProperty('--ui', Prefs.ui);
   $('#sz-ui').textContent = Math.round(Prefs.ui * 100) + '%';
   layout();
+}
+// tamaño de la columna derecha (gráfica de tiradas, costes, Comercio y Fin de turno), todo junto
+function applyRcScale() {
+  document.documentElement.style.setProperty('--rc', Prefs.rc);
+  $('#sz-rc').textContent = Math.round(Prefs.rc * 100) + '%';
+  layout();
+}
+function stepRc(d) {
+  let i = RC_STEPS.findIndex((v) => v >= Prefs.rc - 0.001); if (i < 0) i = RC_STEPS.length - 1;
+  i = Math.max(0, Math.min(RC_STEPS.length - 1, i + d));
+  Prefs.rc = RC_STEPS[i]; store.set('hx_rc', Prefs.rc); applyRcScale();
 }
 function stepUi(d) {
   let i = UI_STEPS.findIndex((v) => v >= Prefs.ui - 0.001); if (i < 0) i = UI_STEPS.length - 1;
@@ -1102,9 +1114,10 @@ $('#btn-size').onclick = () => { Sfx.click(); const p = $('#size-pop'); p.classL
 document.querySelectorAll('[data-sz]').forEach((b) => (b.onclick = () => {
   const [what, d] = b.dataset.sz.split(':'); Sfx.click();
   if (what === 'ui') stepUi(+d);
+  else if (what === 'rc') stepRc(+d);
   else board.setZoom(board.zoom * (+d > 0 ? 1.2 : 1 / 1.2));
 }));
-$('#sz-reset').onclick = () => { Sfx.click(); Prefs.ui = 1; store.set('hx_ui', 1); Prefs.build = 'right'; store.set('hx_build', 'right'); applyBuildPos(); applyUiScale(); board.resetCamera(); };
+$('#sz-reset').onclick = () => { Sfx.click(); Prefs.ui = 1; store.set('hx_ui', 1); Prefs.rc = 1; store.set('hx_rc', 1); applyRcScale(); Prefs.build = 'right'; store.set('hx_build', 'right'); applyBuildPos(); applyUiScale(); board.resetCamera(); };
 document.querySelectorAll('[data-bpos]').forEach((b) => (b.onclick = () => { Sfx.click(); Prefs.build = b.dataset.bpos; store.set('hx_build', Prefs.build); applyBuildPos(); }));
 $('#sz-center').onclick = () => { Sfx.click(); board.setPan(0, 0); };
 $('#btn-help').onclick = () => { Sfx.click(); openModal({ kind: 'help' }); };
@@ -1210,6 +1223,7 @@ function loop(now) {
   show('menu');
   requestAnimationFrame(loop);
   loadConfig();
+  document.documentElement.style.setProperty("--rc", Prefs.rc); $("#sz-rc").textContent = Math.round(Prefs.rc * 100) + "%";
   applyUiScale();
   applyBuildPos();
   if (/^[A-Z0-9]{4}$/.test(code)) {
