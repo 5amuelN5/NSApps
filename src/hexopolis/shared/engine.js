@@ -51,6 +51,12 @@
     return o;
   }
   function R(s) { return s.rules || DEFAULT_RULES; }
+  // piezas por jugador: más puntos para ganar → más poblados, ciudades y caminos
+  function piecesFor(vpTarget) {
+    const d = Math.max(0, (vpTarget || 10) - 10);
+    return { settlements: 5 + Math.ceil(d / 2), cities: 4 + Math.ceil(d / 2), roads: 15 + 2 * d };
+  }
+  function piecesOf(s) { return s.pieces || { settlements: 5, cities: 4, roads: 15 }; }
   function winVP(s) { return R(s).vp; }
 
   // ---------- utilidades ----------
@@ -215,14 +221,15 @@
     const rules = normRules(opts.rules);
     const kind = mapKind(rules, n);
     const M = MAPS[kind];
+    const pc = piecesFor(rules.vp);
     const s = {
-      rules, map: kind,
+      rules, map: kind, pieces: pc,
       rng: (opts.seed != null ? opts.seed : Math.floor(Math.random() * 2 ** 31)) | 0,
       seq: 0,
       players: cfg.map((c, i) => ({
         id: i, name: c.name, color: c.color || COLORS[i], bot: c.bot || 0,
         res: emptyRes(), dev: { knight: 0, vp: 0, roadBuilding: 0, yop: 0, monopoly: 0 }, devNew: { knight: 0, vp: 0, roadBuilding: 0, yop: 0, monopoly: 0 },
-        knights: 0, roads: 15, settlements: 5, cities: 4, lr: false, la: false, roadLen: 0,
+        knights: 0, roads: pc.roads, settlements: pc.settlements, cities: pc.cities, lr: false, la: false, roadLen: 0,
       })),
       bank: { wood: M.bank, brick: M.bank, sheep: M.bank, wheat: M.bank, ore: M.bank },
       devDeck: [],
@@ -307,7 +314,8 @@
   }
   function vp(s, pid, hidden) {
     const P = s.players[pid];
-    let v = (5 - P.settlements) + 2 * (4 - P.cities);
+    const pc = piecesOf(s);
+    let v = (pc.settlements - P.settlements) + 2 * (pc.cities - P.cities);
     if (s.longestRoad.owner === pid) v += 2;
     if (s.largestArmy.owner === pid) v += 2;
     if (hidden && P.dev) v += P.dev.vp;
@@ -428,7 +436,8 @@
   function checkStall(s, ev) {
     if (s.winner != null) return;
     let sig = s.devDeck.length * 1000;
-    s.players.forEach((p) => { sig += vp(s, p.id, true) * 7 + (15 - p.roads) * 3 + (5 - p.settlements); });
+    const pc = piecesOf(s);
+    s.players.forEach((p) => { sig += vp(s, p.id, true) * 7 + (pc.roads - p.roads) * 3 + (pc.settlements - p.settlements); });
     if (sig !== s.stallSig) { s.stallSig = sig; s.stallTurn = s.turn; return; }
     if (s.turn - s.stallTurn < STALL_ROUNDS * s.players.length) return;
     let best = 0;
@@ -826,7 +835,7 @@
 
   return {
     RES, RES_NAMES, COST, PIPS, DEV_NAMES, COLORS, WIN_VP, MAX_PLAYERS, DEFAULT_RULES, SPECIAL_RULES, HAND_OPTS,
-    normRules, winVP, rulesOf: R, robberHexOk, mapKind,
+    normRules, winVP, rulesOf: R, piecesFor, piecesOf, robberHexOk, mapKind,
     createGame, apply, viewFor, filterEvents,
     canSettle, canRoad, legalSettlements, legalRoads, legalCities, tradeRatios, robberVictims,
     vp, total, has, emptyRes, longestRoadFor, fmtRes,

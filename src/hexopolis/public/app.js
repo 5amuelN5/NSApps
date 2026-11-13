@@ -399,15 +399,21 @@ function rulesSummary(R, n) {
   const chips = [
     `<span class="rchip">🗺️ Mapa ${big ? 'grande' : 'normal'}${R.map === 'auto' ? ' (auto)' : ''}</span>`,
     `<span class="rchip">🏆 ${R.vp} puntos</span>`,
+    ...(R.vp > 10 ? [`<span class="rchip" title="Piezas por jugador: poblados, ciudades y caminos">🏠 ${Engine.piecesFor(R.vp).settlements} · 🏙️ ${Engine.piecesFor(R.vp).cities} · 🛣️ ${Engine.piecesFor(R.vp).roads}</span>`] : []),
     `<span class="rchip">🃏 ${R.hand === 99 ? 'Sin límite de cartas' : 'Límite ' + R.hand + ' cartas'}</span>`,
   ];
   Engine.SPECIAL_RULES.filter((x) => R[x.key]).forEach((x) => chips.push(`<span class="rchip sp" title="${esc(x.desc)}">${x.icon} ${x.name}</span>`));
   if (!Engine.SPECIAL_RULES.some((x) => R[x.key])) chips.push('<span class="rchip dim">Sin normas especiales</span>');
   return chips.join('');
 }
+function piecesTxt(vp) {
+  const p = Engine.piecesFor(vp);
+  return `Cada jugador tiene <b>${p.settlements} poblados, ${p.cities} ciudades y ${p.roads} caminos</b>${vp > 10 ? ' (más de lo normal para poder llegar)' : ''}.`;
+}
 function rulesDetail(R, n, map) {
   const sp = Engine.SPECIAL_RULES.filter((x) => R[x.key]);
-  return `<div class="rr-mini"><span class="rchip">🗺️ Mapa ${(map || Engine.mapKind(R, n)) === 'big' ? 'grande' : 'normal'}</span><span class="rchip">🏆 ${R.vp} puntos</span><span class="rchip">🃏 ${R.hand === 99 ? 'Sin límite de cartas' : 'Límite ' + R.hand + ' cartas con el 7'}</span></div>
+  const pc = Engine.piecesFor(R.vp);
+  return `<div class="rr-mini"><span class="rchip">🗺️ Mapa ${(map || Engine.mapKind(R, n)) === 'big' ? 'grande' : 'normal'}</span><span class="rchip">🏆 ${R.vp} puntos</span><span class="rchip">🏠 ${pc.settlements} · 🏙️ ${pc.cities} · 🛣️ ${pc.roads}</span><span class="rchip">🃏 ${R.hand === 99 ? 'Sin límite de cartas' : 'Límite ' + R.hand + ' cartas con el 7'}</span></div>
     ${sp.length ? `<ul class="rr-ul">${sp.map((x) => `<li><b>${x.icon} ${x.name}:</b> ${x.desc}</li>`).join('')}</ul>` : '<p class="muted">Sin normas especiales.</p>'}`;
 }
 $('#btn-room-rules').onclick = () => { Sfx.click(); openModal({ kind: 'roomRules' }); };
@@ -718,7 +724,8 @@ function playerDetails(v, pid) {
       prod[H.res].nums.push(H.num + (m === 2 ? '×2' : ''));
     }
   }
-  return { settlements: 5 - P.settlements, cities: 4 - P.cities, prod, ports: [...ports], blocked };
+  const pc = Engine.piecesOf(v);
+  return { settlements: pc.settlements - P.settlements, cities: pc.cities - P.cities, prod, ports: [...ports], blocked };
 }
 function renderHand() {
   const v = App.view, me = App.me;
@@ -1132,7 +1139,7 @@ function renderModal() {
           <div class="rr-row"><div class="rr-lbl"><b>Mapa</b><small>El grande tiene 30 casillas, 11 puertos y más cartas.</small></div>
             ${seg('rmap', [['auto', autoTxt, 'Normal hasta 4 jugadores, grande con 5 o 6'], ['normal', 'Normal (2-4)'], ['big', 'Grande (5-6)']], R.map)}</div>
           ${warn}
-          <div class="rr-row"><div class="rr-lbl"><b>Puntos para ganar</b><small>Lo normal son 10 (de 5 a 14).</small></div>
+          <div class="rr-row"><div class="rr-lbl"><b>Puntos para ganar</b><small>Lo normal son 10 (de 5 a 14). ${piecesTxt(R.vp)}</small></div>
             <div class="rr-step"><button data-rvp="-1" ${dis}>−</button><b>${R.vp}</b><button data-rvp="1" ${dis}>+</button></div></div>
           <div class="rr-row"><div class="rr-lbl"><b>Límite de cartas al salir un 7</b><small>Quien tenga más descarta la mitad.</small></div>
             ${seg('rhand', Engine.HAND_OPTS.map((x) => [String(x), x === 99 ? 'Sin límite' : String(x)]), String(R.hand))}</div>
@@ -1228,7 +1235,7 @@ function renderModal() {
             ${row('Cartas de desarrollo', p.devCount)}${row('Caballeros jugados', p.knights)}${row('Camino más largo propio', p.roadLen)}
           </div>
           <div class="pd-box"><h4>Piezas que le quedan</h4>
-            ${row('Caminos', p.roads + ' / 15')}${row('Poblados', p.settlements + ' / 5')}${row('Ciudades', p.cities + ' / 4')}
+            ${row('Caminos', p.roads + ' / ' + Engine.piecesOf(v).roads)}${row('Poblados', p.settlements + ' / ' + Engine.piecesOf(v).settlements)}${row('Ciudades', p.cities + ' / ' + Engine.piecesOf(v).cities)}
           </div>
           <div class="pd-box"><h4>Puertos</h4><div class="pd-ports">${portTxt}</div></div>
         </div>
