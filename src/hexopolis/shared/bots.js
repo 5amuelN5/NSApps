@@ -313,7 +313,6 @@
   }
 
   function domesticOffer(s, pid, level, cost, mem) {
-    if (E.rulesOf(s).noTrade) return null;
     const P = s.players[pid];
     const miss = RES.filter((r) => (cost[r] || 0) > P.res[r]);
     if (!miss.length) return null;
@@ -421,7 +420,7 @@
   function considerDev(s, pid, level, mem, goals) {
     if (s.devPlayed) return null;
     const P = s.players[pid];
-    const can = (c) => P.dev[c] - (E.rulesOf(s).instantDev ? 0 : P.devNew[c]) > 0;
+    const can = (c) => P.dev[c] - P.devNew[c] > 0;
     const myVP = E.vp(s, pid, true);
 
     if (can('knight')) {

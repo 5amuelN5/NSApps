@@ -392,7 +392,7 @@ function renderRoom() {
 }
 // ----- reglas de la partida -----
 function handLimit(v) { return Engine.rulesOf(v).hand; }
-function devReady(v, P, c) { return P.dev[c] - (Engine.rulesOf(v).instantDev ? 0 : P.devNew[c]); }
+function devReady(v, P, c) { return P.dev[c] - P.devNew[c]; }
 function rulesSummary(R, n) {
   if (!R) return '';
   const big = Engine.mapKind(R, n) === 'big';
@@ -983,16 +983,13 @@ function renderModal() {
     case 'trade': {
       const ratios = Engine.tradeRatios(v, me);
       const BUILDS = [['road', 'Camino', COST.road], ['settlement', 'Poblado', COST.settlement], ['city', 'Ciudad', COST.city], ['dev', 'Carta', COST.dev]];
-      const noTrade = Engine.rulesOf(v).noTrade;
-      if (noTrade) m.tab = 'bank';
-      const tabs = noTrade ? `<p class="muted tr-note">🚫 Norma «Sin trueque»: solo se comercia con el banco y los puertos.</p>` : `<div class="tr-tabs"><button class="${m.tab === 'bank' ? 'on' : ''}" data-tab="bank">🏦 Banco y puertos</button><button class="${m.tab === 'players' ? 'on' : ''}" data-tab="players">🤝 Jugadores</button></div>`;
+      const tabs = `<div class="tr-tabs"><button class="${m.tab === 'bank' ? 'on' : ''}" data-tab="bank">🏦 Banco y puertos</button><button class="${m.tab === 'players' ? 'on' : ''}" data-tab="players">🤝 Jugadores</button></div>`;
       const hand = `<div class="tr-hand"><span>Tienes:</span>${RES.map((r) => `<span class="chip ${P.res[r] ? '' : 'dim'}"><img src="${Sprites.url(r, 3)}">${P.res[r]}</span>`).join('')}</div>`;
       if (m.tab === 'bank') {
         // filas: un recurso que das → toca el que quieres
         const rows = RES.filter((g) => P.res[g] >= ratios[g]).map((g) => {
           const can = true;
-          const bank3 = Engine.rulesOf(v).bank3;
-          const port = ratios[g] === 2 ? 'puerto 2:1' : ratios[g] === 3 ? (bank3 ? 'banco 3:1' : 'puerto 3:1') : 'banco 4:1';
+          const port = ratios[g] === 2 ? 'puerto 2:1' : ratios[g] === 3 ? 'puerto 3:1' : 'banco 4:1';
           const targets = RES.filter((r) => r !== g).map((r) => `<button class="tr-get" data-bq="${g}:${r}" ${can && v.bank[r] > 0 ? '' : 'disabled'} title="Dar ${ratios[g]} ${RN[g]} por 1 ${RN[r]}"><img src="${Sprites.url(r, 4)}"><span>${RN[r]}</span></button>`).join('');
           return `<div class="tr-row ${can ? '' : 'off'}">
             <div class="tr-give"><img src="${Sprites.url(g, 4)}"><div><b>${ratios[g]} × ${RN[g]}</b><small>${can ? port : `tienes ${P.res[g]}, necesitas ${ratios[g]}`}</small></div></div>
@@ -1006,7 +1003,7 @@ function renderModal() {
           return `<button class="tr-quick" data-bplan="${k}" ${!have && plan ? '' : 'disabled'}><b>${nm}</b><small>${txt}</small></button>`;
         }).join('');
         const cant = RES.filter((g) => P.res[g] < ratios[g]).map((g) => `<span class="chip dim" title="Tienes ${P.res[g]}, necesitas ${ratios[g]}"><img src="${Sprites.url(g, 3)}">${P.res[g]}/${ratios[g]}</span>`).join('');
-        const rates = RES.map((g) => `<span class="chip ${ratios[g] < (Engine.rulesOf(v).bank3 ? 3 : 4) ? 'port' : ''}" title="${ratios[g] < (Engine.rulesOf(v).bank3 ? 3 : 4) ? 'Gracias a un puerto' : 'Cambio normal del banco'}"><img src="${Sprites.url(g, 3)}">${ratios[g]}:1</span>`).join('');
+        const rates = RES.map((g) => `<span class="chip ${ratios[g] < 4 ? 'port' : ''}" title="${ratios[g] < 4 ? 'Gracias a un puerto' : 'Cambio normal del banco'}"><img src="${Sprites.url(g, 3)}">${ratios[g]}:1</span>`).join('');
         h = `<div class="row between"><h2>Comercio</h2><button class="btn small ghost" data-close>Cerrar</button></div>${tabs}${hand}
           <h4 class="tr-sub">Completar con el banco</h4><div class="tr-quicks">${quick}</div>
           <h4 class="tr-sub">Cambiar una carta</h4>
@@ -1139,7 +1136,7 @@ function renderModal() {
           <div class="rr-row"><div class="rr-lbl"><b>Mapa</b><small>El grande tiene 30 casillas, 11 puertos y más cartas.</small></div>
             ${seg('rmap', [['auto', autoTxt, 'Normal hasta 4 jugadores, grande con 5 o 6'], ['normal', 'Normal (2-4)'], ['big', 'Grande (5-6)']], R.map)}</div>
           ${warn}
-          <div class="rr-row"><div class="rr-lbl"><b>Puntos para ganar</b><small>Lo normal son 10 (de 5 a 14). ${piecesTxt(R.vp)}</small></div>
+          <div class="rr-row"><div class="rr-lbl"><b>Puntos para ganar</b><small>Lo normal son 10 (de 5 a 16). ${piecesTxt(R.vp)}</small></div>
             <div class="rr-step"><button data-rvp="-1" ${dis}>−</button><b>${R.vp}</b><button data-rvp="1" ${dis}>+</button></div></div>
           <div class="rr-row"><div class="rr-lbl"><b>Límite de cartas al salir un 7</b><small>Quien tenga más descarta la mitad.</small></div>
             ${seg('rhand', Engine.HAND_OPTS.map((x) => [String(x), x === 99 ? 'Sin límite' : String(x)]), String(R.hand))}</div>
@@ -1153,7 +1150,7 @@ function renderModal() {
         const put = (patch) => { Sfx.click(); send({ t: 'setRules', rules: Object.assign({}, App.room.rules, patch) }); };
         box.querySelectorAll('[data-rmap]').forEach((b) => (b.onclick = () => put({ map: b.dataset.rmap })));
         box.querySelectorAll('[data-rhand]').forEach((b) => (b.onclick = () => put({ hand: +b.dataset.rhand })));
-        box.querySelectorAll('[data-rvp]').forEach((b) => (b.onclick = () => { const nv = R.vp + +b.dataset.rvp; if (nv >= 5 && nv <= 14) put({ vp: nv }); }));
+        box.querySelectorAll('[data-rvp]').forEach((b) => (b.onclick = () => { const nv = R.vp + +b.dataset.rvp; if (nv >= 5 && nv <= 16) put({ vp: nv }); }));
         box.querySelectorAll('[data-rsp]').forEach((b) => (b.onclick = () => put({ [b.dataset.rsp]: !R[b.dataset.rsp] })));
         $('#rr-none').onclick = () => put(Object.fromEntries(Engine.SPECIAL_RULES.map((x) => [x.key, false])));
         $('#rr-random').onclick = () => {

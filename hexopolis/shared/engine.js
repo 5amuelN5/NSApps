@@ -24,7 +24,7 @@
   const DEFAULT_RULES = {
     map: 'auto', vp: 10, hand: 7,
     robberKeeps: false, doubleSteal: false, friendlyRobber: false, peaceStart: false, doublesBonus: false,
-    goldRain: false, fastStart: false, bank3: false, instantDev: false, noTrade: false, chaosNumbers: false,
+    goldRain: false, fastStart: false, chaosNumbers: false,
   };
   // normas especiales (activables una a una)
   const SPECIAL_RULES = [
@@ -35,9 +35,6 @@
     { key: 'doublesBonus', icon: '🎯', name: 'Dobles dorados', desc: 'Si los dos dados sacan el mismo número, todas las casillas producen el doble.' },
     { key: 'goldRain', icon: '🌧️', name: 'Lluvia de oro', desc: 'Al sacar un 2 o un 12, todos los jugadores reciben 1 carta al azar del banco.' },
     { key: 'fastStart', icon: '🚀', name: 'Arranque rápido', desc: 'Recibes recursos de tus dos poblados iniciales, no solo del segundo.' },
-    { key: 'bank3', icon: '🏦', name: 'Banco generoso', desc: 'El banco cambia 3 a 1 aunque no tengas puerto (los puertos 2 a 1 siguen igual).' },
-    { key: 'instantDev', icon: '⚡', name: 'Cartas al instante', desc: 'Puedes jugar una carta de desarrollo en el mismo turno en que la compras.' },
-    { key: 'noTrade', icon: '🚫', name: 'Sin trueque', desc: 'No se puede comerciar entre jugadores: solo con el banco y los puertos.' },
     { key: 'chaosNumbers', icon: '🌀', name: 'Mapa caótico', desc: 'Los números del mapa se reparten sin restricciones: el 6 y el 8 pueden quedar juntos.' },
   ];
   const HAND_OPTS = [5, 7, 9, 12, 99];
@@ -45,7 +42,7 @@
     r = r && typeof r === 'object' ? r : {};
     const o = Object.assign({}, DEFAULT_RULES);
     if (['auto', 'normal', 'big'].includes(r.map)) o.map = r.map;
-    if (r.vp != null && Number.isFinite(+r.vp)) o.vp = Math.max(5, Math.min(14, Math.round(+r.vp)));
+    if (r.vp != null && Number.isFinite(+r.vp)) o.vp = Math.max(5, Math.min(16, Math.round(+r.vp)));
     if (HAND_OPTS.includes(r.hand | 0)) o.hand = r.hand | 0;
     for (const x of SPECIAL_RULES) o[x.key] = !!r[x.key];
     return o;
@@ -303,8 +300,7 @@
     return s.board.vertices.filter((V) => V.b && V.b.owner === pid && V.b.type === 'settlement').map((V) => V.id);
   }
   function tradeRatios(s, pid) {
-    const b = R(s).bank3 ? 3 : 4;
-    const r = { wood: b, brick: b, sheep: b, wheat: b, ore: b };
+    const r = { wood: 4, brick: 4, sheep: 4, wheat: 4, ore: 4 };
     for (const V of s.board.vertices) {
       if (!V.b || V.b.owner !== pid || !V.port) continue;
       if (V.port === 'any') { for (const k of RES) r[k] = Math.min(r[k], 3); }
@@ -656,7 +652,7 @@
         if (!isCur || (s.phase !== 'roll' && s.phase !== 'main')) return 'No puedes jugar cartas ahora';
         if (!['knight', 'roadBuilding', 'yop', 'monopoly'].includes(c)) return 'Carta inválida';
         if (s.devPlayed) return 'Solo una carta de desarrollo por turno';
-        if (P.dev[c] - (R(s).instantDev ? 0 : P.devNew[c]) <= 0) return 'No tienes esa carta disponible';
+        if (P.dev[c] - P.devNew[c] <= 0) return 'No tienes esa carta disponible';
         const useNew = () => { if (P.devNew[c] > P.dev[c] - 1) P.devNew[c] = Math.max(0, P.dev[c] - 1); };
         if (c === 'knight') {
           useNew(); P.dev.knight--; P.knights++; s.devPlayed = true;
@@ -716,7 +712,6 @@
         return;
       }
       case 'offerTrade': {
-        if (R(s).noTrade) return 'Norma «Sin trueque»: solo se puede comerciar con el banco';
         if (!isCur || s.phase !== 'main') return 'No puedes comerciar ahora';
         if (s.trade) return 'Ya hay una oferta en curso';
         if (!validResObj(a.give) || !validResObj(a.get)) return 'Oferta inválida';
