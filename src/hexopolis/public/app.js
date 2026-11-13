@@ -198,6 +198,7 @@ function localDispatch(m) {
     case 'botLevel': e = r.setBotLevel(tk, m.i, m.level); break;
     case 'removeSeat': e = r.removeSeat(tk, m.i); break;
     case 'start': e = r.start(tk); break;
+    case 'setRules': e = r.setRules(tk, m.rules); break;
     case 'action': e = r.action(tk, m.action); break;
     case 'chat': r.say(tk, m.text); break;
     case 'leaveRoom': r.destroy(); App.localRoom = null; if (App.mode === 'p2p') P2P.close(); break;
@@ -295,8 +296,8 @@ $('#in-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#bt
 function renderRoomList(list) {
   const el = $('#room-list');
   if (!list.length) { el.innerHTML = '<p class="muted">No hay salas públicas. ¡Crea una!</p>'; return; }
-  el.innerHTML = list.map((r) => `<div class="room-item"><b>${esc(r.code)}</b><div class="grow">${esc(r.name)}<br><span class="muted">${r.players}/4 jugadores · ${r.started ? 'EN PARTIDA' : 'ESPERANDO'}</span></div>
-    <button class="btn small cyan" data-join="${esc(r.code)}" ${r.started || r.players >= 4 ? 'disabled' : ''}>ENTRAR</button></div>`).join('');
+  el.innerHTML = list.map((r) => `<div class="room-item"><b>${esc(r.code)}</b><div class="grow">${esc(r.name)}<br><span class="muted">${r.players}/${r.max || 4} jugadores · ${r.started ? 'EN PARTIDA' : 'ESPERANDO'}</span></div>
+    <button class="btn small cyan" data-join="${esc(r.code)}" ${r.started || r.players >= (r.max || 4) ? 'disabled' : ''}>ENTRAR</button></div>`).join('');
   el.querySelectorAll('[data-join]').forEach((b) => (b.onclick = () => { Sfx.click(); send({ t: 'joinRoom', code: b.dataset.join }); }));
 }
 
@@ -367,9 +368,12 @@ function renderRoom() {
   $('#room-chatbox').classList.toggle('hidden', !!r.local);
   $('#speed-row').classList.toggle('hidden', !r.local);
   document.querySelectorAll('[data-speed]').forEach((b) => b.classList.toggle('on', +b.dataset.speed === r.speed));
-  $('#host-tools').classList.toggle('hidden', !host || r.seats.length >= 4);
+  const maxP = r.max || 4;
+  $('#host-tools').classList.toggle('hidden', !host || r.seats.length >= maxP);
+  $('#rules-sum').innerHTML = rulesSummary(r.rules, r.seats.length);
+  $('#btn-room-rules').textContent = host ? '⚙ CAMBIAR REGLAS' : '📜 VER REGLAS';
   const seats = [];
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < Math.max(4, Math.min(maxP, r.seats.length + 1)); i++) {
     const s = r.seats[i];
     if (!s) { seats.push(`<div class="seat empty"><span class="lbl-px">VACÍO</span></div>`); continue; }
     const lvl = s.kind === 'bot'
@@ -386,6 +390,28 @@ function renderRoom() {
   $('#room-wait').textContent = host ? (r.seats.length < 2 ? 'Añade bots o espera a otros jugadores (mínimo 2).' : '') : 'Esperando a que el anfitrión empiece la partida…';
   renderRoomChat();
 }
+// ----- reglas de la partida -----
+function handLimit(v) { return Engine.rulesOf(v).hand; }
+function devReady(v, P, c) { return P.dev[c] - (Engine.rulesOf(v).instantDev ? 0 : P.devNew[c]); }
+function rulesSummary(R, n) {
+  if (!R) return '';
+  const big = Engine.mapKind(R, n) === 'big';
+  const chips = [
+    `<span class="rchip">🗺️ Mapa ${big ? 'grande' : 'normal'}${R.map === 'auto' ? ' (auto)' : ''}</span>`,
+    `<span class="rchip">🏆 ${R.vp} puntos</span>`,
+    `<span class="rchip">🃏 ${R.hand === 99 ? 'Sin límite de cartas' : 'Límite ' + R.hand + ' cartas'}</span>`,
+  ];
+  Engine.SPECIAL_RULES.filter((x) => R[x.key]).forEach((x) => chips.push(`<span class="rchip sp" title="${esc(x.desc)}">${x.icon} ${x.name}</span>`));
+  if (!Engine.SPECIAL_RULES.some((x) => R[x.key])) chips.push('<span class="rchip dim">Sin normas especiales</span>');
+  return chips.join('');
+}
+function rulesDetail(R, n, map) {
+  const sp = Engine.SPECIAL_RULES.filter((x) => R[x.key]);
+  return `<div class="rr-mini"><span class="rchip">🗺️ Mapa ${(map || Engine.mapKind(R, n)) === 'big' ? 'grande' : 'normal'}</span><span class="rchip">🏆 ${R.vp} puntos</span><span class="rchip">🃏 ${R.hand === 99 ? 'Sin límite de cartas' : 'Límite ' + R.hand + ' cartas con el 7'}</span></div>
+    ${sp.length ? `<ul class="rr-ul">${sp.map((x) => `<li><b>${x.icon} ${x.name}:</b> ${x.desc}</li>`).join('')}</ul>` : '<p class="muted">Sin normas especiales.</p>'}`;
+}
+$('#btn-room-rules').onclick = () => { Sfx.click(); openModal({ kind: 'roomRules' }); };
+
 function renderRoomChat() {
   const html = App.chat.slice(-30).map((m) => m.sys ? `<div class="sys">» ${esc(m.text)}</div>` : `<div><b style="color:${m.color}">${esc(m.name)}:</b> ${esc(m.text)}</div>`).join('');
   const el = $('#room-chat'); el.innerHTML = html; el.scrollTop = el.scrollHeight;
@@ -405,6 +431,7 @@ function onMsg(m) {
         else if (App.screen === 'game') renderHUD();
       } else if (App.screen === 'game') renderHUD();
       renderRoom();
+      if (App.ui.modal && App.ui.modal.kind === 'roomRules') renderModal();
       break;
     }
     case 'chat':
@@ -500,7 +527,7 @@ function handleEvents(events, prev) {
       }
       case 'produce':
         for (const g of e.gains) {
-          const from = board.hexScreen(g.hex);
+          const from = g.hex != null ? board.hexScreen(g.hex) : boardCenter();
           for (let k = 0; k < g.n; k++) {
             const d = chipN++ * 90;
             const to = elCenter(targetFor(g.pid, g.res));
@@ -544,7 +571,7 @@ function handleEvents(events, prev) {
       case 'trade': case 'bankTrade': Sfx.trade(); if (e.type === 'trade' && (e.with === me || e.pid === me)) toast('¡Trato cerrado!', true); break;
       case 'offer': if (e.pid !== me) Sfx.card(); break;
       case 'tradeCancel': break;
-      case 'discard': break;
+      case 'discard': if (e.to === me) { Sfx.coin(); toast(`${v.players[e.pid].name} te entrega ${e.n} cartas 🦹`, true); } break;
       case 'win':
         fx.confetti();
         if (e.pid === me) { bigMsg('¡VICTORIA!'); Sfx.win(); } else { bigMsg(`¡GANA ${v.players[e.pid].name}!`, v.players[e.pid].color); Sfx.lose(); }
@@ -569,7 +596,7 @@ function updateTargets() {
   let t = null;
   if (v.current === me) {
     if (v.phase === 'setup') t = v.setup.step === 'settlement' ? { type: 'vertex', ids: Engine.legalSettlements(v, me, true) } : { type: 'edge', ids: Engine.legalRoads(v, me, v.setup.last) };
-    else if (v.phase === 'robber') t = { type: 'hex', ids: v.board.hexes.filter((h) => h.id !== v.board.robber).map((h) => h.id) };
+    else if (v.phase === 'robber') t = { type: 'hex', ids: v.board.hexes.filter((h) => Engine.robberHexOk(v, me, h.id)).map((h) => h.id) };
     else if (v.phase === 'roadBuilding') t = { type: 'edge', ids: Engine.legalRoads(v, me) };
     else if (v.phase === 'main' && App.ui.build) {
       const b = App.ui.build;
@@ -634,15 +661,15 @@ function renderPlayers() {
     const off = seatInfo[i] && seatInfo[i].kind === 'human' && !seatInfo[i].connected ? '<span class="pl-off">Desconectado</span>' : '';
     const lr = v.longestRoad.owner === i, la = v.largestArmy.owner === i;
     const who = i === me ? 'Tú' : p.bot ? `Bot ${stars(p.bot)}` : 'Jugador';
-    const pct = Math.min(100, (p.vp / Engine.WIN_VP) * 100);
-    const many = p.resCount > 7;
+    const pct = Math.min(100, (p.vp / Engine.winVP(v)) * 100);
+    const many = p.resCount > handLimit(v);
     const isOpen = open.has(i);
     const line = `<div class="pl-line ${cur ? 'cur' : ''} ${i === me ? 'me' : ''} ${isOpen ? 'open' : ''}" id="pl-${i}" data-pl="${i}" title="Pulsa para ${isOpen ? 'plegar' : 'desplegar'} los datos de ${esc(p.name)}">
         <span class="nm">${cur ? '<i class="turn">▶</i>' : ''}${esc(p.name)}</span>
         <span class="li vp" title="Puntos de victoria"><img src="${Sprites.url('trophy', 3)}" alt=""><b>${p.vp}</b></span>
         <span class="li ${lr ? 'gold' : ''}" title="Camino más largo propio${lr ? ' · tiene el Camino más largo' : ''}"><img src="${Sprites.url('road', 3, p.color)}" alt=""><b>${p.roadLen}</b></span>
         <span class="li ${la ? 'gold' : ''}" title="Caballeros jugados${la ? ' · tiene el Ejército más grande' : ''}"><img src="${Sprites.url('knight', 3)}" alt=""><b>${p.knights}</b></span>
-        <span class="li ${many ? 'warn' : ''}" title="Cartas de recurso${many ? ' (¡más de 7!)' : ''}"><img src="${Sprites.url('card', 3)}" alt=""><b>${p.resCount}</b></span>
+        <span class="li ${many ? 'warn' : ''}" title="Cartas de recurso${many ? ` (¡más de ${handLimit(v)}!)` : ''}"><img src="${Sprites.url('card', 3)}" alt=""><b>${p.resCount}</b></span>
         <span class="li" title="Cartas de desarrollo"><img src="${Sprites.url('devcard', 3)}" alt=""><b>${p.devCount}</b></span>
         <span class="chev">${isOpen ? '▴' : '▾'}</span>
         ${tag}${off}
@@ -650,7 +677,7 @@ function renderPlayers() {
     const big = isOpen ? `<div class="pl-pop"><div class="pl ${cur ? 'cur' : ''} ${i === me ? 'me' : ''}" style="--c:${p.color}">
         <div class="pl-head">
           <div class="pl-id"><span class="nm">${esc(p.name)}</span><span class="who">${who}${cur ? ' · <b>su turno</b>' : ''}</span></div>
-          <div class="pl-vp" title="Puntos de victoria visibles (se gana con ${Engine.WIN_VP})"><b>${p.vp}</b><small>/${Engine.WIN_VP} PV</small></div>
+          <div class="pl-vp" title="Puntos de victoria visibles (se gana con ${Engine.winVP(v)})"><b>${p.vp}</b><small>/${Engine.winVP(v)} PV</small></div>
         </div>
         <div class="vpbar"><i style="width:${pct}%"></i></div>
         <div class="pl-stats">
@@ -660,7 +687,7 @@ function renderPlayers() {
           <div class="ps ${lr ? 'gold' : ''}" title="Camino continuo más largo"><img src="${Sprites.url('road', 3, p.color)}"><b>${p.roadLen}</b><small>Camino</small></div>
         </div>
         ${lr || la ? `<div class="pl-awards">${lr ? '<span class="aw">🛣️ Camino más largo</span>' : ''}${la ? '<span class="aw">⚔️ Ejército</span>' : ''}</div>` : ''}
-        ${many ? '<p class="pl-note">¡Tiene más de 7 cartas! Si sale un 7 descarta la mitad.</p>' : ''}
+        ${many ? '<p class="pl-note">¡Tiene más de ${handLimit(v)} cartas! Si sale un 7 descarta la mitad.</p>' : ''}
         <button class="btn small ghost pl-more" data-plmore="${i}">Ver ficha completa</button>
       </div></div>` : '';
     return `<div class="plw" style="--c:${p.color}">${line}${big}</div>`;
@@ -701,7 +728,7 @@ function renderHand() {
   const canPlayNow = v.current === me && (v.phase === 'roll' || v.phase === 'main') && !v.devPlayed;
   const cards = Object.keys(P.dev).filter((c) => P.dev[c] > 0);
   $('#devs').innerHTML = cards.map((c) => {
-    const ready = P.dev[c] - P.devNew[c];
+    const ready = devReady(v, P, c);
     const play = c !== 'vp' && canPlayNow && ready > 0;
     return `<div class="dc ${play ? 'play' : ''} ${ready <= 0 && c !== 'vp' ? 'new' : ''}" data-dev="${c}" title="${Engine.DEV_NAMES[c]}${c === 'vp' ? ' (cuenta automáticamente)' : ready <= 0 ? ' (podrás jugarla el próximo turno)' : play ? ' — ¡clic para jugar!' : ''}">
       <span class="art"><img src="${Sprites.url(DEV_ICON[c], 5, DEV_ICON[c] === 'road' ? '#c9a46a' : undefined)}"></span><span class="t">${DEV_SHORT[c]}</span>${P.dev[c] > 1 ? `<span class="n">${P.dev[c]}</span>` : ''}</div>`;
@@ -740,7 +767,7 @@ function renderInfo() {
 function devPlayable(c) {
   const v = App.view, me = App.me; if (!v || me < 0) return false;
   const P = v.players[me];
-  return c !== 'vp' && v.current === me && (v.phase === 'roll' || v.phase === 'main') && !v.devPlayed && P.dev[c] - P.devNew[c] > 0 && !v.trade;
+  return c !== 'vp' && v.current === me && (v.phase === 'roll' || v.phase === 'main') && !v.devPlayed && devReady(v, P, c) > 0 && !v.trade;
 }
 function playDev(c) {
   if (c === 'knight' || c === 'roadBuilding') act({ type: 'playDev', card: c });
@@ -949,13 +976,16 @@ function renderModal() {
     case 'trade': {
       const ratios = Engine.tradeRatios(v, me);
       const BUILDS = [['road', 'Camino', COST.road], ['settlement', 'Poblado', COST.settlement], ['city', 'Ciudad', COST.city], ['dev', 'Carta', COST.dev]];
-      const tabs = `<div class="tr-tabs"><button class="${m.tab === 'bank' ? 'on' : ''}" data-tab="bank">🏦 Banco y puertos</button><button class="${m.tab === 'players' ? 'on' : ''}" data-tab="players">🤝 Jugadores</button></div>`;
+      const noTrade = Engine.rulesOf(v).noTrade;
+      if (noTrade) m.tab = 'bank';
+      const tabs = noTrade ? `<p class="muted tr-note">🚫 Norma «Sin trueque»: solo se comercia con el banco y los puertos.</p>` : `<div class="tr-tabs"><button class="${m.tab === 'bank' ? 'on' : ''}" data-tab="bank">🏦 Banco y puertos</button><button class="${m.tab === 'players' ? 'on' : ''}" data-tab="players">🤝 Jugadores</button></div>`;
       const hand = `<div class="tr-hand"><span>Tienes:</span>${RES.map((r) => `<span class="chip ${P.res[r] ? '' : 'dim'}"><img src="${Sprites.url(r, 3)}">${P.res[r]}</span>`).join('')}</div>`;
       if (m.tab === 'bank') {
         // filas: un recurso que das → toca el que quieres
         const rows = RES.filter((g) => P.res[g] >= ratios[g]).map((g) => {
           const can = true;
-          const port = ratios[g] === 2 ? 'puerto 2:1' : ratios[g] === 3 ? 'puerto 3:1' : 'banco 4:1';
+          const bank3 = Engine.rulesOf(v).bank3;
+          const port = ratios[g] === 2 ? 'puerto 2:1' : ratios[g] === 3 ? (bank3 ? 'banco 3:1' : 'puerto 3:1') : 'banco 4:1';
           const targets = RES.filter((r) => r !== g).map((r) => `<button class="tr-get" data-bq="${g}:${r}" ${can && v.bank[r] > 0 ? '' : 'disabled'} title="Dar ${ratios[g]} ${RN[g]} por 1 ${RN[r]}"><img src="${Sprites.url(r, 4)}"><span>${RN[r]}</span></button>`).join('');
           return `<div class="tr-row ${can ? '' : 'off'}">
             <div class="tr-give"><img src="${Sprites.url(g, 4)}"><div><b>${ratios[g]} × ${RN[g]}</b><small>${can ? port : `tienes ${P.res[g]}, necesitas ${ratios[g]}`}</small></div></div>
@@ -969,7 +999,7 @@ function renderModal() {
           return `<button class="tr-quick" data-bplan="${k}" ${!have && plan ? '' : 'disabled'}><b>${nm}</b><small>${txt}</small></button>`;
         }).join('');
         const cant = RES.filter((g) => P.res[g] < ratios[g]).map((g) => `<span class="chip dim" title="Tienes ${P.res[g]}, necesitas ${ratios[g]}"><img src="${Sprites.url(g, 3)}">${P.res[g]}/${ratios[g]}</span>`).join('');
-        const rates = RES.map((g) => `<span class="chip ${ratios[g] < 4 ? 'port' : ''}" title="${ratios[g] < 4 ? 'Gracias a un puerto' : 'Cambio normal del banco'}"><img src="${Sprites.url(g, 3)}">${ratios[g]}:1</span>`).join('');
+        const rates = RES.map((g) => `<span class="chip ${ratios[g] < (Engine.rulesOf(v).bank3 ? 3 : 4) ? 'port' : ''}" title="${ratios[g] < (Engine.rulesOf(v).bank3 ? 3 : 4) ? 'Gracias a un puerto' : 'Cambio normal del banco'}"><img src="${Sprites.url(g, 3)}">${ratios[g]}:1</span>`).join('');
         h = `<div class="row between"><h2>Comercio</h2><button class="btn small ghost" data-close>Cerrar</button></div>${tabs}${hand}
           <h4 class="tr-sub">Completar con el banco</h4><div class="tr-quicks">${quick}</div>
           <h4 class="tr-sub">Cambiar una carta</h4>
@@ -1038,7 +1068,7 @@ function renderModal() {
       if (!v.pendingDiscard || !v.pendingDiscard[me]) { closeModal(); return; }
       const need = v.pendingDiscard[me];
       const tot = Engine.total(m.sel);
-      h = `<h2>¡EL LADRÓN! DESCARTA ${need}</h2><p class="muted">Tienes más de 7 cartas. Elige ${need} para devolver al banco.</p>
+      h = `<h2>¡EL LADRÓN! DESCARTA ${need}</h2><p class="muted">Tienes más de ${handLimit(v)} cartas. Elige ${need} para ${Engine.rulesOf(v).robberKeeps && v.current !== me ? `entregar a <b style="color:${v.players[v.current].color}">${esc(v.players[v.current].name)}</b> (norma «El ladrón se queda el botín»)` : 'devolver al banco'}.</p>
         <div class="steppers">${RES.map((r) => `<div class="stp">${resCard(r, `<span class="n">${P.res[r] - m.sel[r]}</span>`)}<div class="ctl"><button data-d="${r}:-1">-</button><span class="val">${m.sel[r]}</span><button data-d="${r}:1">+</button></div></div>`).join('')}</div>
         <button class="btn yellow" id="d-ok" ${tot === need ? '' : 'disabled'}>DESCARTAR (${tot}/${need})</button>`;
       box.innerHTML = h;
@@ -1079,17 +1109,61 @@ function renderModal() {
     case 'gameover': {
       const order = v.players.slice().sort((a, b) => b.vp - a.vp);
       h = `<h2>🏆 FIN DE LA PARTIDA</h2><div class="gameover-list">${order.map((p, k) => `<div class="go-row ${p.id === v.winner ? 'win' : ''}" style="--c:${p.color}"><span>${k + 1}º</span><span class="grow" style="color:${p.color}">${esc(p.name)}${p.bot ? ' ' + stars(p.bot) : ''}</span><span>${p.vp} PV</span></div>`).join('')}</div>
-        <p class="muted">Turnos jugados: ${v.turn}</p>
+        <p class="muted">Turnos jugados: ${v.turn}${v.stalled ? ' · Terminó porque nadie podía avanzar: gana quien más puntos tenía' : ''}</p>
         <div class="row gap between wrap"><button class="btn ghost" id="g-menu">SALIR</button><button class="btn small" data-close>VER TABLERO</button>${isHost() ? '<button class="btn pink" id="g-again">▶ REVANCHA (MAPA NUEVO)</button>' : '<span class="muted">El anfitrión puede iniciar la revancha</span>'}</div>`;
       box.innerHTML = h;
       $('#g-menu').onclick = () => { closeModal(); leaveRoom(); };
       if ($('#g-again')) $('#g-again').onclick = () => { closeModal(); send({ t: 'start' }); };
       break;
     }
+    case 'roomRules': {
+      const r = App.room; if (!r) { closeModal(); return; }
+      const R = r.rules, host = isHost(), n = r.seats.length;
+      const dis = host ? '' : 'disabled';
+      const seg = (attr, opts, cur) => `<div class="seg rr-seg">${opts.map(([val, lbl, tip]) => `<button data-${attr}="${val}" class="${cur === val ? 'on' : ''}" ${dis} ${tip ? `title="${tip}"` : ''}>${lbl}</button>`).join('')}</div>`;
+      const autoTxt = `Automático · ahora ${Engine.mapKind(R, n) === 'big' ? 'grande' : 'normal'}`;
+      const warn = R.map === 'normal' && n > 4 ? '<p class="rr-warn">Con más de 4 jugadores el mapa normal queda muy apretado: mejor el grande.</p>' : '';
+      const specials = Engine.SPECIAL_RULES.map((x) => `<button class="rr-sp ${R[x.key] ? 'on' : ''}" data-rsp="${x.key}" ${dis}>
+          <span class="ic">${x.icon}</span><span class="tx"><b>${x.name}</b><small>${x.desc}</small></span><span class="sw"><i></i></span></button>`).join('');
+      const nOn = Engine.SPECIAL_RULES.filter((x) => R[x.key]).length;
+      h = `<div class="row between"><h2>📜 Reglas de la partida</h2><button class="btn small ghost" data-close>Cerrar</button></div>
+        ${host ? '' : '<p class="muted">Solo el anfitrión puede cambiarlas. Se aplican al empezar la partida.</p>'}
+        <div class="rr">
+          <div class="rr-row"><div class="rr-lbl"><b>Mapa</b><small>El grande tiene 30 casillas, 11 puertos y más cartas.</small></div>
+            ${seg('rmap', [['auto', autoTxt, 'Normal hasta 4 jugadores, grande con 5 o 6'], ['normal', 'Normal (2-4)'], ['big', 'Grande (5-6)']], R.map)}</div>
+          ${warn}
+          <div class="rr-row"><div class="rr-lbl"><b>Puntos para ganar</b><small>Lo normal son 10 (de 5 a 14).</small></div>
+            <div class="rr-step"><button data-rvp="-1" ${dis}>−</button><b>${R.vp}</b><button data-rvp="1" ${dis}>+</button></div></div>
+          <div class="rr-row"><div class="rr-lbl"><b>Límite de cartas al salir un 7</b><small>Quien tenga más descarta la mitad.</small></div>
+            ${seg('rhand', Engine.HAND_OPTS.map((x) => [String(x), x === 99 ? 'Sin límite' : String(x)]), String(R.hand))}</div>
+          <div class="rr-sub"><h4>Normas especiales <span class="muted">(${nOn} activas)</span></h4>
+            ${host ? '<div class="row gap"><button class="btn small yellow" id="rr-random">🎲 Normas al azar</button><button class="btn small ghost" id="rr-none">Quitar todas</button></div>' : ''}</div>
+          <div class="rr-list">${specials}</div>
+        </div>
+        <div class="row gap between">${host ? '<button class="btn small ghost" id="rr-reset">Restablecer todo</button>' : '<span></span>'}<button class="btn pink" data-close>Listo</button></div>`;
+      box.innerHTML = h;
+      if (host) {
+        const put = (patch) => { Sfx.click(); send({ t: 'setRules', rules: Object.assign({}, App.room.rules, patch) }); };
+        box.querySelectorAll('[data-rmap]').forEach((b) => (b.onclick = () => put({ map: b.dataset.rmap })));
+        box.querySelectorAll('[data-rhand]').forEach((b) => (b.onclick = () => put({ hand: +b.dataset.rhand })));
+        box.querySelectorAll('[data-rvp]').forEach((b) => (b.onclick = () => { const nv = R.vp + +b.dataset.rvp; if (nv >= 5 && nv <= 14) put({ vp: nv }); }));
+        box.querySelectorAll('[data-rsp]').forEach((b) => (b.onclick = () => put({ [b.dataset.rsp]: !R[b.dataset.rsp] })));
+        $('#rr-none').onclick = () => put(Object.fromEntries(Engine.SPECIAL_RULES.map((x) => [x.key, false])));
+        $('#rr-random').onclick = () => {
+          const keys = Engine.SPECIAL_RULES.map((x) => x.key).sort(() => Math.random() - 0.5);
+          const k = 2 + Math.floor(Math.random() * 2);
+          put(Object.fromEntries(keys.map((key, i) => [key, i < k])));
+          toast('🎲 Normas sorpresa elegidas', true);
+        };
+        $('#rr-reset').onclick = () => put(Object.assign({}, Engine.DEFAULT_RULES));
+      }
+      break;
+    }
     case 'help': {
       const row = (n, c, d) => `<span class="lbl-px">${n}</span>${chips(c)}<span class="muted">${d}</span>`;
       h = `<h2>COSTES</h2><div class="costs">${row('CAMINO', COST.road, '—')}${row('POBLADO', COST.settlement, '1 PV')}${row('CIUDAD', COST.city, '2 PV')}${row('CARTA', COST.dev, '?')}</div>
-        <p class="muted">Gana quien llegue a <b>10 PV</b> en su turno. Camino más largo (5+) y ejército más grande (3+ caballeros) dan 2 PV.</p>
+        <p class="muted">Gana quien llegue a <b>${Engine.winVP(v)} PV</b> en su turno. Camino más largo (5+) y ejército más grande (3+ caballeros) dan 2 PV.</p>
+        <h4 class="tr-sub">Reglas de esta partida</h4>${rulesDetail(Engine.rulesOf(v), v.players.length, v.map)}
         <p class="muted">Atajos: ESPACIO tirar/terminar · 1-4 construir · T comercio · ESC cancelar</p>
         <button class="btn small ghost" data-close>CERRAR</button>`;
       box.innerHTML = h;
@@ -1097,11 +1171,12 @@ function renderModal() {
     }
     case 'rules': {
       h = `<h2>CÓMO SE JUEGA</h2><div class="rules">
-        <p>Cada partida genera una <b>isla aleatoria</b> de 19 casillas: bosque (madera), cantera (ladrillo), pradera (lana), campo (trigo), montaña (mineral) y desierto.</p>
+        <p>Cada partida genera una <b>isla aleatoria</b>: 19 casillas en el mapa normal (2-4 jugadores) o 30 en el grande (5-6 jugadores). Hay bosque (madera), cantera (ladrillo), pradera (lana), campo (trigo), montaña (mineral) y desierto.</p>
         <p><b>Inicio:</b> cada jugador coloca 2 poblados y 2 caminos (orden de ida y vuelta). El segundo poblado da recursos.</p>
         <p><b>Turno:</b> tira los dados → las casillas con ese número producen para los poblados (1) y ciudades (2) que las tocan. Después construye, comercia con el banco (4:1 o mejor con puertos) o con otros jugadores, y juega una carta de desarrollo.</p>
         <p><b>7:</b> quien tenga más de 7 cartas descarta la mitad y el jugador mueve al <b>ladrón</b>, que bloquea una casilla y roba una carta.</p>
         <p><b>Puntos:</b> poblado 1, ciudad 2, camino más largo 2, ejército más grande 2, cartas de punto 1. ¡Primero en llegar a <b>10</b> gana!</p>
+        <p><b>Reglas de la partida:</b> en la sala, el anfitrión pulsa <b>Cambiar reglas</b> para elegir el mapa, los puntos para ganar, el límite de cartas con un 7 y normas especiales (por ejemplo, que el ladrón se quede las cartas descartadas).</p>
         <p><b>Bots:</b> ★ Novato · ★★ Normal · ★★★ Difícil · ★★★★ Experto (planifica, cuenta cartas y juega a ganar).</p></div>
         <button class="btn small ghost" data-close>CERRAR</button>`;
       box.innerHTML = h;
@@ -1110,7 +1185,7 @@ function renderModal() {
     case 'devinfo': {
       const c = m.card;
       if (!P || !P.dev[c]) { closeModal(); return; }
-      const ready = P.dev[c] - P.devNew[c];
+      const ready = devReady(v, P, c);
       const play = devPlayable(c);
       let st;
       if (c === 'vp') st = '<span class="state ok">Ya cuenta: +' + P.dev.vp + ' PV</span>';

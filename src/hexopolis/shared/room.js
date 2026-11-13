@@ -24,13 +24,14 @@
       this.onChange = onChange || (() => {});
       this.onState = onState || (() => {}); // cada vez que cambia la partida (para guardarla)
       this.speed = 1;
+      this.rules = E.normRules({});
     }
 
     // ----- lobby -----
     info() {
       return {
         code: this.code, name: this.name, isPublic: this.isPublic, hostSeat: this.seats.findIndex((x) => x.kind === 'human' && x.token === this.host), local: this.local, speed: this.speed,
-        started: !!this.state, over: !!(this.state && this.state.phase === 'gameOver'),
+        started: !!this.state, over: !!(this.state && this.state.phase === 'gameOver'), rules: this.rules, max: E.MAX_PLAYERS,
         seats: this.seats.map((s, i) => ({ i, kind: s.kind, name: s.name, level: s.level, connected: s.kind === 'bot' || s.connected, host: s.token === this.host, color: E.COLORS[i] })),
       };
     }
@@ -45,7 +46,7 @@
         return { ok: true };
       }
       if (this.state) return { ok: false, error: 'La partida ya ha empezado' };
-      if (this.seats.length >= 4) return { ok: false, error: 'La sala está llena' };
+      if (this.seats.length >= E.MAX_PLAYERS) return { ok: false, error: 'La sala está llena' };
       this.seats.push({ kind: 'human', token, name: name || 'Jugador', client, connected: true });
       if (!this.host) this.host = token;
       this.sysChat(`${name} entra en la sala`);
@@ -90,7 +91,7 @@
     addBot(token, level) {
       if (token !== this.host) return 'Solo el anfitrión puede añadir bots';
       if (this.state && this.state.phase !== 'gameOver') return 'La partida ya ha empezado';
-      if (this.seats.length >= 4) return 'La sala está llena';
+      if (this.seats.length >= E.MAX_PLAYERS) return 'La sala está llena';
       level = Math.max(1, Math.min(4, level | 0 || 2));
       const used = new Set(this.seats.map((s) => s.name));
       const names = B.BOT_NAMES.filter((n) => !used.has(n));
@@ -115,15 +116,22 @@
       this.sendRoom();
     }
 
+    setRules(token, rules) {
+      if (token !== this.host) return 'Solo el anfitrión puede cambiar las reglas';
+      if (this.state && this.state.phase !== 'gameOver') return 'La partida ya ha empezado';
+      this.rules = E.normRules(rules);
+      this.sendRoom();
+    }
+
     start(token, opts = {}) {
       if (token !== this.host) return 'Solo el anfitrión puede empezar';
       if (this.state && this.state.phase !== 'gameOver') return 'Ya hay una partida en curso';
       if (this.seats.length < 2) return 'Se necesitan al menos 2 jugadores';
       // quitar humanos desconectados
       this.seats = this.seats.filter((s) => s.kind === 'bot' || s.connected);
-      this.state = E.createGame(this.seats.map((s, i) => ({ name: s.name, bot: s.kind === 'bot' ? s.level : 0, color: E.COLORS[i] })), opts);
+      this.state = E.createGame(this.seats.map((s, i) => ({ name: s.name, bot: s.kind === 'bot' ? s.level : 0, color: E.COLORS[i] })), Object.assign({}, opts, { rules: this.rules }));
       this.mem = {}; this.lastTurn = -1;
-      this.sysChat('¡Partida iniciada! Mapa nuevo generado.');
+      this.sysChat(`¡Partida iniciada! Mapa ${this.state.map === 'big' ? 'grande' : 'normal'} a ${this.rules.vp} puntos.`);
       this.sendRoom();
       this.broadcast([{ type: 'start' }]);
       this.schedule();
@@ -240,14 +248,14 @@
     snapshot() {
       return {
         v: 1, code: this.code, name: this.name, isPublic: this.isPublic, local: this.local, speed: this.speed,
-        host: this.host, lastTurn: this.lastTurn, chat: this.chat.slice(-30), state: this.state, savedAt: Date.now(),
+        host: this.host, rules: this.rules, lastTurn: this.lastTurn, chat: this.chat.slice(-30), state: this.state, savedAt: Date.now(),
         seats: this.seats.map((x) => ({ kind: x.kind, token: x.token, name: x.name, level: x.level, left: !!x.left })),
       };
     }
     static fromSnapshot(snap, opts = {}) {
       const r = new Room({ code: snap.code, name: snap.name, isPublic: snap.isPublic, local: snap.local, ...opts });
       const now = Date.now();
-      r.speed = snap.speed || 1; r.host = snap.host; r.lastTurn = snap.lastTurn; r.chat = snap.chat || []; r.state = snap.state;
+      r.speed = snap.speed || 1; r.rules = E.normRules(snap.rules || (snap.state && snap.state.rules)); r.host = snap.host; r.lastTurn = snap.lastTurn; r.chat = snap.chat || []; r.state = snap.state;
       // los humanos vuelven como desconectados: si alguien no regresa, un bot juega por él pasado el tiempo de gracia
       r.seats = snap.seats.map((x) => (x.kind === 'bot' ? { kind: 'bot', name: x.name, level: x.level, connected: true }
         : { kind: 'human', token: x.token, name: x.name, connected: false, client: null, left: x.left, discAt: x.left ? now - AUTO_GRACE : now }));

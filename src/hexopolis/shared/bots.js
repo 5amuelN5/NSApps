@@ -53,7 +53,7 @@
 
   function weights(s, pid, level) {
     const myVP = E.vp(s, pid, true);
-    const late = Math.min(1, myVP / 7);
+    const late = Math.min(1, myVP / (E.winVP(s) * 0.7));
     const w = {
       wood: 1.1 - 0.25 * late, brick: 1.1 - 0.25 * late, sheep: 0.85, wheat: 1.05 + 0.15 * late, ore: 0.9 + 0.3 * late,
     };
@@ -223,7 +223,7 @@
     const P = s.players[pid];
     const goals = [];
     const leader = maxVP(s, pid);
-    const K = 0.085 * Math.max(0.25, 1 - Math.max(leader, E.vp(s, pid, true)) / 13);
+    const K = 0.085 * Math.max(0.25, 1 - Math.max(leader, E.vp(s, pid, true)) / (E.winVP(s) + 3));
     const valOf = (v) => spotScore(s, pid, v, Math.min(level, 4), ctx);
 
     if (P.cities > 0) for (const v of E.legalCities(s, pid)) {
@@ -313,6 +313,7 @@
   }
 
   function domesticOffer(s, pid, level, cost, mem) {
+    if (E.rulesOf(s).noTrade) return null;
     const P = s.players[pid];
     const miss = RES.filter((r) => (cost[r] || 0) > P.res[r]);
     if (!miss.length) return null;
@@ -367,7 +368,7 @@
   function chooseRobber(s, pid, level) {
     let best = null, bs = -1e9;
     for (const h of s.board.hexes) {
-      if (h.id === s.board.robber) continue;
+      if (!E.robberHexOk(s, pid, h.id)) continue;
       const victims = E.robberVictims(s, pid, h.id);
       let sc = 0;
       const pips = hexPips(s, h.id);
@@ -420,7 +421,7 @@
   function considerDev(s, pid, level, mem, goals) {
     if (s.devPlayed) return null;
     const P = s.players[pid];
-    const can = (c) => P.dev[c] - P.devNew[c] > 0;
+    const can = (c) => P.dev[c] - (E.rulesOf(s).instantDev ? 0 : P.devNew[c]) > 0;
     const myVP = E.vp(s, pid, true);
 
     if (can('knight')) {
@@ -429,7 +430,7 @@
       for (const v of rh.v) { const b = s.board.vertices[v].b; if (b && b.owner === pid) onMe += hexPips(s, rh.id) * (b.type === 'city' ? 2 : 1); }
       const la = s.largestArmy;
       const armyGain = P.knights + 1 >= 3 && la.owner !== pid && P.knights + 1 > la.size;
-      const winNow = armyGain && myVP + 2 >= E.WIN_VP;
+      const winNow = armyGain && myVP + 2 >= E.winVP(s);
       let play = false;
       if (level === 1) play = Math.random() < 0.3;
       else if (level === 2) play = onMe >= 3 && s.phase === 'roll';
@@ -518,10 +519,10 @@
     }
     // segunda opción: cualquier objetivo asequible con buen valor
     for (const x of goals.slice(topN)) {
-      if (E.has(P.res, x.step) && (x.score > (g ? g.score * 0.55 : 0) || tot(P.res) > 7)) return actionFor(x);
+      if (E.has(P.res, x.step) && (x.score > (g ? g.score * 0.55 : 0) || tot(P.res) > E.rulesOf(s).hand)) return actionFor(x);
     }
     // con más de 7 cartas, intentar gastar
-    if (level >= 3 && tot(P.res) > 7) {
+    if (level >= 3 && tot(P.res) > E.rulesOf(s).hand) {
       for (const x of goals) {
         const bt = bankTradeToward(s, pid, x.step);
         if (bt) return bt;

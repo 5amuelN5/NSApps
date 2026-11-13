@@ -80,7 +80,7 @@ function code() {
 function roomList() {
   return [...rooms.values()].filter((r) => r.isPublic).map((r) => {
     const i = r.info();
-    return { code: i.code, name: i.name, players: i.seats.length, humans: i.seats.filter((s) => s.kind === 'human').length, started: i.started && !i.over, host: (i.seats.find((s) => s.host) || {}).name };
+    return { code: i.code, name: i.name, players: i.seats.length, max: i.max, humans: i.seats.filter((s) => s.kind === 'human').length, started: i.started && !i.over, host: (i.seats.find((s) => s.host) || {}).name };
   });
 }
 let listTimer = null;
@@ -180,6 +180,7 @@ wss.on('connection', (ws) => {
       case 'botLevel': if (c.room) err(c.room.setBotLevel(c.token, m.i, m.level)); break;
       case 'removeSeat': if (c.room) err(c.room.removeSeat(c.token, m.i)); break;
       case 'start': if (c.room) err(c.room.start(c.token)); break;
+      case 'setRules': if (c.room) err(c.room.setRules(c.token, m.rules)); break;
       case 'chat': if (c.room) c.room.say(c.token, m.text); break;
       case 'action': if (c.room) err(c.room.action(c.token, m.action)); break;
     }
