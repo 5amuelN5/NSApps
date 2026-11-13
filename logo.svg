@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="NS Games">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffb547"/>
+      <stop offset="0.5" stop-color="#ff5e8a"/>
+      <stop offset="1" stop-color="#7b5cff"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".35"/>
+      <stop offset=".55" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <!-- placa -->
+  <rect x="4" y="4" width="120" height="120" rx="34" fill="url(#bg)"/>
+  <rect x="4" y="4" width="120" height="120" rx="34" fill="url(#shine)"/>
+  <g transform="translate(6.4 9) scale(.9)">
+  <!-- mando -->
+  <path d="M38 44h52c12 0 20 9 22 21l4 22c1.6 9-5 15-12 15-5 0-8.6-3-11-7l-5-8H40l-5 8c-2.4 4-6 7-11 7-7 0-13.6-6-12-15l4-22c2-12 10-21 22-21z" fill="#fff"/>
+  <!-- cruceta -->
+  <rect x="31" y="60" width="22" height="8" rx="3" fill="#ff5e8a"/>
+  <rect x="38" y="53" width="8" height="22" rx="3" fill="#ff5e8a"/>
+  <!-- botones: N y S como dos gemas -->
+  <circle cx="84" cy="57" r="6.5" fill="#7b5cff"/>
+  <circle cx="95" cy="68" r="6.5" fill="#ffb547"/>
+  <circle cx="73" cy="68" r="6.5" fill="#ff5e8a"/>
+  <circle cx="84" cy="79" r="6.5" fill="#29c7ac"/>
+  </g>
+  <!-- chispa -->
+  <path d="M100 18l3.2 8.8L112 30l-8.8 3.2L100 42l-3.2-8.8L88 30l8.8-3.2z" fill="#fff" opacity=".9"/>
+</svg>

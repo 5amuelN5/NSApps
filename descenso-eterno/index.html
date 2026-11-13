@@ -1,0 +1,1142 @@
+<meta charset="utf-8">
+<title>Descenso Eterno</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;700&family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* Concepto: el pozo (arena) manda a la izquierda; a la derecha, un panel de piedra con pestañas. En móvil se apilan.
+   Tema oscuro único a propósito: estamos bajo tierra. Oro = se pierde al morir, Esencia = permanente, Estrellas = ascensión. */
+:root{
+  --abyss:#0e0b1c;
+  --stone:#181430;
+  --stone-2:#221d40;
+  --line:#352e5e;
+  --ink:#efeaff;
+  --muted:#9d95c9;
+  --gold:#f6b93b;
+  --essence:#4fe3cf;
+  --star:#c69cff;
+  --blood:#ff5470;
+  --ok:#82e39a;
+  --f-display:"Pixelify Sans","Courier New",monospace;
+  --f-body:"Nunito Sans",system-ui,-apple-system,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{background:var(--abyss);color:var(--ink)}
+body{font-family:var(--f-body);font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit}
+.app{max-width:1280px;margin:0 auto;padding-inline:16px;padding-block:14px 40px;display:flex;flex-direction:column;gap:14px}
+
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px;justify-content:space-between}
+.logo{font-family:var(--f-display);font-weight:700;font-size:28px;letter-spacing:.03em;line-height:1;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.logo small{font-size:12px;color:var(--muted);font-weight:400;letter-spacing:.14em;text-transform:uppercase}
+.wallet{display:flex;gap:8px;flex-wrap:wrap}
+.coin{display:flex;align-items:center;gap:8px;background:var(--stone);border:1px solid var(--line);border-radius:6px;padding:6px 12px;font-family:var(--f-display);font-size:19px;font-variant-numeric:tabular-nums}
+.coin i{width:11px;height:11px;display:inline-block;flex:none}
+.coin .lbl{font-family:var(--f-body);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.coin.gold{color:var(--gold)} .coin.gold i{background:var(--gold);transform:rotate(45deg);box-shadow:0 0 10px var(--gold)}
+.coin.es{color:var(--essence)} .coin.es i{background:var(--essence);border-radius:50%;box-shadow:0 0 10px var(--essence)}
+.coin.st{color:var(--star)} .coin.st i{background:var(--star);width:14px;height:14px;clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%)}
+.coin.bump{animation:bump .3s ease-out}
+@keyframes bump{40%{transform:scale(1.08)}}
+.hint{font-size:14px;color:var(--muted);min-height:21px}
+.hint::before{content:"▸ ";color:var(--gold);font-family:var(--f-display)}
+
+.main{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:900px){.main{grid-template-columns:minmax(0,1fr)}}
+.arena{display:flex;flex-direction:column;gap:10px;min-width:0}
+.floorbar{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.zone{font-family:var(--f-display);font-size:23px;line-height:1.1}
+.zone small{display:block;font-family:var(--f-body);font-size:11px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase;margin-bottom:2px}
+.depth{font-family:var(--f-display);font-size:15px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.depth b{color:var(--ink);font-size:21px;font-weight:500}
+.pips{display:flex;gap:4px;margin-top:5px;justify-content:flex-end}
+.pips span{width:10px;height:10px;background:var(--line);border-radius:2px}
+.pips span.on{background:var(--gold)}
+.pips span.boss{width:34px;background:var(--blood);opacity:.35}
+.pips span.boss.on{opacity:1}
+.stage{position:relative;width:100%;max-width:100%;aspect-ratio:16/10;border-radius:10px;overflow:hidden;border:1px solid var(--line);cursor:crosshair;touch-action:manipulation;user-select:none;-webkit-user-select:none;background:var(--abyss)}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+
+.controls{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+.controls .grow{flex:1}
+.btn{font-family:var(--f-display);font-size:15px;background:var(--stone-2);border:1px solid var(--line);border-radius:6px;padding:8px 14px;cursor:pointer}
+.btn:hover{border-color:var(--muted)}
+.btn.warn{color:var(--blood)}
+.btn.primary{background:var(--gold);color:#241a05;border-color:var(--gold)}
+.btn:focus-visible,.tab:focus-visible,.card:focus-visible,.choice:focus-visible,.toggle input:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.toggle{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted);cursor:pointer}
+.toggle input{accent-color:var(--gold);width:16px;height:16px;margin:0}
+.abil{display:flex;gap:8px;flex-wrap:wrap}
+.ab{position:relative;overflow:hidden;display:flex;align-items:center;gap:10px;background:var(--stone-2);border:1px solid var(--line);border-radius:8px;padding:8px 14px 8px 10px;cursor:pointer;font-family:var(--f-display);font-size:15px}
+.ab kbd{font-family:var(--f-display);font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 5px;background:var(--abyss)}
+.ab .sw{width:10px;height:10px;border-radius:50%;background:var(--c);box-shadow:0 0 10px var(--c)}
+.ab .cdv{position:absolute;inset:0;background:rgba(8,6,18,.72);transform-origin:left;pointer-events:none}
+.ab.ready{border-color:var(--c)}
+.ab.on{background:color-mix(in srgb,var(--c) 22%,var(--stone-2))}
+.ab .t{font-size:12px;color:var(--muted);position:relative}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:8px}
+.stat{background:var(--stone);border:1px solid var(--line);border-radius:6px;padding:6px 10px;min-width:0}
+.stat small{display:block;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.stat b{font-family:var(--f-display);font-weight:500;font-size:17px;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+.panel{background:var(--stone);border:1px solid var(--line);border-radius:10px;min-width:0;display:flex;flex-direction:column;position:sticky;top:calc(12px + env(safe-area-inset-top,0px));max-height:calc(100dvh - 24px)}
+@media (max-width:900px){.panel{position:static;max-height:none}}
+.tabs{display:flex;gap:2px;padding:6px 6px 0;border-bottom:1px solid var(--line);overflow-x:auto;flex:none}
+.tab{font-family:var(--f-display);font-size:15px;background:none;border:0;color:var(--muted);padding:10px 12px;border-radius:6px 6px 0 0;cursor:pointer;white-space:nowrap;position:relative}
+.tab[aria-selected="true"]{color:var(--ink);background:var(--stone-2)}
+.tab .dot{position:absolute;top:7px;right:3px;width:6px;height:6px;border-radius:50%;background:var(--gold)}
+.pane{padding:12px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;min-height:200px}
+.empty{color:var(--muted);font-size:14px;padding:24px 8px;text-align:center}
+.sect{font-family:var(--f-display);font-size:13px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding-top:4px}
+.buyamt{display:flex;gap:4px}
+.mini{font-family:var(--f-display);font-size:13px;background:var(--abyss);border:1px solid var(--line);border-radius:4px;padding:3px 8px;cursor:pointer;color:var(--muted);text-transform:none;letter-spacing:0}
+.mini[aria-pressed="true"]{color:var(--abyss);background:var(--gold);border-color:var(--gold)}
+.card{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:2px 12px;align-items:center;background:var(--stone-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;text-align:left;cursor:pointer;width:100%;transition:border-color .15s,transform .08s}
+.card:hover{border-color:var(--muted)}
+.card:active{transform:scale(.99)}
+.card.cant{opacity:.5;cursor:default}
+.card.cant:hover{border-color:var(--line)}
+.card.locked{opacity:.4;cursor:not-allowed}
+.card .ic{grid-row:span 2;width:40px;height:40px;border-radius:6px;background:var(--abyss);display:grid;place-items:center;align-self:start}
+.card .nm{font-weight:800;font-size:15px}
+.card .lv{font-family:var(--f-display);color:var(--muted);font-size:13px;font-weight:400;margin-left:8px}
+.card .ds{font-size:13px;color:var(--muted);grid-column:2;line-height:1.4}
+.card .ds .fx{color:var(--ink);font-family:var(--f-display);font-size:13px;white-space:pre-wrap}
+.card .cost{grid-row:span 2;grid-column:3;grid-row-start:1;font-family:var(--f-display);font-size:17px;text-align:right;white-space:nowrap;align-self:start;display:flex;flex-direction:column;align-items:flex-end}
+.card .cost small{font-size:12px;color:var(--muted)}
+.cost.g{color:var(--gold)} .cost.e{color:var(--essence)} .cost.s{color:var(--star)}
+.card.maxed .cost{color:var(--ok)}
+.card.bought{animation:glow .5s ease-out}
+@keyframes glow{0%{box-shadow:0 0 0 0 rgba(79,227,207,.7)}100%{box-shadow:0 0 0 12px rgba(79,227,207,0)}}
+.sect.tier{margin-top:6px;border-top:1px dashed var(--line);padding-top:10px}
+
+.modal{position:fixed;inset:0;background:rgba(6,4,14,.8);display:grid;place-items:center;padding:16px;z-index:50;backdrop-filter:blur(3px)}
+.dialog{background:var(--stone);border:1px solid var(--line);border-radius:12px;padding:22px;max-width:780px;width:100%;display:flex;flex-direction:column;gap:14px;max-height:calc(100dvh - 32px);overflow:auto;animation:pop .25s ease-out}
+@keyframes pop{from{transform:scale(.96);opacity:0}}
+.dialog h2{font-family:var(--f-display);font-size:30px;font-weight:500;margin:0;line-height:1.1;text-wrap:balance}
+.dialog p{margin:0;color:var(--muted)}
+.eyebrow{font-family:var(--f-display);font-size:13px;color:var(--gold);letter-spacing:.12em;text-transform:uppercase}
+.dialog .row{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.summary div{background:var(--stone-2);border-radius:6px;padding:8px 12px}
+.summary small{display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.summary b{font-family:var(--f-display);font-size:22px;font-weight:500;font-variant-numeric:tabular-nums}
+.gain{font-family:var(--f-display);font-size:22px;color:var(--essence)}
+.gain span{font-size:44px;text-shadow:0 0 24px rgba(79,227,207,.5)}
+.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+.choice{display:flex;flex-direction:column;gap:6px;text-align:left;background:var(--stone-2);border:1px solid var(--line);border-top:3px solid var(--rc);border-radius:8px;padding:14px;cursor:pointer;transition:transform .12s,border-color .12s}
+.choice:hover{transform:translateY(-3px);border-color:var(--rc)}
+.choice small{font-family:var(--f-display);color:var(--rc);text-transform:uppercase;letter-spacing:.12em;font-size:12px}
+.choice b{font-size:18px;font-weight:800}
+.choice span{color:var(--muted);font-size:14px}
+.gem{width:14px;height:14px;background:var(--rc);transform:rotate(45deg);display:block;box-shadow:0 0 12px var(--rc)}
+.blessrow{cursor:default}
+.blessrow:hover{border-color:var(--line)}
+.ascbox{background:radial-gradient(120% 140% at 100% 0%,rgba(198,156,255,.16),transparent 60%),var(--stone-2);border:1px solid var(--line);border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.ascbox p{margin:0;font-size:14px}
+.small{font-size:13px;color:var(--muted);margin:0}
+.lockline{color:var(--star)}
+.btn.star{background:var(--star);border-color:var(--star);color:#1e1033;align-self:flex-start}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.achs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
+.ach{background:var(--abyss);border:1px dashed var(--line);border-radius:6px;padding:8px 10px;display:flex;flex-direction:column;gap:2px;opacity:.55}
+.ach b{font-size:13px}
+.ach span{font-size:12px;color:var(--muted)}
+.ach.got{opacity:1;border-style:solid;border-color:color-mix(in srgb,var(--ok) 50%,var(--line));background:var(--stone-2)}
+.ach.got b::before{content:"✓ ";color:var(--ok)}
+.howto{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.howto li{display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;align-items:start;font-size:15px}
+.howto li i{width:12px;height:12px;margin:5px auto 0;display:block}
+.toasts{position:fixed;bottom:calc(16px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;z-index:60;pointer-events:none;width:min(calc(100vw - 32px),420px)}
+.toast{background:var(--stone-2);border:1px solid var(--line);border-radius:8px;padding:10px 14px;font-size:14px;animation:tin .25s ease-out;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.toast b{font-family:var(--f-display);font-weight:500}
+@keyframes tin{from{transform:translateY(10px);opacity:0}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="logo">Descenso Eterno <small>un pozo sin fondo</small></div>
+    <div class="wallet">
+      <div class="coin gold" id="goldBox" title="Oro: se pierde al terminar la partida"><i></i><span id="gold">0</span><span class="lbl">oro</span></div>
+      <div class="coin es" id="esBox" title="Esencia: permanente" hidden><i></i><span id="es">0</span><span class="lbl">esencia</span></div>
+      <div class="coin st" id="stBox" title="Estrellas: sobreviven a la Ascensión" hidden><i></i><span id="st">0</span><span class="lbl">estrellas</span></div>
+    </div>
+  </header>
+  <div class="hint" id="hint">Toca al monstruo para golpearlo.</div>
+
+  <main class="main">
+    <section class="arena">
+      <div class="floorbar">
+        <div class="zone"><small id="zoneSub">Zona 1</small><span id="zoneName">Cavernas Húmedas</span></div>
+        <div class="depth">Piso <b id="floor">1</b> · récord <span id="best">1</span><div class="pips" id="pips"></div></div>
+      </div>
+      <div class="stage" id="stage"><canvas id="cv"></canvas></div>
+      <div class="abil" id="abil" hidden></div>
+      <div class="controls">
+        <label class="toggle"><input type="checkbox" id="autoAdv" checked> Bajar solo al terminar cada piso</label>
+        <button class="btn" id="advance" hidden>Bajar al siguiente piso ▾</button>
+        <span class="grow"></span>
+        <button class="btn warn" id="retire" title="Termina la partida y cobra la Esencia">Retirarse</button>
+      </div>
+      <div class="stats" id="stats"></div>
+    </section>
+
+    <aside class="panel">
+      <div class="tabs" role="tablist" id="tabs"></div>
+      <div class="pane" id="pane"></div>
+    </aside>
+  </main>
+</div>
+<div class="modal" id="modal" hidden><div class="dialog" id="dialog" role="dialog" aria-modal="true"></div></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const rnd = (a, b) => a + Math.random() * (b - a);
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const UNITS = ['', 'K', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx', 'Sp', 'Oc', 'No', 'Dc'];
+function fmt(n) {
+  if (!isFinite(n)) return '∞';
+  if (n < 0) return '-' + fmt(-n);
+  if (n < 1000) return n < 10 && n % 1 ? n.toFixed(1) : Math.floor(n).toString();
+  const e = Math.floor(Math.log10(n) / 3);
+  if (e < UNITS.length) return (n / 10 ** (e * 3)).toFixed(2).replace(/\.?0+$/, '') + UNITS[e];
+  return n.toExponential(2).replace('+', '');
+}
+function mulberry(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+/* ================= MUNDO ================= */
+const ZONES = [
+  { n: 'Cavernas Húmedas',   h: 200, mobs: ['Babosa', 'Murciélago', 'Rata de cueva'],         boss: 'Rey Babosa' },
+  { n: 'Minas Olvidadas',    h: 30,  mobs: ['Minero hueco', 'Topo de hierro', 'Farol vivo'],  boss: 'El Capataz' },
+  { n: 'Raíces Profundas',   h: 110, mobs: ['Raíz rabiosa', 'Escarabajo', 'Espora'],          boss: 'Madre Raíz' },
+  { n: 'Ríos de Magma',      h: 12,  mobs: ['Salamandra', 'Escoria', 'Brasa errante'],        boss: 'Señor del Magma' },
+  { n: 'Cristales Cantores', h: 185, mobs: ['Eco de cuarzo', 'Prisma', 'Gólem de cristal'],   boss: 'La Soprano' },
+  { n: 'Ciudad Hundida',     h: 165, mobs: ['Ahogado', 'Guardia oxidado', 'Anguila'],         boss: 'El Alcalde Hundido' },
+  { n: 'Bosque de Hongos',   h: 290, mobs: ['Seta furiosa', 'Nube de esporas', 'Micelio'],    boss: 'Reina Micelio' },
+  { n: 'Osario',             h: 45,  mobs: ['Esqueleto', 'Calavera', 'Cuervo'],               boss: 'El Coleccionista' },
+  { n: 'Vacío Estelar',      h: 255, mobs: ['Estrella caída', 'Ojo errante', 'Mancha'],       boss: 'El Que Mira' },
+  { n: 'Corazón del Abismo', h: 340, mobs: ['Latido', 'Vena', 'Coágulo'],                     boss: 'Corazón del Abismo' },
+];
+const ROMAN = ['', ' II', ' III', ' IV', ' V', ' VI', ' VII', ' VIII', ' IX', ' X'];
+const zoneIdx = f => Math.floor((f - 1) / 10);
+const zoneOf = f => ZONES[zoneIdx(f) % ZONES.length];
+const cycleOf = f => Math.floor((f - 1) / 100);
+const PER_FLOOR = 8;
+const isBoss = f => f % 10 === 0;
+const enemyHp = f => 8 * Math.pow(1.2, f - 1);
+const enemyAtk = f => 1.4 * Math.pow(1.18, f - 1);
+const enemyGold = f => 2 * Math.pow(1.155, f - 1);
+
+/* ================= ESTADO ================= */
+const S = { meta: {}, astral: {}, ach: {}, esencia: 0, esTotal: 0, esCycle: 0, stars: 0, starsTotal: 0,
+  best: 1, runs: 0, kills: 0, clicks: 0, bossKills: 0, ascensions: 0, bought: 0, tab: 'forja', buy: 1 };
+let R = null;
+const lv = id => S.meta[id] || 0;
+const al = id => S.astral[id] || 0;
+
+function newRun() {
+  const start = Math.max(1, Math.min(1 + 5 * lv('atajo'), Math.floor(S.best * (.6 + .2 * al('caida')))));
+  R = { floor: start, fk: 0, maxFloor: start, gold: 0, goldRun: 0, kills: 0, up: {}, bless: [], hp: 1, enemy: null,
+    spawn: .8, atkT: 0, autoT: 0, cd: {}, act: {}, autoAdv: true, revived: false, blessAt: {}, t: 0 };
+  for (let i = 0; i < lv('memoria'); i++) R.bless.push(rollBlessings(1)[0]);
+  for (let i = 0; i < Math.floor((start - 1) / 10); i++) R.bless.push(rollBlessings(3).sort((a, b) => b.r - a.r)[0]);
+  const st = stats();
+  let skip = 0; for (let f = 1; f < start; f++) skip += enemyGold(f) * (isBoss(f) ? 12 : PER_FLOOR) * .6;
+  R.gold = herencia(lv('herencia')) + skip * st.goldMul;
+  R.hp = st.hp;
+  const cb = document.getElementById('autoAdv'); if (cb) cb.checked = true;
+}
+
+/* ================= BENDICIONES (roguelite: 1 de 3 cada 5 pisos) ================= */
+const BLESS = [
+  { id: 'fuerza',    n: 'Fuerza Bruta',     k: 'atkP',   base: 25, d: v => `+${v}% de ataque` },
+  { id: 'roble',     n: 'Corazón de Roble', k: 'hpP',    base: 30, d: v => `+${v}% de vida máxima` },
+  { id: 'colmillo',  n: 'Colmillo',         k: 'vamp',   base: 2,  d: v => `Te curas el ${v}% del daño que haces` },
+  { id: 'espinas',   n: 'Espinas',          k: 'thorns', base: 40, d: v => `Cuando te golpean, devuelves un ${v}% de tu ataque` },
+  { id: 'eco',       n: 'Eco de Acero',     k: 'double', base: 12, d: v => `${v}% de probabilidad de golpear dos veces` },
+  { id: 'bolsillos', n: 'Bolsillos Hondos', k: 'goldP',  base: 40, d: v => `+${v}% de oro` },
+  { id: 'frenesi',   n: 'Frenesí',          k: 'spdP',   base: 12, d: v => `+${v}% de velocidad de ataque` },
+  { id: 'verdugo',   n: 'Verdugo',          k: 'bossP',  base: 50, d: v => `+${v}% de daño contra jefes` },
+  { id: 'certero',   n: 'Ojo Certero',      k: 'critP',  base: 6,  d: v => `+${v}% de probabilidad de crítico` },
+  { id: 'egida',     n: 'Égida',            k: 'block',  base: 1,  int: true, d: v => `Bloqueas ${v === 1 ? 'el primer golpe' : `los ${v} primeros golpes`} de cada enemigo` },
+  { id: 'trueno',    n: 'Puño de Trueno',   k: 'clickP', base: 60, d: v => `+${v}% de daño por clic` },
+  { id: 'cosecha',   n: 'Cosecha de Almas', k: 'esP',    base: 15, d: v => `+${v}% de Esencia al terminar la partida` },
+  { id: 'piedra',    n: 'Piel de Piedra',   k: 'defP',   base: 6,  d: v => `−${v}% de daño recibido` },
+  { id: 'savia',     n: 'Savia',            k: 'regenP', base: 1,  d: v => `Regeneras un ${String(v).replace('.', ',')}% de vida por segundo` },
+];
+const RAR = [
+  { n: 'Común', m: 1, c: '#c9c2ef' }, { n: 'Rara', m: 1.8, c: '#5fb3ff' },
+  { n: 'Épica', m: 3, c: '#c69cff' }, { n: 'Legendaria', m: 5, c: '#f6b93b' },
+];
+function rarWeights() { const L = lv('rareza'); return [Math.max(10, 66 - 9 * L), 26 + 4 * L, 7 + 3.5 * L, 1 + 1.5 * L]; }
+function rollRarity() { const w = rarWeights(), tot = w.reduce((a, b) => a + b); let x = Math.random() * tot; for (let i = 0; i < w.length; i++) { if ((x -= w[i]) < 0) return i; } return 0; }
+function blessValue(b, r) { const v = b.base * RAR[r].m; return b.int ? Math.max(1, Math.floor(v)) : Math.round(v * 10) / 10; }
+function rollBlessings(n) {
+  const pool = [...BLESS].sort(() => Math.random() - .5).slice(0, n);
+  return pool.map(b => { const r = rollRarity(); return { id: b.id, r, v: blessValue(b, r) }; });
+}
+function blessSum() {
+  const o = {};
+  for (const x of R.bless) { const b = BLESS.find(y => y.id === x.id); o[b.k] = (o[b.k] || 0) + x.v; }
+  return o;
+}
+
+/* ================= ESTADÍSTICAS ================= */
+function stats() {
+  const u = id => R.up[id] || 0, B = blessSum(), b = k => B[k] || 0;
+  const achN = Object.keys(S.ach).length;
+  const glob = (1 + .03 * achN) * 1.6 ** al('poder') * (1 + .1 * S.starsTotal);
+  const metaAtk = (1 + .15 * lv('filo')) * (1 + .01 * lv('profundo') * S.best);
+  const atk = 4 * (1 + .5 * u('atk')) * 2 ** Math.floor(u('atk') / 10) * metaAtk * (1 + b('atkP') / 100) * glob;
+  const hp = 45 * (1 + .35 * u('hp')) * 2 ** Math.floor(u('hp') / 10) * (1 + .15 * lv('piel')) * (1 + b('hpP') / 100) * glob;
+  const click = ((2 + 2 * u('click')) * 2 ** Math.floor(u('click') / 10) * metaAtk * glob + atk * (.05 + .04 * lv('mano'))) * (1 + b('clickP') / 100);
+  return {
+    atk, hp, click,
+    spd: (1 + .06 * u('spd')) * (1 + b('spdP') / 100),
+    crit: Math.min(.9, .05 + .02 * u('crit') + b('critP') / 100),
+    critDmg: 2 + .3 * lv('letal'),
+    def: Math.min(.85, 1 - .96 ** u('armor') + b('defP') / 100),
+    regen: hp * (.005 * u('regen') + b('regenP') / 100),
+    goldMul: (1 + .12 * lv('codicia')) * (1 + b('goldP') / 100) * 2 ** al('oro'),
+    esMul: (1 + .1 * lv('eco')) * (1 + b('esP') / 100) * 2 ** al('torrente'),
+    bossMul: (1 + .25 * lv('cazador')) * (1 + b('bossP') / 100),
+    bossTime: 30 + 3 * lv('cazador'),
+    vamp: b('vamp') / 100, thorns: b('thorns') / 100, double: Math.min(.75, b('double') / 100),
+    block: b('block'), auto: lv('auto') * 1.5, revive: lv('aliento') > 0,
+  };
+}
+
+/* ================= ÁRBOL DE ESENCIA (permanente) ================= */
+const TIERS = [
+  { n: 'Raíz', req: 0 }, { n: 'Tronco', req: 25 }, { n: 'Copa', req: 50 }, { n: 'Corona', req: 80 },
+];
+const META = [
+  { id: 'filo',      t: 0, n: 'Filo Ancestral',    base: 4,   g: 1.45, d: l => `+${15 * l}% de ataque y clic` },
+  { id: 'piel',      t: 0, n: 'Huesos de Piedra',  base: 4,   g: 1.45, d: l => `+${15 * l}% de vida` },
+  { id: 'codicia',   t: 0, n: 'Codicia',           base: 6,   g: 1.5,  d: l => `+${12 * l}% de oro` },
+  { id: 'mano',      t: 0, n: 'Mano Firme',        base: 5,   g: 1.5,  d: l => `El clic suma un ${5 + 4 * l}% de tu ataque (antes 5%)` },
+  { id: 'herencia',  t: 0, n: 'Herencia',          base: 10,  g: 1.75, max: 12, d: l => l ? `Empiezas cada partida con ${fmt(herencia(l))} de oro` : 'Empiezas cada partida con oro' },
+  { id: 'eco',       t: 0, n: 'Eco del Vacío',     base: 12,  g: 1.6,  d: l => `+${10 * l}% de Esencia` },
+  { id: 'auto',      t: 1, n: 'Espíritu Golpeador', base: 20, g: 2,    max: 8, d: l => `Un espíritu da ${fmt(1.5 * l)} clics por segundo por ti` },
+  { id: 'u_furia',   t: 1, n: 'Despertar: Furia',  base: 25,  g: 1,    max: 1, d: () => 'Habilidad: triple de daño durante 10 s' },
+  { id: 'u_cura',    t: 1, n: 'Despertar: Sanación', base: 35, g: 1,   max: 1, d: () => 'Habilidad: recuperas el 60% de la vida' },
+  { id: 'atajo',     t: 1, n: 'Atajo',             base: 40,  g: 1.9,  max: 16, d: l => l ? `Empiezas en el piso ${1 + 5 * l} con su oro (hasta el 60% de tu récord)` : 'Empiezas más abajo, con el oro que habrías ganado' },
+  { id: 'aliento',   t: 1, n: 'Segundo Aliento',   base: 75,  g: 1,    max: 1, d: () => 'Una vez por partida, al morir te levantas con media vida' },
+  { id: 'cazador',   t: 2, n: 'Cazador de Jefes',  base: 60,  g: 1.7,  max: 15, d: l => `+${25 * l}% de daño a jefes y +${3 * l} s de tiempo` },
+  { id: 'letal',     t: 2, n: 'Golpe Letal',       base: 50,  g: 1.6,  max: 30, d: l => `Los críticos hacen ×${(2 + .3 * l).toFixed(1).replace('.', ',')}` },
+  { id: 'u_lluvia',  t: 2, n: 'Despertar: Lluvia de Oro', base: 120, g: 1, max: 1, d: () => 'Habilidad: ×5 de oro durante 12 s' },
+  { id: 'eleccion',  t: 2, n: 'Más Caminos',       base: 150, g: 5,    max: 2, d: l => `Eliges entre ${3 + l} bendiciones` },
+  { id: 'rareza',    t: 3, n: 'Favor de los Dioses', base: 250, g: 2.2, max: 6, d: l => `Bendiciones raras más frecuentes (${Math.round(rarWeights()[3] / rarWeights().reduce((a, b) => a + b) * 100)}% legendaria)` },
+  { id: 'memoria',   t: 3, n: 'Memoria Ancestral', base: 400, g: 3,    max: 3, d: l => `Empiezas cada partida con ${l} bendición${l === 1 ? '' : 'es'} al azar` },
+  { id: 'profundo',  t: 3, n: 'Raíz Profunda',     base: 500, g: 2.5,  max: 5, d: l => `+${l}% de ataque por cada piso de tu récord (ahora ×${fmt(1 + .01 * l * S.best)})` },
+];
+const herencia = l => l ? 20 * 3.5 ** l : 0;
+const metaCost = (m, l) => Math.ceil(m.base * m.g ** l);
+const tierOpen = t => S.best >= TIERS[t].req;
+function buyMeta(id) {
+  const m = META.find(x => x.id === id), l = lv(id);
+  if (!tierOpen(m.t) || (m.max && l >= m.max)) return false;
+  const c = metaCost(m, l); if (S.esencia < c) return false;
+  S.esencia -= c; S.meta[id] = l + 1;
+  if (id === 'piel') R.hp = Math.min(R.hp * 1.15, stats().hp);
+  return true;
+}
+const metaAffordable = () => META.some(m => tierOpen(m.t) && !(m.max && lv(m.id) >= m.max) && S.esencia >= metaCost(m, lv(m.id)));
+
+/* ================= HABILIDADES ================= */
+const ABIL = [
+  { id: 'furia',  n: 'Furia',         key: '1', cd: 60,  dur: 10, meta: 'u_furia',  col: '#ff5470' },
+  { id: 'cura',   n: 'Sanación',      key: '2', cd: 45,  dur: 0,  meta: 'u_cura',   col: '#82e39a' },
+  { id: 'lluvia', n: 'Lluvia de Oro', key: '3', cd: 120, dur: 12, meta: 'u_lluvia', col: '#f6b93b' },
+];
+function useAbility(id) {
+  const a = ABIL.find(x => x.id === id);
+  if (!lv(a.meta) || (R.cd[id] || 0) > 0 || R.over) return;
+  R.cd[id] = a.cd; R.act[id] = a.dur;
+  if (id === 'cura') { R.hp = Math.min(ST.hp, R.hp + ST.hp * .6); if (!SIM) burst(HX(), GY() - 20 * SC(), '#82e39a', 18, 1.5); }
+  if (!SIM) { floatText(HX(), GY() - 45 * SC(), a.n + '!', a.col, 22); S.usedAbility = true; }
+}
+let ST = null; // caché por tick
+
+/* ================= ASCENSIÓN (Estrellas) ================= */
+const ASC_FLOOR = 60;
+const ASTRAL = [
+  { id: 'poder',    n: 'Poder Estelar',     base: 1, g: 1.8, d: l => `Ataque y vida ×${fmt(1.6 ** l)}` },
+  { id: 'torrente', n: 'Torrente de Almas', base: 1, g: 2,   d: l => `Esencia ×${fmt(2 ** l)}` },
+  { id: 'oro',      n: 'Oro Astral',        base: 1, g: 1.7, d: l => `Oro ×${fmt(2 ** l)}` },
+  { id: 'guia',     n: 'Guía Estelar',      base: 2, g: 1, max: 1, d: () => 'Las bendiciones se eligen solas (la más rara)' },
+  { id: 'forja',    n: 'Forja Automática',  base: 3, g: 1, max: 1, d: () => 'La Forja compra mejoras sola' },
+  { id: 'instinto', n: 'Instinto',          base: 3, g: 1, max: 1, d: () => 'Las habilidades se lanzan solas' },
+  { id: 'raices',   n: 'Raíces Eternas',    base: 4, g: 1, max: 1, d: () => 'Al ascender conservas los Despertares y el Espíritu Golpeador' },
+  { id: 'caida',    n: 'Caída Libre',       base: 5, g: 1, max: 1, d: () => 'El Atajo llega hasta el 80% de tu récord' },
+];
+const starGain = () => Math.floor(Math.sqrt(S.esCycle / 150));
+const astralCost = (a, l) => Math.ceil(a.base * a.g ** l);
+function buyAstral(id) {
+  const a = ASTRAL.find(x => x.id === id), l = al(id);
+  if (a.max && l >= a.max) return false;
+  const c = astralCost(a, l); if (S.stars < c) return false;
+  S.stars -= c; S.astral[id] = l + 1; return true;
+}
+function ascend() {
+  const g = starGain(); if (g < 1 || S.best < ASC_FLOOR) return;
+  S.stars += g; S.starsTotal += g; S.ascensions++;
+  const keep = {};
+  if (al('raices')) for (const k of ['u_furia', 'u_cura', 'u_lluvia', 'auto']) if (S.meta[k]) keep[k] = S.meta[k];
+  S.meta = keep; S.esencia = 0; S.esCycle = 0;
+  closeModal(); newRun(); buildCave(); renderAll();
+  toast(`<b>Has ascendido.</b> +${g} Estrellas. Todo es más fuerte ahora.`, 5000);
+  shake = 14;
+}
+function autoForge() {
+  for (let k = 0; k < 4; k++) {
+    let best = null, bc = Infinity;
+    for (const u of UPG) { const l = R.up[u.id] || 0; if (u.max && l >= u.max) continue; const c = costOf(u.base, u.g, l, 1) * (u.id === 'atk' || u.id === 'hp' ? .5 : 1); if (c < bc) { bc = c; best = u; } }
+    if (!best) return;
+    const l = R.up[best.id] || 0, c = costOf(best.base, best.g, l, 1);
+    if (R.gold < c) return;
+    const before = stats().hp; R.gold -= c; R.up[best.id] = l + 1; S.bought++;
+    if (best.id === 'hp') R.hp += stats().hp - before;
+  }
+}
+
+/* ================= LOGROS (+3% ataque y vida cada uno) ================= */
+const ACH = [
+  { id: 'f10',   n: 'Primer jefe',          d: 'Supera el piso 10',                   c: () => S.best > 10 },
+  { id: 'f25',   n: 'Bajo tierra',          d: 'Llega al piso 25',                    c: () => S.best >= 25 },
+  { id: 'f50',   n: 'Turista del abismo',   d: 'Llega al piso 50',                    c: () => S.best >= 50 },
+  { id: 'f80',   n: 'Huesos y más huesos',  d: 'Llega al piso 80',                    c: () => S.best >= 80 },
+  { id: 'f100',  n: 'El Corazón late',      d: 'Supera el piso 100',                  c: () => S.best > 100 },
+  { id: 'f150',  n: 'Sin fondo',            d: 'Llega al piso 150',                   c: () => S.best >= 150 },
+  { id: 'f200',  n: 'Más allá',             d: 'Llega al piso 200',                   c: () => S.best >= 200 },
+  { id: 'f300',  n: 'Eterno',               d: 'Llega al piso 300',                   c: () => S.best >= 300 },
+  { id: 'k100',  n: 'Exterminador',         d: 'Derrota 100 monstruos',               c: () => S.kills >= 100 },
+  { id: 'k1k',   n: 'Plaga',                d: 'Derrota 1.000 monstruos',             c: () => S.kills >= 1e3 },
+  { id: 'k10k',  n: 'Extinción',            d: 'Derrota 10.000 monstruos',            c: () => S.kills >= 1e4 },
+  { id: 'k100k', n: 'Fin de la especie',    d: 'Derrota 100.000 monstruos',           c: () => S.kills >= 1e5 },
+  { id: 'c500',  n: 'Dedo de hierro',       d: 'Haz 500 clics',                       c: () => S.clicks >= 500 },
+  { id: 'c5k',   n: 'Tendinitis',           d: 'Haz 5.000 clics',                     c: () => S.clicks >= 5e3 },
+  { id: 'r5',    n: 'Testarudo',            d: 'Termina 5 partidas',                  c: () => S.runs >= 5 },
+  { id: 'r25',   n: 'Una más y lo dejo',    d: 'Termina 25 partidas',                 c: () => S.runs >= 25 },
+  { id: 'boss25',n: 'Cazacoronas',          d: 'Derrota 25 jefes',                    c: () => S.bossKills >= 25 },
+  { id: 'epic',  n: 'Bendecido',            d: 'Elige una bendición épica o mejor',   c: () => !!S.epic },
+  { id: 'saint', n: 'Santo',                d: 'Ten 10 bendiciones en una partida',   c: () => R.bless.length >= 10 },
+  { id: 'abil',  n: 'Despierto',            d: 'Usa una habilidad',                   c: () => !!S.usedAbility },
+  { id: 'gold',  n: 'Dragón',               d: 'Ten 1M de oro a la vez',              c: () => R.gold >= 1e6 },
+  { id: 'gold2', n: 'Tesoro del abismo',    d: 'Ten 1T de oro a la vez',              c: () => R.gold >= 1e12 },
+  { id: 'asc1',  n: 'Polvo de estrellas',   d: 'Asciende por primera vez',            c: () => S.ascensions >= 1 },
+  { id: 'asc5',  n: 'Constelación',         d: 'Asciende 5 veces',                    c: () => S.ascensions >= 5 },
+];
+function checkAch() {
+  for (const a of ACH) if (!S.ach[a.id] && a.c()) {
+    S.ach[a.id] = Date.now();
+    if (!SIM) toast(`Logro: <b>${a.n}</b> · +3% de ataque y vida`, 4000);
+  }
+}
+
+/* ================= COMBATE ================= */
+function spawnEnemy() {
+  const f = R.floor, boss = isBoss(f), z = zoneOf(f), seed = Math.random();
+  const r = mulberry(Math.floor(seed * 1e9));
+  const hpMax = enemyHp(f) * (boss ? 9 : 1);
+  R.enemy = {
+    name: boss ? z.boss : pick(z.mobs), boss, hp: hpMax, max: hpMax,
+    atk: enemyAtk(f) * (boss ? 2.2 : 1), gold: enemyGold(f) * (boss ? 12 : 1),
+    interval: boss ? 1.3 : 1.6, atkT: 0, seed,
+    col: `hsl(${(z.h + r() * 60 - 30 + 360) % 360},${55 + r() * 25}%,${boss ? 52 : 48 + r() * 14}%)`,
+    size: boss ? 22 : 11 + r() * 4, wx: .85 + r() * .4, wy: .8 + r() * .35,
+    spikes: Math.floor(r() * 7), eyes: 1 + Math.floor(r() * 3), horns: r() < .35,
+    flash: 0, kx: 0, lunge: 0, born: 0, timer: boss ? ST.bossTime : 0, blocks: ST.block,
+  };
+}
+
+function hitEnemy(dmg, crit, x, y, kind) {
+  const e = R.enemy; if (!e) return;
+  e.hp -= dmg; e.flash = .09; e.kx = Math.min(e.kx + (crit ? 10 : 4), 18);
+  if (ST.vamp) R.hp = Math.min(ST.hp, R.hp + dmg * ST.vamp);
+  if (!SIM) {
+    floatText(x ?? EX() + rnd(-20, 20), y ?? GY() - e.size * SC() * 2.2, fmt(dmg) + (crit ? '!' : ''),
+      crit ? '#ffd257' : kind === 'click' ? '#bff7ee' : '#ffffff', crit ? 26 : kind === 'click' ? 17 : 19);
+    if (crit) { shake = Math.max(shake, 5); burst(EX(), GY() - e.size * SC(), e.col, 10, 3.2); }
+  }
+  if (e.hp <= 0) killEnemy();
+}
+
+function heroAttack() {
+  const e = R.enemy; if (!e) return;
+  let dmg = ST.atk * (e.boss ? ST.bossMul : 1) * furyMul();
+  const crit = Math.random() < ST.crit; if (crit) dmg *= ST.critDmg;
+  heroLunge = 1;
+  hitEnemy(dmg, crit, null, null, 'hit');
+  if (R.enemy && ST.double && Math.random() < ST.double) hitEnemy(dmg * .7, false, null, null, 'hit');
+}
+
+function clickAttack(x, y, auto) {
+  const e = R.enemy; if (!e) return;
+  let dmg = ST.click * (e.boss ? ST.bossMul : 1) * furyMul();
+  const crit = Math.random() < ST.crit; if (crit) dmg *= ST.critDmg;
+  if (!auto) S.clicks++;
+  if (!SIM) sparks(x ?? EX(), y ?? GY() - e.size * SC(), auto ? '#4fe3cf' : '#ffe9a8');
+  hitEnemy(dmg, crit, x, y, 'click');
+}
+
+function enemyAttack() {
+  const e = R.enemy;
+  e.lunge = 1;
+  if (e.blocks > 0) { e.blocks--; if (!SIM) floatText(HX(), GY() - 40 * SC() / 1.4, 'Bloqueado', '#9fd4ff', 15); return; }
+  const d = e.atk * (1 - ST.def);
+  R.hp -= d; heroFlash = .15;
+  if (!SIM) { floatText(HX() + rnd(-12, 12), GY() - 34 * SC(), '-' + fmt(d), '#ff6b81', 16); shake = Math.max(shake, e.boss ? 6 : 2.5); }
+  if (ST.thorns) hitEnemy(ST.atk * ST.thorns, false, null, null, 'thorns');
+  if (R.hp <= 0) heroDie();
+}
+
+function killEnemy() {
+  const e = R.enemy; const g = e.gold * ST.goldMul * goldRainMul();
+  R.gold += g; R.goldRun += g; R.kills++; S.kills++;
+  if (!SIM) { dying.push({ ...e, dead: 0 }); coins(EX(), GY() - e.size * SC(), Math.min(14, 4 + Math.floor(Math.log10(g + 1) * 2))); floatText(EX(), GY() - e.size * SC() * 3, '+' + fmt(g), '#f6b93b', 18); bump('#goldBox'); }
+  R.enemy = null; R.spawn = .45;
+  if (e.boss) { S.bossKills++; R.fk = PER_FLOOR; } else R.fk++;
+  if (R.fk >= PER_FLOOR) floorCleared();
+}
+
+function floorCleared() {
+  R.fk = 0;
+  const f = R.floor;
+  if (isBoss(f)) { R.bossFailed = false; if (!SIM) { toast(`<b>${zoneOf(f).boss}</b> ha caído. Se abre ${zoneOf(f + 1).n}.`); shake = 10; } }
+  if (f % 5 === 0 && !R.blessAt[f]) { R.blessAt[f] = 1; offerBlessing(); }
+  if (R.autoAdv || R.floor < R.maxFloor) goDown();
+}
+function goDown() {
+  R.floor++; R.fk = 0;
+  if (R.floor > R.maxFloor) R.maxFloor = R.floor;
+  if (R.floor > S.best) S.best = R.floor;
+  if (!SIM && zoneIdx(R.floor) !== caveKey) buildCave();
+}
+
+function bossFail() {
+  R.enemy = null; R.spawn = 1; R.fk = 0;
+  R.floor = Math.max(1, R.floor - 1); R.autoAdv = false; R.bossFailed = true;
+  $('#autoAdv').checked = false;
+  if (!SIM) { toast('<b>Se acabó el tiempo.</b> El jefe te echa un piso atrás.'); buildCave(); }
+}
+
+function heroDie() {
+  if (ST.revive && !R.revived) {
+    R.revived = true; R.hp = ST.hp * .5;
+    if (!SIM) { toast('<b>Segundo Aliento.</b> Te levantas con la mitad de la vida.'); burst(HX(), GY() - 20 * SC(), '#82e39a', 24, 2); }
+    return;
+  }
+  endRun('death');
+}
+
+const esGain = () => R.maxFloor < 3 ? 0 : Math.max(1, Math.floor(R.maxFloor ** 1.6 / 6 * ST.esMul));
+const EPITAFIOS = ['El pozo se traga a otro valiente.', 'Tu eco todavía resuena en la oscuridad.', 'Las piedras recordarán tu nombre.', 'Algo, allá abajo, ha sonreído.', 'Caer también es una forma de bajar.'];
+function endRun(reason) {
+  ST = stats();
+  const es = esGain();
+  S.esencia += es; S.esTotal += es; S.esCycle += es; S.runs++;
+  const sum = { floor: R.floor, max: R.maxFloor, kills: R.kills, gold: R.goldRun, es, reason };
+  R.over = true;
+  if (SIM) { SIM_DEATH = sum; return; }
+  showRunSummary(sum);
+}
+function showRunSummary(sum) {
+  showModal(`
+    <small class="eyebrow">Partida ${S.runs} terminada</small>
+    <h2>${sum.reason === 'death' ? 'Has caído en el piso ' + sum.floor : 'Te retiras en el piso ' + sum.floor}</h2>
+    <p>${pick(EPITAFIOS)}</p>
+    <div class="summary">
+      <div><small>Piso más hondo</small><b>${sum.max}</b></div>
+      <div><small>Enemigos</small><b>${fmt(sum.kills)}</b></div>
+      <div><small>Oro ganado</small><b>${fmt(sum.gold)}</b></div>
+      <div><small>Récord</small><b>${S.best}</b></div>
+    </div>
+    <div class="gain"><span>+${fmt(sum.es)}</span> Esencia</div>
+    <p>La Esencia no se pierde nunca. Gástala en el <b>Árbol</b> para que el próximo descenso llegue más hondo.</p>
+    <div class="row"><button class="btn primary" id="again">Volver a descender</button></div>`);
+  $('#again').addEventListener('click', () => { closeModal(); newRun(); buildCave(); renderAll(); });
+  $('#again').focus();
+}
+
+function offerBlessing() {
+  const n = 3 + lv('eleccion');
+  const opts = rollBlessings(n);
+  if (SIM || (al('guia') && S.autoBless !== false)) { R.bless.push(opts.sort((a, b) => b.r - a.r)[0]); return; }
+  showModal(`
+    <small class="eyebrow">Piso ${R.floor} superado · bendición</small>
+    <h2>El pozo te ofrece un regalo</h2>
+    <p>Elige una. Se acumula con las demás y dura hasta el final de esta partida.</p>
+    <div class="choices">${opts.map((o, i) => { const b = BLESS.find(x => x.id === o.id); return `
+      <button class="choice" data-i="${i}" style="--rc:${RAR[o.r].c}">
+        <small>${RAR[o.r].n}</small><b>${b.n}</b><span>${b.d(o.v)}</span>
+      </button>`; }).join('')}</div>`);
+  $('#dialog').querySelectorAll('.choice').forEach(btn => btn.addEventListener('click', () => {
+    const o = opts[+btn.dataset.i]; R.bless.push(o);
+    closeModal(); toast(`Bendición: <b>${BLESS.find(x => x.id === o.id).n}</b>`);
+    if (o.r >= 2) S.epic = true;
+    renderAll();
+  }));
+  $('#dialog .choice').focus();
+}
+
+const furyMul = () => (R.act.furia || 0) > 0 ? 3 : 1;
+const goldRainMul = () => (R.act.lluvia || 0) > 0 ? 5 : 1;
+
+let SIM = false, SIM_DEATH = null;
+function tick(dt) {
+  if (R.over) return;
+  ST = stats();
+  R.t += dt;
+  if (R.enemy && R.enemy.boss) { R.enemy.timer -= dt; if (R.enemy.timer <= 0) { bossFail(); return; } }
+  R.hp = Math.min(ST.hp, R.hp + ST.regen * dt);
+  for (const a of ABIL) {
+    R.cd[a.id] = Math.max(0, (R.cd[a.id] || 0) - dt); R.act[a.id] = Math.max(0, (R.act[a.id] || 0) - dt);
+    if (al('instinto') && lv(a.meta) && !R.cd[a.id] && R.enemy && (a.id !== 'cura' || R.hp < ST.hp * .5)) useAbility(a.id);
+  }
+  if (al('forja')) autoForge();
+  if (ST.auto && R.enemy) { R.autoT += dt * ST.auto; while (R.autoT >= 1 && R.enemy) { R.autoT -= 1; clickAttack(null, null, true); } }
+  if (!R.enemy) { R.spawn -= dt; if (R.spawn <= 0) spawnEnemy(); return; }
+  R.atkT += dt * ST.spd;
+  while (R.atkT >= 1 && R.enemy) { R.atkT -= 1; heroAttack(); }
+  if (!R.enemy) return;
+  const e = R.enemy;
+  e.atkT += dt;
+  if (e.atkT >= e.interval) { e.atkT -= e.interval; enemyAttack(); }
+}
+
+/* ================= DIBUJO ================= */
+const cv = $('#cv'), ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1, shake = 0, heroLunge = 0, heroFlash = 0, cave = null, caveKey = -1;
+const fx = [], parts = [], dying = [];
+const motes = Array.from({ length: 46 }, () => ({ x: Math.random(), y: Math.random(), s: rnd(.5, 2), v: rnd(.01, .04), a: rnd(.15, .6) }));
+const SC = () => H / 110, GY = () => H * .8, HX = () => W * .3, EX = () => W * .69;
+
+function resize() {
+  const r = cv.getBoundingClientRect();
+  DPR = Math.min(2, window.devicePixelRatio || 1); W = r.width; H = r.height;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (R) buildCave();
+}
+function buildCave() {
+  const zi = zoneIdx(R.floor); caveKey = zi;
+  const r = mulberry(zi * 977 + 13);
+  cave = {
+    stal: Array.from({ length: 16 }, () => ({ x: r(), w: .015 + r() * .045, h: .04 + r() * .17 })),
+    ground: Array.from({ length: 28 }, () => r()),
+    far: Array.from({ length: 9 }, () => ({ x: r(), w: .03 + r() * .06, top: .15 + r() * .35 })),
+    crystals: Array.from({ length: 7 }, () => ({ x: r(), y: .82 + r() * .14, s: .5 + r() })),
+  };
+}
+
+function floatText(x, y, text, color, size) { fx.push({ x, y, text, color, size, life: 1, vy: -38 - Math.random() * 14 }); if (fx.length > 60) fx.shift(); }
+function burst(x, y, color, n, sp) { for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, v = rnd(40, 140) * (sp || 1) / 2; parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 40, g: 260, life: rnd(.4, .8), color, size: rnd(2, 4) }); } }
+function sparks(x, y, color) { for (let i = 0; i < 6; i++) { const a = Math.random() * Math.PI * 2, v = rnd(60, 160); parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, g: 0, life: rnd(.15, .3), color, size: rnd(1.5, 3) }); } }
+function coins(x, y, n) { for (let i = 0; i < n; i++) parts.push({ x, y, vx: rnd(-120, 120), vy: rnd(-260, -120), g: 620, life: rnd(.7, 1.1), color: '#f6b93b', size: rnd(3, 5), coin: true, floor: GY() + rnd(-4, 8) }); }
+
+function drawBg(t) {
+  const z = zoneOf(R.floor), h = z.h, gy = GY();
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, `hsl(${h},42%,6%)`); g.addColorStop(.72, `hsl(${h},38%,15%)`); g.addColorStop(1, `hsl(${h},32%,8%)`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = `hsla(${h},35%,22%,.35)`;
+  for (const p of cave.far) ctx.fillRect(p.x * W, p.top * H, p.w * W, gy - p.top * H);
+  const rg = ctx.createRadialGradient(W * .5, gy, 10, W * .5, gy, W * .55);
+  rg.addColorStop(0, `hsla(${h},80%,55%,.2)`); rg.addColorStop(1, `hsla(${h},80%,55%,0)`);
+  ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+  for (const m of motes) {
+    m.y -= m.v * (1 / 60); if (m.y < 0) { m.y = 1; m.x = Math.random(); }
+    ctx.fillStyle = `hsla(${h},80%,80%,${m.a * (.6 + .4 * Math.sin(t * 2 + m.x * 20))})`;
+    ctx.fillRect(m.x * W + Math.sin(t + m.y * 9) * 6, m.y * H, m.s, m.s);
+  }
+  ctx.fillStyle = `hsl(${h},30%,4%)`;
+  for (const s of cave.stal) { ctx.beginPath(); ctx.moveTo((s.x - s.w) * W, 0); ctx.lineTo(s.x * W, s.h * H); ctx.lineTo((s.x + s.w) * W, 0); ctx.fill(); }
+  ctx.beginPath(); ctx.moveTo(0, H);
+  cave.ground.forEach((v, i) => ctx.lineTo(i / (cave.ground.length - 1) * W, gy + v * 6 - 2));
+  ctx.lineTo(W, H); ctx.closePath(); ctx.fillStyle = `hsl(${h},28%,6%)`; ctx.fill();
+  ctx.strokeStyle = `hsla(${h},60%,60%,.25)`; ctx.lineWidth = 1.5; ctx.beginPath();
+  cave.ground.forEach((v, i) => ctx[i ? 'lineTo' : 'moveTo'](i / (cave.ground.length - 1) * W, gy + v * 6 - 2)); ctx.stroke();
+  for (const c of cave.crystals) {
+    const x = c.x * W, y = c.y * H, s = c.s * SC() * 3;
+    ctx.fillStyle = `hsla(${h + 30},80%,65%,${.25 + .15 * Math.sin(t * 1.5 + c.x * 10)})`;
+    ctx.beginPath(); ctx.moveTo(x, y - s * 2); ctx.lineTo(x + s * .6, y); ctx.lineTo(x - s * .6, y); ctx.fill();
+  }
+}
+
+function drawHero(t) {
+  const s = SC(), gy = GY();
+  let x = HX() + Math.sin(heroLunge * Math.PI) * s * 9;
+  const bob = Math.sin(t * 4) * s * .5;
+  ctx.save(); ctx.translate(x, gy);
+  ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.ellipse(0, 0, s * 9, s * 2, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.translate(0, bob);
+  const fl = heroFlash > 0;
+  const R_ = (c, a, b, w, h) => { ctx.fillStyle = fl ? '#ff8a9a' : c; ctx.fillRect(a * s, b * s, w * s, h * s); };
+  // capa
+  ctx.fillStyle = fl ? '#ff8a9a' : '#a8243d';
+  ctx.beginPath(); ctx.moveTo(-3 * s, -21 * s); ctx.lineTo(-9 * s - Math.sin(t * 3) * s, -3 * s); ctx.lineTo(-2 * s, -6 * s); ctx.fill();
+  R_('#2a2342', -4, -8, 3, 8); R_('#2a2342', 1, -8, 3, 8);               // piernas
+  R_('#4a4270', -5, -20, 10, 13);                                         // cuerpo
+  R_('#f6b93b', -5, -11, 10, 2);                                          // cinturón
+  R_('#cfc9ea', -4.5, -28, 9, 8);                                         // casco
+  R_('#1a1530', -1, -25.5, 5, 1.6);                                       // visera
+  R_('#f6b93b', -1, -31, 2, 3);                                           // penacho
+  // espada
+  ctx.save(); ctx.translate(4 * s, -15 * s); ctx.rotate(-1.05 + Math.sin(heroLunge * Math.PI) * 1.9);
+  ctx.fillStyle = fl ? '#ff8a9a' : '#e9e6ff'; ctx.fillRect(0, -1 * s, 17 * s, 2 * s);
+  ctx.fillStyle = '#f6b93b'; ctx.fillRect(-1 * s, -3 * s, 2 * s, 6 * s); ctx.fillRect(-4 * s, -.8 * s, 3 * s, 1.6 * s);
+  if (furyMul() > 1) { ctx.fillStyle = 'rgba(255,84,112,.5)'; ctx.fillRect(0, -2 * s, 18 * s, 4 * s); }
+  ctx.restore();
+  ctx.restore();
+}
+
+function drawEnemy(e, t) {
+  const s = SC(), gy = GY();
+  const r = s * e.size;
+  const x = EX() + e.kx * s * .5 - Math.sin(e.lunge * Math.PI) * s * 10;
+  const wob = Math.sin(t * 3.2 + e.seed * 10) * .06;
+  const born = Math.min(1, e.born);
+  ctx.save(); ctx.translate(x, gy);
+  if (e.dead !== undefined) { const k = 1 - e.dead; ctx.globalAlpha = Math.max(0, k); ctx.scale(1 + e.dead * .5, Math.max(.01, k)); }
+  ctx.scale(born, born);
+  ctx.fillStyle = 'rgba(0,0,0,.4)'; ctx.beginPath(); ctx.ellipse(0, 0, r * 1.1, r * .22, 0, 0, Math.PI * 2); ctx.fill();
+  if (e.boss) {
+    const ag = ctx.createRadialGradient(0, -r, r * .4, 0, -r, r * 2.2);
+    ag.addColorStop(0, 'rgba(255,84,112,.28)'); ag.addColorStop(1, 'rgba(255,84,112,0)');
+    ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(0, -r, r * 2.2 * (1 + Math.sin(t * 3) * .05), 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.translate(0, -r * e.wy * (1 - wob));
+  ctx.scale(1 + wob, 1 - wob);
+  const col = e.flash > 0 ? '#ffffff' : e.col;
+  ctx.fillStyle = col;
+  for (let i = 0; i < e.spikes; i++) {
+    const a = -Math.PI * .9 + (i + .5) / e.spikes * Math.PI * .8;
+    const bx = Math.cos(a) * r * e.wx * .9, by = Math.sin(a) * r * e.wy * .9;
+    ctx.beginPath(); ctx.moveTo(bx + Math.cos(a + 1.4) * r * .2, by + Math.sin(a + 1.4) * r * .2);
+    ctx.lineTo(Math.cos(a) * r * e.wx * 1.35, Math.sin(a) * r * e.wy * 1.35);
+    ctx.lineTo(bx + Math.cos(a - 1.4) * r * .2, by + Math.sin(a - 1.4) * r * .2); ctx.fill();
+  }
+  if (e.horns) for (const sx of [-1, 1]) { ctx.beginPath(); ctx.moveTo(sx * r * .35, -r * e.wy * .8); ctx.quadraticCurveTo(sx * r * .9, -r * e.wy * 1.5, sx * r * .55, -r * e.wy * 1.7); ctx.lineTo(sx * r * .15, -r * e.wy * .85); ctx.fillStyle = e.flash > 0 ? '#fff' : '#e8e0c8'; ctx.fill(); }
+  ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(0, 0, r * e.wx, r * e.wy, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.beginPath(); ctx.ellipse(-r * .25 * e.wx, -r * .35 * e.wy, r * .35 * e.wx, r * .22 * e.wy, -.4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,.15)'; ctx.beginPath(); ctx.ellipse(0, r * .45 * e.wy, r * .7 * e.wx, r * .35 * e.wy, 0, 0, Math.PI); ctx.fill();
+  const blink = (Math.sin(t * 1.3 + e.seed * 40) > .97) ? .15 : 1;
+  for (let i = 0; i < e.eyes; i++) {
+    const ex = (i - (e.eyes - 1) / 2) * r * .42 * e.wx - r * .1, ey = -r * .18 * e.wy + (e.eyes === 3 && i === 1 ? -r * .2 : 0);
+    const er = r * (e.eyes === 1 ? .26 : .17);
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(ex, ey, er, er * blink, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = e.boss ? '#ff2e55' : '#140f22'; ctx.beginPath(); ctx.arc(ex - er * .35, ey, er * .5 * blink, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.fillStyle = '#140f22'; ctx.beginPath(); ctx.ellipse(-r * .1, r * .28 * e.wy, r * .38 * e.wx, r * (.1 + .08 * Math.sin(t * 5 + e.seed)), 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  for (let i = 0; i < 3; i++) { const tx = -r * .1 + (i - 1) * r * .2 * e.wx; ctx.beginPath(); ctx.moveTo(tx - r * .05, r * .2 * e.wy); ctx.lineTo(tx, r * .3 * e.wy); ctx.lineTo(tx + r * .05, r * .2 * e.wy); ctx.fill(); }
+  if (e.boss) {
+    ctx.fillStyle = '#f6b93b'; const cy = -r * e.wy * .92, cw = r * .7;
+    ctx.beginPath(); ctx.moveTo(-cw, cy); ctx.lineTo(-cw, cy - r * .35); ctx.lineTo(-cw * .5, cy - r * .15); ctx.lineTo(0, cy - r * .5); ctx.lineTo(cw * .5, cy - r * .15); ctx.lineTo(cw, cy - r * .35); ctx.lineTo(cw, cy); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function bar(x, y, w, h, frac, color, label, value) {
+  ctx.fillStyle = 'rgba(8,6,18,.75)'; ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+  ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = color; ctx.fillRect(x, y, w * clamp(frac, 0, 1), h);
+  ctx.font = `500 ${Math.max(11, H / 30)}px "Pixelify Sans", monospace`; ctx.textBaseline = 'bottom';
+  ctx.fillStyle = '#efeaff'; ctx.textAlign = 'left'; ctx.fillText(label, x, y - 4);
+  ctx.textAlign = 'right'; ctx.fillStyle = '#c9c2ef'; ctx.fillText(value, x + w, y - 4);
+}
+
+function drawHud() {
+  const pad = Math.max(12, W * .03), bw = Math.min(W * .36, 260), bh = Math.max(8, H / 45), top = Math.max(30, H * .09);
+  bar(pad, top, bw, bh, R.hp / ST.hp, R.hp / ST.hp < .3 ? '#ff5470' : '#82e39a', 'Héroe', fmt(Math.max(0, R.hp)) + ' / ' + fmt(ST.hp));
+  const e = R.enemy;
+  if (e) {
+    bar(W - pad - bw, top, bw, bh, e.hp / e.max, e.boss ? '#ff5470' : '#f6b93b', e.name, fmt(Math.max(0, e.hp)));
+    if (e.boss) {
+      const f = e.timer / ST.bossTime;
+      ctx.fillStyle = 'rgba(8,6,18,.75)'; ctx.fillRect(W - pad - bw - 2, top + bh + 6, bw + 4, 6);
+      ctx.fillStyle = f < .3 ? '#ff5470' : '#c69cff'; ctx.fillRect(W - pad - bw, top + bh + 7, bw * clamp(f, 0, 1), 4);
+      ctx.font = `500 ${Math.max(11, H / 32)}px "Pixelify Sans", monospace`; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+      ctx.fillStyle = '#c69cff'; ctx.fillText('JEFE · ' + Math.ceil(e.timer) + ' s', W - pad, top + bh + 15);
+    }
+  }
+}
+
+let lastT = performance.now();
+function frame(now) {
+  const dt = Math.min(.25, (now - lastT) / 1000); lastT = now;
+  const t = now / 1000;
+  if (!paused()) tick(dt);
+  else ST = stats();
+  heroLunge = Math.max(0, heroLunge - dt * 5); heroFlash = Math.max(0, heroFlash - dt);
+  if (R.enemy) { const e = R.enemy; e.flash -= dt; e.kx *= Math.pow(.002, dt); e.lunge = Math.max(0, e.lunge - dt * 4); e.born += dt * 4; }
+  if (W > 0) {
+    ctx.save();
+    if (shake > 0) { ctx.translate(rnd(-shake, shake), rnd(-shake, shake)); shake = Math.max(0, shake - dt * 30); }
+    drawBg(t);
+    drawHero(t);
+    for (let i = dying.length - 1; i >= 0; i--) { const d = dying[i]; d.dead += dt * 3; d.flash = 0; if (d.dead >= 1) dying.splice(i, 1); else drawEnemy(d, t); }
+    if (R.enemy) drawEnemy(R.enemy, t);
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i]; p.life -= dt; if (p.life <= 0) { parts.splice(i, 1); continue; }
+      p.vy += p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+      if (p.coin && p.y > p.floor) { p.y = p.floor; p.vy *= -.35; p.vx *= .6; }
+      ctx.globalAlpha = Math.min(1, p.life * 3); ctx.fillStyle = p.color;
+      if (p.coin) { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(Math.PI / 4); ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size); ctx.restore(); }
+      else ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    }
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (let i = fx.length - 1; i >= 0; i--) {
+      const f = fx[i]; f.life -= dt * 1.1; if (f.life <= 0) { fx.splice(i, 1); continue; }
+      f.y += f.vy * dt; f.vy *= Math.pow(.15, dt);
+      ctx.globalAlpha = Math.min(1, f.life * 2.5);
+      ctx.font = `700 ${f.size * Math.max(.8, H / 420)}px "Pixelify Sans", monospace`;
+      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,6,20,.85)'; ctx.strokeText(f.text, f.x, f.y);
+      ctx.fillStyle = f.color; ctx.fillText(f.text, f.x, f.y);
+    }
+    ctx.globalAlpha = 1;
+    drawHud();
+    ctx.restore();
+  }
+  requestAnimationFrame(frame);
+}
+
+/* ================= INTERFAZ ================= */
+const PANES = {};
+const paused = () => !$('#modal').hidden;
+function showModal(html) { $('#dialog').innerHTML = html; $('#modal').hidden = false; }
+function closeModal() { $('#modal').hidden = true; $('#dialog').innerHTML = ''; }
+function renderAll() { buildTabs(); renderPane(); updateUI(); }
+function bump(sel) { const el = $(sel); el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
+function toast(html, ms = 3200) {
+  const el = document.createElement('div'); el.className = 'toast'; el.innerHTML = html;
+  $('#toasts').appendChild(el); setTimeout(() => el.remove(), ms);
+  while ($('#toasts').children.length > 4) $('#toasts').firstChild.remove();
+}
+
+$('#stage').addEventListener('pointerdown', ev => {
+  if (paused()) return;
+  const r = cv.getBoundingClientRect();
+  ST = stats(); clickAttack(ev.clientX - r.left, ev.clientY - r.top, false);
+});
+$('#autoAdv').addEventListener('change', ev => { R.autoAdv = ev.target.checked; });
+let retireArm = 0;
+$('#retire').addEventListener('click', ev => {
+  const btn = ev.currentTarget;
+  if (Date.now() - retireArm < 3000) { retireArm = 0; btn.textContent = 'Retirarse'; endRun('retire'); return; }
+  retireArm = Date.now(); ST = stats();
+  btn.textContent = `¿Seguro? +${fmt(esGain())} Esencia`;
+  setTimeout(() => { if (Date.now() - retireArm >= 2900) btn.textContent = 'Retirarse'; }, 3000);
+});
+$('#advance').addEventListener('click', () => { R.bossFailed = false; R.autoAdv = true; $('#autoAdv').checked = true; if (!R.enemy || !R.enemy.boss) { R.enemy = null; R.spawn = .3; goDown(); } });
+
+/* ================= FORJA (mejoras de la partida, se pagan con oro) ================= */
+const IC = {
+  atk: '<path d="M12 1h3v3l-8 8-3-3z" fill="#e9e6ff"/><path d="M3 9l4 4-1 1-1-1-2 2-1-1 2-2-1-1z" fill="#f6b93b"/>',
+  hp: '<path d="M8 14L2 8a3.5 3.5 0 0 1 6-4.6A3.5 3.5 0 0 1 14 8z" fill="#ff5470"/>',
+  click: '<path d="M8 1l2 5 5 1-4 3 1 5-4-3-4 3 1-5-4-3 5-1z" fill="#bff7ee"/>',
+  spd: '<path d="M9.5 1L3 9h4.5L6 15l7-8.5H8.5z" fill="#f6b93b"/>',
+  crit: '<circle cx="8" cy="8" r="5.5" stroke="#ff5470" stroke-width="2" fill="none"/><path d="M8 0v4M8 12v4M0 8h4M12 8h4" stroke="#ff5470" stroke-width="1.6"/><circle cx="8" cy="8" r="1.5" fill="#ff5470"/>',
+  armor: '<path d="M8 1l6 2v5c0 4-3 6-6 7-3-1-6-3-6-7V3z" fill="#9fd4ff"/><path d="M8 3v10" stroke="#5b8fc0" stroke-width="1.5"/>',
+  regen: '<path d="M6 2h4v4h4v4h-4v4H6v-4H2V6h4z" fill="#82e39a"/>',
+};
+const svg = k => `<svg viewBox="0 0 16 16" width="22" height="22" aria-hidden="true">${IC[k] || ''}</svg>`;
+const UPG = [
+  { id: 'atk',   n: 'Espada',          d: '+50% de ataque base. Cada 10 niveles, el ataque se duplica.', base: 6,  g: 1.2 },
+  { id: 'hp',    n: 'Cota de malla',   d: '+35% de vida base. Cada 10 niveles, la vida se duplica.',     base: 8,  g: 1.2 },
+  { id: 'click', n: 'Guanteletes',     d: '+2 de daño por clic. Cada 10 niveles, se duplica.',          base: 5,  g: 1.2 },
+  { id: 'spd',   n: 'Botas ligeras',   d: '+6% de velocidad de ataque.',                                 base: 40, g: 1.3,  max: 25 },
+  { id: 'crit',  n: 'Ojo de halcón',   d: '+2% de probabilidad de golpe crítico.',                       base: 60, g: 1.28, max: 20 },
+  { id: 'armor', n: 'Escudo de roble', d: 'Reduce un 4% el daño que recibes (se acumula).',              base: 30, g: 1.22, max: 30 },
+  { id: 'regen', n: 'Musgo curativo',  d: 'Regeneras un 0,5% de tu vida por segundo.',                   base: 80, g: 1.45, max: 10 },
+];
+const costOf = (base, g, l, n) => base * g ** l * (g ** n - 1) / (g - 1);
+function maxAfford(base, g, l, money) { const n = Math.floor(Math.log(money * (g - 1) / (base * g ** l) + 1) / Math.log(g)); return Math.max(0, n); }
+function buyPlan(u, l, money, mode) {
+  const left = (u.max ?? Infinity) - l;
+  if (left <= 0) return { n: 0, cost: 0, maxed: true };
+  let n = mode === 'max' ? Math.min(left, Math.max(1, maxAfford(u.base, u.g, l, money))) : Math.min(left, mode);
+  return { n, cost: costOf(u.base, u.g, l, n), maxed: false };
+}
+function buyUpg(id) {
+  const u = UPG.find(x => x.id === id), l = R.up[id] || 0, p = buyPlan(u, l, R.gold, S.buy);
+  if (p.maxed || p.n <= 0 || R.gold < p.cost) return false;
+  const before = stats().hp;
+  R.gold -= p.cost; R.up[id] = l + p.n; S.bought += p.n;
+  if (id === 'hp') R.hp += stats().hp - before;   // la vida nueva llega curada
+  return true;
+}
+function upgEffect(u, l) {
+  const m = l2 => 2 ** Math.floor(l2 / 10);
+  switch (u.id) {
+    case 'atk': return `Ataque base ×${fmt((1 + .5 * l) * m(l))}`;
+    case 'hp': return `Vida base ×${fmt((1 + .35 * l) * m(l))}`;
+    case 'click': return `${fmt((2 + 2 * l) * m(l))} por clic`;
+    case 'spd': return `+${Math.round(6 * l)}% velocidad`;
+    case 'crit': return `+${2 * l}% crítico`;
+    case 'armor': return `−${Math.round((1 - .96 ** l) * 100)}% daño recibido`;
+    case 'regen': return `${(.5 * l).toFixed(1).replace('.', ',')}% vida/s`;
+  }
+}
+
+PANES.bendiciones = {
+  render() {
+    if (!R.bless.length) { $('#pane').innerHTML = `<div class="sect"><span>Bendiciones de esta partida</span></div><div class="empty">Todavía ninguna.<br>Supera los pisos 5, 10, 15… y el pozo te ofrecerá a elegir.</div>`; return; }
+    const B = blessSum();
+    $('#pane').innerHTML = `<div class="sect"><span>Bendiciones de esta partida · ${R.bless.length}</span></div>
+      ${R.bless.map(o => { const b = BLESS.find(x => x.id === o.id); return `<div class="card blessrow" style="--rc:${RAR[o.r].c}">
+        <span class="ic"><i class="gem"></i></span><span class="nm">${b.n}<span class="lv" style="color:var(--rc)">${RAR[o.r].n}</span></span>
+        <span class="cost"></span><span class="ds">${b.d(o.v)}</span></div>`; }).reverse().join('')}`;
+  },
+};
+
+PANES.arbol = {
+  render() {
+    $('#pane').innerHTML = `<div class="sect"><span>Árbol de Esencia · permanente</span><span style="color:var(--essence)">${fmt(S.esencia)} disponibles</span></div>` +
+      TIERS.map((T, ti) => `<div class="sect tier"><span>${T.n}</span><span>${tierOpen(ti) ? (ti ? 'abierta' : '') : 'se abre en el piso ' + T.req}</span></div>` +
+        META.filter(m => m.t === ti).map(m => `<button class="card ${tierOpen(ti) ? '' : 'locked'}" data-meta="${m.id}" ${tierOpen(ti) ? '' : 'disabled'}>
+          <span class="ic"><i class="gem" style="--rc:${['#4fe3cf', '#82e39a', '#5fb3ff', '#c69cff'][ti]};border-radius:${ti ? 0 : 50}%"></i></span>
+          <span class="nm">${m.n}<span class="lv"></span></span><span class="cost e"></span>
+          <span class="ds"></span></button>`).join('')).join('');
+    $('#pane').querySelectorAll('[data-meta]').forEach(b => b.addEventListener('click', () => {
+      if (buyMeta(b.dataset.meta)) { renderAll(); burstUI(b); }
+    }));
+  },
+  refresh() {
+    for (const m of META) {
+      const el = $(`[data-meta="${m.id}"]`); if (!el) continue;
+      const l = lv(m.id), maxed = m.max && l >= m.max, c = metaCost(m, l);
+      el.querySelector('.lv').textContent = m.max === 1 ? (l ? 'Activo' : '') : `Nv ${l}${m.max ? ' / ' + m.max : ''}`;
+      el.querySelector('.cost').textContent = maxed ? (m.max === 1 ? '✓' : 'Máximo') : fmt(c);
+      el.querySelector('.ds').innerHTML = (l && !maxed && m.max !== 1 ? m.d(l) + '<br><span class="fx">Siguiente: ' + m.d(l + 1) + '</span>' : m.d(Math.max(l, 1)));
+      el.classList.toggle('cant', tierOpen(m.t) && !maxed && S.esencia < c);
+      el.classList.toggle('maxed', !!maxed);
+    }
+  },
+};
+PANES.astral = {
+  render() {
+    const g = starGain(), open = S.best >= ASC_FLOOR;
+    $('#pane').innerHTML = `
+      <div class="sect"><span>Ascensión</span><span style="color:var(--star)">${fmt(S.stars)} estrellas</span></div>
+      <div class="ascbox">
+        <p>Ascender reinicia tu Esencia y el Árbol. A cambio ganas <b>Estrellas</b>, que multiplican todo para siempre. Cada Estrella ganada da además +10% de ataque y vida.</p>
+        <p class="small">Estrellas según la Esencia ganada desde la última ascensión (${fmt(S.esCycle)}). Tu récord y los logros se conservan.</p>
+        ${open ? `<button class="btn star" id="ascBtn" ${g < 1 ? 'disabled' : ''}>${g < 1 ? `Necesitas ${fmt(150 - S.esCycle)} Esencia más` : `Ascender · +${g} Estrellas`}</button>`
+               : `<p class="lockline">Se abre al llegar al piso ${ASC_FLOOR}. Tu récord: ${S.best}.</p>`}
+      </div>
+      <div class="sect tier"><span>Mejoras astrales</span></div>
+      ${ASTRAL.map(a => `<button class="card" data-astral="${a.id}"><span class="ic"><i class="gem" style="--rc:var(--star)"></i></span>
+        <span class="nm">${a.n}<span class="lv"></span></span><span class="cost s"></span><span class="ds"></span></button>`).join('')}`;
+    const btn = $('#ascBtn');
+    if (btn) btn.addEventListener('click', () => {
+      if (btn.dataset.armed) { ascend(); return; }
+      btn.dataset.armed = 1; btn.textContent = '¿Seguro? Pulsa otra vez para ascender';
+      setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; renderPane(); } }, 3500);
+    });
+    $('#pane').querySelectorAll('[data-astral]').forEach(b => b.addEventListener('click', () => { if (buyAstral(b.dataset.astral)) { renderAll(); burstUI(b); } }));
+  },
+  refresh() {
+    for (const a of ASTRAL) {
+      const el = $(`[data-astral="${a.id}"]`); if (!el) continue;
+      const l = al(a.id), maxed = a.max && l >= a.max, c = astralCost(a, l);
+      el.querySelector('.lv').textContent = a.max === 1 ? (l ? 'Activo' : '') : `Nv ${l}`;
+      el.querySelector('.cost').textContent = maxed ? '✓' : fmt(c);
+      el.querySelector('.ds').innerHTML = a.max === 1 ? a.d(1) : (l ? a.d(l) + '<br><span class="fx">Siguiente: ' + a.d(l + 1) + '</span>' : a.d(1));
+      el.classList.toggle('cant', !maxed && S.stars < c); el.classList.toggle('maxed', !!maxed);
+    }
+  },
+};
+PANES.logros = {
+  render() {
+    const n = Object.keys(S.ach).length;
+    const mins = Math.floor((S.played || 0) / 60);
+    $('#pane').innerHTML = `
+      <div class="sect"><span>Logros · ${n} / ${ACH.length}</span><span style="color:var(--ok)">+${3 * n}% ataque y vida</span></div>
+      <div class="achs">${ACH.map(a => `<div class="ach ${S.ach[a.id] ? 'got' : ''}"><b>${a.n}</b><span>${a.d}</span></div>`).join('')}</div>
+      <div class="sect tier"><span>Tu historia</span></div>
+      <div class="summary">
+        <div><small>Récord</small><b>${S.best}</b></div><div><small>Partidas</small><b>${S.runs}</b></div>
+        <div><small>Monstruos</small><b>${fmt(S.kills)}</b></div><div><small>Jefes</small><b>${fmt(S.bossKills)}</b></div>
+        <div><small>Clics</small><b>${fmt(S.clicks)}</b></div><div><small>Esencia total</small><b>${fmt(S.esTotal)}</b></div>
+        <div><small>Ascensiones</small><b>${S.ascensions}</b></div><div><small>Jugado</small><b>${mins >= 60 ? Math.floor(mins / 60) + ' h ' + (mins % 60) + ' min' : mins + ' min'}</b></div>
+      </div>
+      <div class="sect tier"><span>Partida guardada</span></div>
+      <p class="small">El juego se guarda solo en este navegador cada pocos segundos. Si lo cierras, tu héroe sigue bajando hasta 2 horas.</p>
+      <button class="btn warn" id="wipe">Borrar todo y empezar de cero</button>`;
+    $('#wipe').addEventListener('click', ev => {
+      const b = ev.currentTarget;
+      if (b.dataset.armed) { wipe(); return; }
+      b.dataset.armed = 1; b.textContent = '¿Seguro? Se perderá todo. Pulsa otra vez';
+      setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = 'Borrar todo y empezar de cero'; } }, 3500);
+    });
+  },
+};
+function burstUI(el) { el.classList.remove('bought'); void el.offsetWidth; el.classList.add('bought'); }
+
+const TABS = [
+  { id: 'forja', n: 'Forja' },
+  { id: 'bendiciones', n: 'Bendiciones' },
+  { id: 'arbol', n: 'Árbol', show: () => S.esTotal > 0, dot: metaAffordable },
+  { id: 'astral', n: 'Ascensión', show: () => S.best >= ASC_FLOOR * .75 || S.starsTotal > 0, dot: () => (S.best >= ASC_FLOOR && starGain() >= 1 && !S.ascensions) || ASTRAL.some(a => !(a.max && al(a.id) >= a.max) && S.stars >= astralCost(a, al(a.id))) },
+  { id: 'logros', n: 'Logros' },
+];
+function buildTabs() {
+  $('#tabs').innerHTML = TABS.filter(t => !t.show || t.show()).map(t => `<button class="tab" role="tab" data-tab="${t.id}" aria-selected="${S.tab === t.id}">${t.n}<span class="dot" hidden></span></button>`).join('');
+  $('#tabs').querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => { S.tab = b.dataset.tab; buildTabs(); renderPane(); }));
+}
+function renderPane() { (PANES[S.tab] || PANES.forja).render(); refreshPane(); }
+function refreshPane() { const p = PANES[S.tab] || PANES.forja; if (p.refresh) p.refresh(); }
+
+PANES.forja = {
+  render() {
+    $('#pane').innerHTML = `
+      <div class="sect"><span>Forja · se pierde al morir</span>
+        <span class="buyamt">${[1, 10, 'max'].map(v => `<button class="mini" data-buy="${v}" aria-pressed="${S.buy === v}">${v === 'max' ? 'Máx' : '×' + v}</button>`).join('')}</span></div>
+      ${UPG.map(u => `<button class="card" data-upg="${u.id}">
+        <span class="ic">${svg(u.id)}</span>
+        <span class="nm">${u.n}<span class="lv"></span></span>
+        <span class="cost g"></span>
+        <span class="ds">${u.d}<br><span class="fx"></span></span>
+      </button>`).join('')}`;
+    $('#pane').querySelectorAll('[data-buy]').forEach(b => b.addEventListener('click', () => { S.buy = b.dataset.buy === 'max' ? 'max' : +b.dataset.buy; renderPane(); }));
+    $('#pane').querySelectorAll('[data-upg]').forEach(b => b.addEventListener('click', () => { if (buyUpg(b.dataset.upg)) { refreshPane(); updateUI(); } }));
+  },
+  refresh() {
+    for (const u of UPG) {
+      const el = $(`[data-upg="${u.id}"]`); if (!el) continue;
+      const l = R.up[u.id] || 0, p = buyPlan(u, l, R.gold, S.buy);
+      el.querySelector('.lv').textContent = `Nv ${l}${u.max ? ' / ' + u.max : ''}`;
+      el.querySelector('.cost').innerHTML = p.maxed ? 'Máximo' : `${fmt(p.cost)}${p.n > 1 ? `<small>×${p.n}</small>` : ''}`;
+      el.querySelector('.fx').textContent = upgEffect(u, l) + (p.maxed ? '' : '  →  ' + upgEffect(u, l + Math.max(1, p.n)));
+      el.classList.toggle('cant', !p.maxed && R.gold < p.cost);
+      el.classList.toggle('maxed', p.maxed);
+    }
+  },
+};
+
+function updateUI() {
+  ST = stats();
+  $('#gold').textContent = fmt(R.gold);
+  $('#esBox').hidden = S.esTotal <= 0; $('#es').textContent = fmt(S.esencia);
+  $('#stBox').hidden = S.starsTotal <= 0; $('#st').textContent = fmt(S.stars);
+  const z = zoneOf(R.floor), cyc = cycleOf(R.floor);
+  $('#zoneName').textContent = z.n + ROMAN[Math.min(cyc, 9)];
+  $('#zoneSub').textContent = `Zona ${zoneIdx(R.floor) + 1} · ${R.floor * 12} m de profundidad`;
+  $('#floor').textContent = R.floor; $('#best').textContent = S.best;
+  $('#pips').innerHTML = isBoss(R.floor) ? `<span class="boss${R.enemy ? '' : ''}"></span>` :
+    Array.from({ length: PER_FLOOR }, (_, i) => `<span class="${i < R.fk ? 'on' : ''}"></span>`).join('');
+  $('#advance').hidden = R.autoAdv;
+  const dps = ST.atk * ST.spd * (1 + ST.crit * (ST.critDmg - 1));
+  $('#stats').innerHTML = [
+    ['Ataque', fmt(ST.atk)], ['Daño/s', fmt(dps)], ['Golpe de clic', fmt(ST.click)],
+    ['Vida', fmt(ST.hp)], ['Velocidad', ST.spd.toFixed(2) + '/s'], ['Crítico', Math.round(ST.crit * 100) + '%'],
+  ].map(([k, v]) => `<div class="stat"><small>${k}</small><b>${v}</b></div>`).join('');
+  checkAch();
+  refreshPane();
+  $('#hint').textContent = hintText();
+  for (const t of TABS) { const d = $(`[data-tab="${t.id}"] .dot`); if (d) d.hidden = !(t.dot && S.tab !== t.id && t.dot()); }
+  if (TABS.some(t => t.show && t.show() !== !!$(`[data-tab="${t.id}"]`))) buildTabs();
+  const ab = ABIL.filter(a => lv(a.meta));
+  $('#abil').hidden = !ab.length;
+  if ($('#abil').children.length !== ab.length) {
+    $('#abil').innerHTML = ab.map(a => `<button class="ab" data-ab="${a.id}" style="--c:${a.col}"><span class="cdv"></span><span class="sw"></span>${a.n}<span class="t"></span><kbd>${a.key}</kbd></button>`).join('');
+    $('#abil').querySelectorAll('.ab').forEach(b => b.addEventListener('click', () => useAbility(b.dataset.ab)));
+  }
+  for (const a of ab) {
+    const b = $(`[data-ab="${a.id}"]`), cd = R.cd[a.id] || 0, act = R.act[a.id] || 0;
+    b.querySelector('.cdv').style.transform = `scaleX(${act > 0 ? 0 : cd / a.cd})`;
+    b.querySelector('.t').textContent = act > 0 ? Math.ceil(act) + ' s' : cd > 0 ? Math.ceil(cd) + ' s' : '';
+    b.classList.toggle('ready', !cd); b.classList.toggle('on', act > 0);
+  }
+}
+document.addEventListener('keydown', ev => {
+  if (paused() || ev.target.matches('input,textarea')) return;
+  const a = ABIL.find(x => x.key === ev.key); if (a) useAbility(a.id);
+});
+function hintText() {
+  if (R.bossFailed) return 'El jefe te ha superado. Mejora tu equipo farmeando este piso y vuelve a bajar cuando estés listo.';
+  if (S.kills < 3) return 'Toca al monstruo para golpearlo. Tu héroe también ataca solo.';
+  if (S.bought < 3) return 'Gasta el oro en la Forja: la espada y la cota de malla son lo primero.';
+  if (S.esencia > 0 && metaAffordable() && S.tab !== 'arbol') return 'Tienes Esencia para gastar en el Árbol. Esas mejoras no se pierden nunca.';
+  if (S.best < 10) return 'Cada 10 pisos te espera un jefe con tiempo límite.';
+  if (S.runs === 0 && S.best >= 12) return 'Cuando te atasques, retírate: cobras Esencia y vuelves más fuerte.';
+  if (S.best >= ASC_FLOOR && !S.ascensions && starGain() >= 1) return `Puedes ascender por ${starGain()} Estrellas. Es un reinicio más profundo que multiplica todo.`;
+  for (const T of TIERS) if (S.best < T.req) return `Llega al piso ${T.req} para abrir la rama «${T.n}» del Árbol.`;
+  if (S.best < ASC_FLOOR) return `En el piso ${ASC_FLOOR} se abre la Ascensión.`;
+  if (S.best < 300) return 'El fondo está en el piso 300. Dicen.';
+  return 'Baja todo lo que puedas.';
+}
+
+/* ================= GUARDADO Y PROGRESO SIN CONEXIÓN ================= */
+const KEY = 'descenso-eterno-v1';
+function save() { try { localStorage.setItem(KEY, JSON.stringify({ S, R, t: Date.now() })); } catch (e) {} }
+function wipe() { try { localStorage.removeItem(KEY); } catch (e) {} wiped = true; location.reload(); }
+let wiped = false;
+function fmtTime(sec) { const m = Math.round(sec / 60); return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min'; }
+function catchUp(sec, announce) {
+  sec = Math.min(sec, 7200);
+  if (sec < 2 || paused() || R.over) return;
+  const g0 = R.goldRun, k0 = R.kills, f0 = R.floor;
+  SIM = true; let t = 0;
+  while (t < sec && !R.over) { tick(.25); t += .25; }
+  SIM = false; S.played = (S.played || 0) + t;
+  dying.length = 0; fx.length = 0;
+  buildCave();
+  if (SIM_DEATH) { const d = SIM_DEATH; SIM_DEATH = null; showRunSummary(d); return; }
+  if (announce && sec > 30) toast(`Mientras no estabas (${fmtTime(sec)}): <b>+${fmt(R.goldRun - g0)}</b> de oro, ${fmt(R.kills - k0)} monstruos, piso ${f0} → ${R.floor}.`, 7000);
+}
+const _frame = frame;
+frame = function (now) {
+  if (now - lastT > 3000 && R && !R.over) { catchUp((now - lastT) / 1000, true); lastT = now; }
+  _frame(now);
+};
+
+function showIntro() {
+  showModal(`
+    <small class="eyebrow">Un pozo sin fondo</small>
+    <h2>Descenso Eterno</h2>
+    <ul class="howto">
+      <li><i style="background:var(--ink)"></i><span>Tu héroe baja y pelea solo. <b>Toca al monstruo</b> para dar golpes extra.</span></li>
+      <li><i style="background:var(--gold);transform:rotate(45deg)"></i><span>El <b>oro</b> mejora tu equipo en la Forja. Se pierde al terminar la partida.</span></li>
+      <li><i style="background:var(--blood)"></i><span>Cada 5 pisos eliges una <b>bendición</b>. Cada 10, un <b>jefe</b> con tiempo límite.</span></li>
+      <li><i style="background:var(--essence);border-radius:50%"></i><span>Al caer ganas <b>Esencia</b> para el Árbol. Eso es para siempre: cada intento llegas más hondo.</span></li>
+    </ul>
+    <div class="row"><button class="btn primary" id="go">Empezar a bajar</button></div>`);
+  $('#go').addEventListener('click', closeModal); $('#go').focus();
+}
+
+let booted = false;
+function start(data) {
+  if (booted) return; booted = true;
+  let saved = data && data.S ? data : null, away = 0;
+  if (!saved) { try { saved = JSON.parse(localStorage.getItem(KEY) || 'null'); if (saved) away = (Date.now() - saved.t) / 1000; } catch (e) { saved = null; } }
+  if (saved && saved.S) { Object.assign(S, saved.S); R = saved.R; }
+  if (!R || R.over) newRun();
+  for (const k of ['up', 'cd', 'act', 'blessAt']) R[k] = R[k] || {};
+  R.bless = R.bless || [];
+  $('#autoAdv').checked = R.autoAdv;
+  ST = stats();
+  resize(); buildCave();
+  new ResizeObserver(resize).observe(cv);
+  renderAll();
+  if (!saved) showIntro(); else if (away > 2) catchUp(away, true);
+  setInterval(updateUI, 120);
+  setInterval(() => { if (!paused()) S.played = (S.played || 0) + 1; }, 1000);
+  setInterval(save, 5000);
+  addEventListener('pagehide', () => { if (!wiped) save(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden && !wiped) save(); });
+  window.claude?.hot?.snapshot?.(() => ({ S, R }));
+  requestAnimationFrame(frame);
+}
+window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+</script>
