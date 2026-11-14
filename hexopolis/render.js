@@ -182,6 +182,44 @@ const ease = {
 };
 const clamp01 = (t) => Math.max(0, Math.min(1, t));
 
+// ---------- geometría del mar ----------
+function convexHull(pts) {
+  const p = pts.map((q) => [Math.round(q[0] * 1e4) / 1e4, Math.round(q[1] * 1e4) / 1e4]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], up = [];
+  for (const q of p) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], q) <= 1e-9) lo.pop(); lo.push(q); }
+  for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (up.length >= 2 && cross(up[up.length - 2], up[up.length - 1], q) <= 1e-9) up.pop(); up.push(q); }
+  up.pop(); lo.pop();
+  return lo.concat(up); // sentido antihorario (con y hacia abajo se ve horario)
+}
+// desplaza hacia fuera cada lado de un polígono convexo una distancia d
+function offsetPoly(poly, d) {
+  const n = poly.length, lines = [];
+  for (let i = 0; i < n; i++) {
+    const a = poly[i], b = poly[(i + 1) % n];
+    const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1;
+    const nx = dy / L, ny = -dx / L; // normal exterior para el sentido del casco
+    lines.push({ p: [a[0] + nx * d, a[1] + ny * d], d: [dx, dy] });
+  }
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const l1 = lines[(i - 1 + n) % n], l2 = lines[i];
+    const den = l1.d[0] * l2.d[1] - l1.d[1] * l2.d[0];
+    if (Math.abs(den) < 1e-9) { out.push(l2.p); continue; }
+    const t = ((l2.p[0] - l1.p[0]) * l2.d[1] - (l2.p[1] - l1.p[1]) * l2.d[0]) / den;
+    out.push([l1.p[0] + l1.d[0] * t, l1.p[1] + l1.d[1] * t]);
+  }
+  return out;
+}
+function inPoly(px, py, poly) {
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+}
+
 // ================= TABLERO =================
 class BoardRenderer {
   constructor(canvas) {
@@ -299,7 +337,7 @@ class BoardRenderer {
   resetCamera() { this.zoom = 1; this.panX = 0; this.panY = 0; this.applyCamera(true); if (this.onZoom) this.onZoom(1); }
   applyCamera(rebuild) {
     const r = this.region;
-    const lim = this.baseS * 5.2 * Math.max(this.zoom, 0.6);
+    const lim = this.baseS * (this.ext ? Math.max(this.ext.x, this.ext.y) * 0.9 : 5.2) * Math.max(this.zoom, 0.6);
     this.panX = Math.max(-lim, Math.min(lim, this.panX));
     this.panY = Math.max(-lim, Math.min(lim, this.panY));
     this.S = this.baseS * this.zoom;
@@ -318,10 +356,25 @@ class BoardRenderer {
     this.cv.width = this.W * dpr; this.cv.height = this.H * dpr;
     this.cv.style.width = this.W + 'px'; this.cv.style.height = this.H + 'px';
     if (region) this.region = region;
-    const r = this.region;
-    this.baseS = Math.max(14, Math.min(r.w / (2 * 5.2), r.h / (2 * 4.95)));
-    this.applyCamera(false);
+    this.fitBoard();
     this.buildCaches();
+  }
+  // tamaño de las casillas para que la isla entera (con su mar) quepa en la zona libre
+  fitBoard() {
+    const r = this.region;
+    const e = this.ext || { x: 5.75, y: 4.98 };
+    this.baseS = Math.max(14, Math.min(r.w / (2 * e.x * 0.92), r.h / (2 * e.y * 1.0)));
+    this.applyCamera(false);
+  }
+  // forma del mar: envolvente de la isla ensanchada (sirve para el mapa normal y el grande)
+  computeSea() {
+    const B = this.view.board, pts = [];
+    for (const h of B.hexes) for (let i = 0; i < 6; i++) { const a = (Math.PI / 180) * (60 * i - 30); pts.push([h.x + Math.cos(a), h.y + Math.sin(a)]); }
+    const hull = convexHull(pts);
+    const outer = offsetPoly(hull, 1.15);
+    let ex = 0, ey = 0; for (const [px, py] of outer) { ex = Math.max(ex, Math.abs(px)); ey = Math.max(ey, Math.abs(py)); }
+    this.sea = { hull, outer };
+    this.ext = { x: ex, y: ey };
   }
 
   setView(view, events = [], me = -1) {
@@ -333,7 +386,8 @@ class BoardRenderer {
       this.introT = performance.now();
       this.pop.clear();
       this.robberAnim = null;
-      this.panX = 0; this.panY = 0; this.applyCamera(false);
+      this.computeSea();
+      this.panX = 0; this.panY = 0; this.fitBoard();
       this.buildCaches();
     }
     const now = performance.now();
@@ -356,31 +410,45 @@ class BoardRenderer {
     this.cacheS = S;
     const B = this.view.board;
     this.tiles = B.hexes.map((h) => this.drawTile(h, S, dpr));
-    // base: mar + puertos
-    const R = S * 5.75;
+    // base: mar + puertos (el mar sigue la forma de la isla)
+    if (!this.sea) this.computeSea();
+    const sea = this.sea;
+    const R = Math.max(this.ext.x, this.ext.y) * S;
     const c = document.createElement('canvas');
     const size = Math.ceil(R * 2 + S);
     c.width = size * dpr; c.height = size * dpr;
     const x = c.getContext('2d');
     x.scale(dpr, dpr);
     const o = size / 2;
-    const hexPath = (rad, rot) => { x.beginPath(); for (let i = 0; i < 6; i++) { const a = (Math.PI / 3) * i + rot; x.lineTo(o + Math.cos(a) * rad, o + Math.sin(a) * rad); } x.closePath(); };
-    // sombra / marco neón
+    const polyPath = (poly, round) => {
+      x.beginPath();
+      const n = poly.length, P = (i) => poly[(i + n) % n];
+      const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      const m0 = mid(P(-1), P(0));
+      x.moveTo(o + m0[0] * S, o + m0[1] * S);
+      for (let i = 0; i < n; i++) { const p0 = P(i), p1 = mid(P(i), P(i + 1)); x.arcTo(o + p0[0] * S, o + p0[1] * S, o + p1[0] * S, o + p1[1] * S, round * S); }
+      x.closePath();
+    };
+    // sombra
     x.save();
     x.shadowColor = 'rgba(0,0,0,0.5)'; x.shadowBlur = S * 0.5; x.shadowOffsetY = S * 0.12;
-    hexPath(R, 0); x.fillStyle = '#1b5f8f'; x.fill();
+    polyPath(sea.outer, 0.6); x.fillStyle = '#1b5f8f'; x.fill();
     x.restore();
-    hexPath(R, 0);
+    polyPath(sea.outer, 0.6);
     const g = x.createRadialGradient(o, o, S, o, o, R);
     g.addColorStop(0, '#3b8fc4'); g.addColorStop(1, '#1f5f8e');
     x.fillStyle = g; x.fill();
     x.lineWidth = Math.max(4, S * 0.16); x.strokeStyle = '#d9c08a'; x.stroke();
-    hexPath(R - S * 0.08, 0); x.lineWidth = 1.5; x.strokeStyle = 'rgba(255,255,255,0.35)'; x.stroke();
-    // olas pixel
+    polyPath(offsetPoly(sea.hull, 1.07), 0.55); x.lineWidth = 1.5; x.strokeStyle = 'rgba(255,255,255,0.35)'; x.stroke();
+    // olas: solo en la franja de mar entre la costa y el marco
     x.strokeStyle = 'rgba(255,255,255,0.13)'; x.lineWidth = Math.max(1, S * 0.03); x.lineCap = 'round';
-    for (let i = 0; i < 70; i++) {
-      const a = Math.random() * Math.PI * 2, d = S * (4.4 + Math.random() * 1.1);
-      const wx = o + Math.cos(a) * d, wy = o + Math.sin(a) * d, w = S * 0.18;
+    const inner = offsetPoly(sea.hull, 0.2), outerIn = offsetPoly(sea.hull, 0.95);
+    let placed = 0;
+    for (let i = 0; i < 900 && placed < 70 + B.hexes.length; i++) {
+      const px = (Math.random() * 2 - 1) * this.ext.x, py = (Math.random() * 2 - 1) * this.ext.y;
+      if (!inPoly(px, py, outerIn) || inPoly(px, py, inner)) continue;
+      placed++;
+      const wx = o + px * S, wy = o + py * S, w = S * 0.18;
       x.beginPath(); x.moveTo(wx - w, wy); x.quadraticCurveTo(wx - w / 2, wy - w * 0.5, wx, wy); x.quadraticCurveTo(wx + w / 2, wy + w * 0.5, wx + w, wy); x.stroke();
     }
     // puertos

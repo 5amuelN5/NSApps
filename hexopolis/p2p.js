@@ -72,6 +72,7 @@ const P2P = (() => {
     switch (m.t) {
       case 'action': { const e = room.action(g.token, m.action); if (e) g.send({ t: 'error', msg: e }); break; }
       case 'chat': room.say(g.token, m.text); break;
+      case 'rematch': { const e = room.voteRematch(g.token); if (e) g.send({ t: 'error', msg: e }); break; }
       case 'leaveRoom': room.leave(g.token); g.token = null; setTimeout(() => { try { g.conn.close(); } catch (e) { /* */ } }, 200); break;
       default: break; // los invitados no pueden empezar, añadir bots, etc.
     }

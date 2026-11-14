@@ -38,6 +38,7 @@
         started: !!this.state, over: !!(this.state && this.state.phase === 'gameOver'), rules: this.rules, max: E.MAX_PLAYERS,
         seats: this.seats.map((s, i) => ({ i, kind: s.kind, name: s.name, level: s.level, connected: s.kind === 'bot' || s.connected, host: s.token === this.host, color: E.COLORS[i], prof: s.kind === 'human' && s.prof ? s.prof : null })),
         spectators: [...this.spectators.values()].map((x) => x.name),
+        rematch: this.seats.map((x, i) => (x.kind === 'human' && this.rematch && this.rematch.has(x.token) ? i : -1)).filter((i) => i >= 0),
         startedAt: this.startedAt, endedAt: this.endedAt,
       };
     }
@@ -107,6 +108,7 @@
       if (!this.state) { this.leave(token); return; }
       seat.connected = false; seat.client = null; seat.discAt = Date.now();
       this.sendRoom();
+      this.checkRematch();
       setTimeout(() => this.schedule(), AUTO_GRACE + 50);
     }
 
@@ -150,10 +152,17 @@
 
     start(token, opts = {}) {
       if (token !== this.host) return 'Solo el anfitrión puede empezar';
+      return this.startGame(opts);
+    }
+    startGame(opts = {}) {
       if (this.state && this.state.phase !== 'gameOver') return 'Ya hay una partida en curso';
-      if (this.seats.length < 2) return 'Se necesitan al menos 2 jugadores';
-      // quitar humanos desconectados
-      this.seats = this.seats.filter((s) => s.kind === 'bot' || s.connected);
+      // quitar humanos desconectados o que se fueron
+      const seats = this.seats.filter((s) => s.kind === 'bot' || (s.connected && !s.left));
+      if (seats.length < 2) return 'Se necesitan al menos 2 jugadores';
+      const tErr = E.teamsError(this.rules, seats.length);
+      if (tErr) return tErr;
+      this.seats = seats;
+      this.rematch = new Set();
       this.state = E.createGame(this.seats.map((s, i) => ({ name: s.name, bot: s.kind === 'bot' ? s.level : 0, color: E.COLORS[i] })), Object.assign({}, opts, { rules: this.rules }));
       this.mem = {}; this.lastTurn = -1;
       this.startedAt = Date.now(); this.endedAt = null; this.awarded = false;
@@ -163,6 +172,24 @@
       this.broadcast([{ type: 'start' }]);
       this.schedule();
       this.onState();
+    }
+
+    // ----- revancha por votación -----
+    voteRematch(token) {
+      if (!this.state || this.state.phase !== 'gameOver') return 'La partida no ha terminado';
+      if (this.seatOf(token) < 0) return 'No estás en la partida';
+      this.rematch = this.rematch || new Set();
+      if (this.rematch.has(token)) this.rematch.delete(token); else this.rematch.add(token);
+      this.sendRoom();
+      this.checkRematch();
+    }
+    checkRematch() {
+      if (!this.state || this.state.phase !== 'gameOver' || !this.rematch || !this.rematch.size) return;
+      const need = this.seats.filter((x) => x.kind === 'human' && x.connected && !x.left);
+      if (need.length && need.every((x) => this.rematch.has(x.token))) {
+        const err = this.startGame();
+        if (err) { this.sysChat('No se pudo empezar la revancha: ' + err); this.rematch.clear(); this.sendRoom(); }
+      }
     }
 
     // ----- chat -----

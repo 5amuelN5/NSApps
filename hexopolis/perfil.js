@@ -21,11 +21,12 @@ const Recents = {
 // ---------- comunicación con el servidor ----------
 let profReq = 0;
 const profWait = new Map();
-function profileCall(msg) {
+function profileCall(msg) { return serverCall(Object.assign({}, msg, { t: 'profile' })); }
+function serverCall(msg) {
   return Promise.resolve(App.configReady).then(() => new Promise((resolve) => {
     if (!App.hasServer) return resolve(null);
     const req = ++profReq;
-    msg = Object.assign({}, msg, { t: 'profile', req });
+    msg = Object.assign({}, msg, { req });
     profWait.set(req, resolve);
     setTimeout(() => { if (profWait.has(req)) { profWait.delete(req); resolve(null); } }, 75000);
     if (App.ws && App.ws.readyState === 1) { App.ws.send(JSON.stringify(msg)); return; }
@@ -37,7 +38,7 @@ function profileCall(msg) {
   }));
 }
 function handleProfileMsg(m) {
-  if (m.t === 'profile' || m.t === 'profileBad') { const r = profWait.get(m.req); if (r) { profWait.delete(m.req); r(m); } return; }
+  if (m.t === 'profile' || m.t === 'profileBad' || m.t === 'friends') { const r = profWait.get(m.req); if (r) { profWait.delete(m.req); r(m); } return; }
   if (m.t === 'profileUpdate') {
     ProfStore.set(m.profile);
     App.lastGain = m.gain;
@@ -76,6 +77,55 @@ async function syncProfile() {
   if (r && r.t === 'profile') { ProfStore.set(r.profile); App.profileBad = false; }
   else if (r && r.t === 'profileBad') App.profileBad = true;
   renderProfileChip();
+}
+
+// ---------- ranking entre amigos ----------
+async function refreshFriends() {
+  const rec = Recents.all(), ids = Object.keys(rec);
+  if (!ids.length) return;
+  const r = await serverCall({ t: 'friends', ids });
+  if (!r || r.t !== 'friends') return;
+  App.friendsOnline = new Set();
+  for (const x of r.list) {
+    if (x.online) App.friendsOnline.add(x.id);
+    const it = rec[x.id];
+    if (it && x.p && (!it.prof || (x.p.updated || 0) >= (it.prof.updated || 0))) { it.prof = x.p; it.name = x.p.name; it.seen = x.at; }
+  }
+  Recents.save(rec);
+  App.friendsAt = Date.now();
+  if (App.ui.modal && App.ui.modal.kind === 'ranking') renderModal();
+}
+function ago(t) {
+  if (!t) return '';
+  const m = Math.round((Date.now() - t) / 60000);
+  return m < 2 ? 'ahora' : m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.round(m / 60)} h` : `hace ${Math.round(m / 1440)} d`;
+}
+function renderRanking(m, box) {
+  const me = ProfStore.data(), rec = Object.values(Recents.all());
+  const on = App.friendsOnline || new Set();
+  const rows = rec.map((x) => ({ p: x.prof, name: x.name, x, mine: false }));
+  if (me) rows.push({ p: Object.assign({}, me, { name: App.name }), name: App.name, x: null, mine: true });
+  const sort = m.sort || 'lvl';
+  const wr = (p) => (p.games ? p.wins / p.games : 0);
+  if (sort === 'lvl') rows.sort((a, b) => b.p.xp - a.p.xp);
+  if (sort === 'wins') rows.sort((a, b) => b.p.wins - a.p.wins || wr(b.p) - wr(a.p));
+  if (sort === 'vs') rows.sort((a, b) => (a.mine ? 1 : b.mine ? -1 : (b.x.theirWins - b.x.myWins) - (a.x.theirWins - a.x.myWins)));
+  const tab = (k, t) => `<button class="${sort === k ? 'on' : ''}" data-rsort="${k}">${t}</button>`;
+  const body = rows.length > 1 || (rows.length && !me) ? rows.map((r, k) => {
+    const p = r.p, l = Profile.levelOf(p.xp), rk = Profile.rankOf(l);
+    const vs = r.mine ? '<span class="muted">—</span>' : `<b>${r.x.myWins}</b>–<b>${r.x.theirWins}</b>`;
+    const st = r.mine ? 'Tú' : on.has(p.id) ? '<span class="on-dot"></span>Conectado' : r.x.seen ? `Visto ${ago(r.x.seen)}` : `Jugasteis ${ago(r.x.last)}`;
+    return `<tr class="${r.mine ? 'me' : ''}" ${r.mine ? '' : `data-rk="${esc(p.id)}"`}><td>${k + 1}</td><td><span class="rk-name">${emblemHTML(p)}<span><b>${esc(r.name)}</b><small style="color:${rk.color}">${rk.name} · Nv ${l}</small></span></span></td>
+      <td><b>${p.wins}</b><small> / ${p.games}</small><br><small class="muted">${Math.round(wr(p) * 100)}%</small></td><td>${vs}</td><td><small class="muted">${st}</small></td></tr>`;
+  }).join('') : '';
+  box.innerHTML = `<div class="row between"><h2>🏆 Ranking de amigos</h2><button class="btn small ghost" data-close>Cerrar</button></div>
+    <p class="muted">Las personas con las que has terminado partidas online. ${App.hasServer ? 'Se actualiza con la última ficha de cada uno cada vez que entran al juego.' : ''}</p>
+    <div class="side-tabs rk-tabs">${tab('lvl', 'Nivel')}${tab('wins', 'Victorias')}${tab('vs', 'Contra ti')}</div>
+    ${body ? `<div class="st-wrap"><table class="rk-table"><thead><tr><th>#</th><th>Jugador</th><th>Victorias</th><th>Tú – él/ella</th><th>Estado</th></tr></thead><tbody>${body}</tbody></table></div>` : '<p class="muted">Todavía no hay nadie. Termina una partida online con amigos y aparecerán aquí.</p>'}
+    <div class="row gap between"><small class="muted">${App.friendsAt ? 'Actualizado ' + ago(App.friendsAt) : 'Actualizando…'}</small><button class="btn small cyan" id="rk-refresh">↻ Actualizar</button></div>`;
+  box.querySelectorAll('[data-rsort]').forEach((b) => (b.onclick = () => { Sfx.click(); m.sort = b.dataset.rsort; renderModal(); }));
+  box.querySelectorAll('[data-rk]').forEach((b) => (b.onclick = () => { Sfx.click(); const x = Recents.all()[b.dataset.rk]; if (x) openModal({ kind: 'pcard', prof: x.prof, back: 'ranking' }); }));
+  $('#rk-refresh').onclick = () => { Sfx.click(); refreshFriends(); };
 }
 
 // ---------- tras cada partida ----------
@@ -162,7 +212,7 @@ function renderProfileModal(m, box) {
       ${profCardHTML(Object.assign({}, p, { name: App.name }))}
       <h4 class="tr-sub">Emblema</h4><div class="emb-grid">${emb}</div>
       <h4 class="tr-sub">Logros (${p.ach.length}/${Profile.ACH.length})</h4>${achHTML(p)}
-      <h4 class="tr-sub">Jugadores recientes</h4><div class="rec-list">${recHTML}</div>
+      <div class="row between"><h4 class="tr-sub">Jugadores recientes</h4><button class="btn small ghost" id="pf-rank">🏆 Ver ranking</button></div><div class="rec-list">${recHTML}</div>
       <h4 class="tr-sub">No pierdas tu perfil</h4>
       <p class="muted">Tu perfil se guarda en este navegador. Si borras los datos del navegador o cambias de móvil, abre tu <b>enlace de recuperación</b> y lo recuperas tal como estaba cuando lo copiaste. Cópialo de nuevo cuando subas de nivel. En iPhone, añade el juego a la pantalla de inicio para que Safari no lo borre.</p>
       <div class="row gap wrap"><button class="btn cyan" id="pf-copy">📋 Copiar enlace de recuperación</button><a class="btn green" id="pf-wa" target="_blank" rel="noopener">Enviármelo por WhatsApp</a></div>`;
@@ -174,6 +224,7 @@ function renderProfileModal(m, box) {
       if (r && r.t === 'profile') { ProfStore.set(r.profile); if (App.ui.modal && App.ui.modal.kind === 'profile') renderModal(); }
       else toast('No se pudo cambiar el emblema (¿sin conexión con el servidor?)');
     }));
+    $('#pf-rank').onclick = () => { Sfx.click(); openModal({ kind: 'ranking' }); refreshFriends(); };
     box.querySelectorAll('[data-rec]').forEach((b) => (b.onclick = () => { Sfx.click(); const x = Recents.all()[b.dataset.rec]; if (x) openModal({ kind: 'pcard', prof: x.prof, back: 'profile' }); }));
     return;
   }
@@ -190,6 +241,7 @@ function renderProfileModal(m, box) {
 }
 
 $('#prof-chip').onclick = () => { Sfx.unlock(); Sfx.click(); openModal({ kind: 'profile' }); };
+$('#btn-ranking').onclick = () => { Sfx.unlock(); Sfx.click(); openModal({ kind: 'ranking' }); refreshFriends(); };
 $('#in-name').addEventListener('change', () => { if (ProfStore.get()) profileCall({ profile: ProfStore.signed(), name: App.name }).then((r) => r && r.t === 'profile' && ProfStore.set(r.profile)); renderProfileChip(); });
 renderProfileChip();
 syncProfile();

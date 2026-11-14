@@ -351,6 +351,13 @@
     const P = s.players[pid];
     if (!E.has(P.res, T.get)) return false;
     if (level === 1) return Math.random() < 0.35;
+    if (E.sameTeam(s, T.from, pid)) {
+      // con un compañero de equipo se acepta casi cualquier trato razonable
+      const aft = Object.assign({}, P.res);
+      for (const r in T.get) aft[r] -= T.get[r];
+      for (const r in T.give) aft[r] += T.give[r];
+      return handValue(s, pid, aft, level) - handValue(s, pid, P.res, level) > -0.6;
+    }
     const propVP = E.vp(s, T.from, false);
     if (level >= 3 && propVP >= (level >= 4 ? 8 : 9)) return false;
     if (level >= 4 && propVP >= E.vp(s, pid, true) + 3) return false;
@@ -375,7 +382,7 @@
         const b = s.board.vertices[v].b;
         if (!b) continue;
         const m = b.type === 'city' ? 2 : 1;
-        if (b.owner === pid) sc -= pips * m * 2.2;
+        if (E.sameTeam(s, b.owner, pid)) sc -= pips * m * 2.2;
         else sc += pips * m * (level >= 3 ? 1 + 0.22 * E.vp(s, b.owner, false) : 1);
       }
       if (victims.length) sc += 2.5;

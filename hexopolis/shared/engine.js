@@ -23,7 +23,7 @@
 
   // ---------- reglas de la partida ----------
   const DEFAULT_RULES = {
-    map: 'auto', vp: 10, hand: 7,
+    map: 'auto', vp: 10, hand: 7, teams: 0,
     doubleSteal: false, friendlyRobber: false, peaceStart: false, doublesBonus: false,
     goldRain: false, fastStart: false, chaosNumbers: false,
   };
@@ -44,10 +44,27 @@
     if (['auto', 'normal', 'big'].includes(r.map)) o.map = r.map;
     if (r.vp != null && Number.isFinite(+r.vp)) o.vp = Math.max(5, Math.min(16, Math.round(+r.vp)));
     if (HAND_OPTS.includes(r.hand | 0)) o.hand = r.hand | 0;
+    if ([0, 2, 3].includes(r.teams | 0)) o.teams = r.teams | 0;
     for (const x of SPECIAL_RULES) o[x.key] = !!r[x.key];
     return o;
   }
   function R(s) { return s.rules || DEFAULT_RULES; }
+
+  // ---------- equipos ----------
+  // parejas (2) o tríos (3); los compañeros se sientan alternos: el jugador i va al equipo i % nº de equipos
+  const TEAM_NAMES = ['A', 'B', 'C'];
+  const TEAM_COLORS = ['#f2c14e', '#2ec5ff', '#ff5e8a'];
+  function teamsError(rules, n) {
+    const t = (rules && rules.teams) | 0;
+    if (!t) return null;
+    if (n % t || n / t < 2) return t === 2 ? 'En parejas hacen falta 4 o 6 jugadores' : 'En tríos hacen falta 6 jugadores';
+    return null;
+  }
+  function teamTarget(vpGoal, size) { return Math.round(vpGoal * size * 0.75); }
+  function teamOf(s, pid) { return s.teams ? pid % s.teams.count : pid; }
+  function sameTeam(s, a, b) { return a === b || (!!s.teams && teamOf(s, a) === teamOf(s, b)); }
+  function teamVP(s, t, hidden) { let v = 0; s.players.forEach((p) => { if (teamOf(s, p.id) === t) v += vp(s, p.id, hidden); }); return v; }
+  function teamGoal(s) { return s.teams ? s.teams.target : winVP(s); }
   // piezas por jugador: más puntos para ganar → más poblados, ciudades y caminos
   function piecesFor(vpTarget) {
     const d = Math.max(0, (vpTarget || 10) - 10);
@@ -250,6 +267,7 @@
       log: [],
       stats: { rolls: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], pl: cfg.map(() => newPlStats()), vpHist: [] },
     };
+    if (rules.teams && !teamsError(rules, n)) s.teams = { size: rules.teams, count: n / rules.teams, target: teamTarget(rules.vp, rules.teams) };
     s.board = buildBoard(s, kind);
     const deck = [];
     for (const k in M.deck) for (let i = 0; i < M.deck[k]; i++) deck.push(k);
@@ -372,6 +390,16 @@
   function checkWin(s, ev) {
     if (s.winner != null) return;
     const p = s.current;
+    if (s.teams) {
+      const t = teamOf(s, p), tv = teamVP(s, t, true);
+      if (tv >= s.teams.target) {
+        s.winner = p; s.winTeam = t; s.phase = 'gameOver'; s.trade = null; recordVP(s);
+        ev.push({ type: 'win', pid: p, team: t });
+        const mates = s.players.filter((q) => teamOf(s, q.id) === t).map((q) => q.name).join(' y ');
+        log(s, `🏆 ¡GANA EL EQUIPO ${TEAM_NAMES[t]} (${mates}) con ${tv} puntos!`);
+      }
+      return;
+    }
     if (vp(s, p, true) >= winVP(s)) {
       s.winner = p; s.phase = 'gameOver'; s.trade = null; recordVP(s);
       ev.push({ type: 'win', pid: p });
@@ -450,7 +478,11 @@
     if (sig !== s.stallSig) { s.stallSig = sig; s.stallTurn = s.turn; return; }
     if (s.turn - s.stallTurn < STALL_ROUNDS * s.players.length) return;
     let best = 0;
-    s.players.forEach((p) => { if (vp(s, p.id, true) > vp(s, best, true)) best = p.id; });
+    if (s.teams) {
+      let bt = 0; for (let t = 1; t < s.teams.count; t++) if (teamVP(s, t, true) > teamVP(s, bt, true)) bt = t;
+      best = s.players.filter((p) => teamOf(s, p.id) === bt).sort((a, b) => vp(s, b.id, true) - vp(s, a.id, true))[0].id;
+      s.winTeam = bt;
+    } else s.players.forEach((p) => { if (vp(s, p.id, true) > vp(s, best, true)) best = p.id; });
     s.winner = best; s.phase = 'gameOver'; s.trade = null; s.stalled = true; recordVP(s);
     ev.push({ type: 'win', pid: best });
     log(s, `🔒 Nadie puede avanzar desde hace ${STALL_ROUNDS} rondas: gana ${nm(s, best)} con ${vp(s, best, true)} puntos`);
@@ -726,7 +758,7 @@
           useNew(); P.dev.monopoly--; s.devPlayed = true;
           let got = 0;
           const takes = [];
-          s.players.forEach((o) => { if (o.id !== pid && o.res[r] > 0) { got += o.res[r]; takes.push({ from: o.id, n: o.res[r] }); P.res[r] += o.res[r]; o.res[r] = 0; } });
+          s.players.forEach((o) => { if (!sameTeam(s, o.id, pid) && o.res[r] > 0) { got += o.res[r]; takes.push({ from: o.id, n: o.res[r] }); P.res[r] += o.res[r]; o.res[r] = 0; } });
           ev.push({ type: 'playDev', pid, card: c, res: r });
           st(s, pid).monopoly += got;
           ev.push({ type: 'monopoly', pid, res: r, takes, got });
@@ -797,6 +829,19 @@
         ev.push({ type: 'tradeCancel', pid });
         return;
       }
+      case 'gift': {
+        // equipos: regalar cartas a un compañero en tu turno
+        if (!s.teams) return 'Solo se puede regalar en partidas por equipos';
+        if (!isCur || s.phase !== 'main') return 'Solo puedes regalar en tu turno';
+        const T = s.players[a.to];
+        if (!T || a.to === pid || !sameTeam(s, pid, a.to)) return 'Solo puedes regalar a tu compañero';
+        if (!validResObj(a.cards) || !total(a.cards)) return 'Elige qué cartas regalar';
+        if (!has(P.res, a.cards)) return 'No tienes esas cartas';
+        for (const k in a.cards) { P.res[k] -= a.cards[k]; T.res[k] += a.cards[k]; }
+        ev.push({ type: 'gift', pid, to: a.to, n: total(a.cards) });
+        log(s, `🎁 ${P.name} regala ${total(a.cards)} ${total(a.cards) === 1 ? 'carta' : 'cartas'} a ${T.name}`);
+        return;
+      }
       case 'endTurn': {
         if (!isCur || s.phase !== 'main') return 'No puedes terminar el turno ahora';
         nextTurn(s, ev);
@@ -837,7 +882,7 @@
     const out = new Set();
     for (const v of s.board.hexes[hex].v) {
       const b = s.board.vertices[v].b;
-      if (b && b.owner !== pid && !protectedPlayer(s, b.owner)) {
+      if (b && !sameTeam(s, b.owner, pid) && !protectedPlayer(s, b.owner)) {
         const P = s.players[b.owner];
         const cnt = P.res ? total(P.res) : P.resCount;
         if (cnt > 0) out.add(b.owner);
@@ -857,8 +902,9 @@
     v.players.forEach((p, i) => {
       p.resCount = total(s.players[i].res);
       p.devCount = total(s.players[i].dev);
-      p.vp = vp(s, i, i === pid || s.phase === 'gameOver');
-      if (i !== pid && s.phase !== 'gameOver') { p.res = null; p.dev = null; p.devNew = null; }
+      const sees = i === pid || s.phase === 'gameOver' || (pid >= 0 && sameTeam(s, i, pid));
+      p.vp = vp(s, i, sees);
+      if (!sees) { p.res = null; p.dev = null; p.devNew = null; }
     });
     return v;
   }
@@ -873,6 +919,7 @@
 
   return {
     RES, RES_NAMES, COST, PIPS, DEV_NAMES, COLORS, WIN_VP, MAX_PLAYERS, DEFAULT_RULES, SPECIAL_RULES, HAND_OPTS,
+    TEAM_NAMES, TEAM_COLORS, teamsError, teamTarget, teamOf, sameTeam, teamVP, teamGoal,
     BIG_ONLY, normRules, winVP, rulesOf: R, piecesFor, piecesOf, robberHexOk, mapKind,
     createGame, apply, viewFor, filterEvents,
     canSettle, canRoad, legalSettlements, legalRoads, legalCities, tradeRatios, robberVictims,

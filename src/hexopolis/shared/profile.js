@@ -60,7 +60,7 @@
     const p = JSON.parse(JSON.stringify(prof));
     const before = p.xp, lvlFrom = levelOf(before);
     const st = (s.stats && s.stats.pl && s.stats.pl[pid]) || {};
-    const won = s.winner === pid && !ctx.left;
+    const won = !ctx.left && (s.winTeam != null ? E.teamOf(s, pid) === s.winTeam : s.winner === pid);
     const vp = E.vp(s, pid, true), target = E.winVP(s);
     const from = [];
     let xp = 0;

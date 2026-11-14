@@ -53,6 +53,14 @@ function readProfile(x) {
     return p && p.v === 1 && typeof p.id === 'string' ? p : null;
   } catch (e) { return null; }
 }
+// última ficha conocida de cada jugador (en memoria: se rellena según se conectan) para el ranking entre amigos
+const profileCache = new Map(); // id → {p, at}
+const onlineIds = new Map(); // id → nº de conexiones abiertas
+function touchProfile(p) { if (p && p.id) profileCache.set(p.id, { p, at: Date.now() }); }
+function setOnline(c, p) {
+  if (c.profId) { const n = (onlineIds.get(c.profId) || 1) - 1; if (n > 0) onlineIds.set(c.profId, n); else onlineIds.delete(c.profId); c.profId = null; }
+  if (p && p.id) { c.profId = p.id; onlineIds.set(p.id, (onlineIds.get(p.id) || 0) + 1); touchProfile(p); }
+}
 function cleanName(n) { return String(n || 'Jugador').slice(0, 16).trim() || 'Jugador'; }
 // al acabar una partida: experiencia y logros para cada humano con perfil
 function awardRoom(r) {
@@ -70,7 +78,7 @@ function awardRoom(r) {
     });
     profile.name = cleanName(seat.name);
     const signed = signProfile(profile);
-    seat.prof = profile;
+    seat.prof = profile; touchProfile(profile);
     if (seat.client && seat.client.ws) { seat.client.profile = profile; seat.client.send({ t: 'profileUpdate', profile: signed, gain }); }
     else pendingProfiles.set(seat.token, { signed, gain });
   });
@@ -153,6 +161,7 @@ wss.on('connection', (ws) => {
         c.token = String(m.token || '').slice(0, 64) || Math.random().toString(36).slice(2);
         c.name = cleanName(m.name);
         c.profile = readProfile(m.profile);
+        if (c.profile) { c.profile.name = c.name; setOnline(c, c.profile); }
         if (pendingProfiles.has(c.token)) { const pp = pendingProfiles.get(c.token); pendingProfiles.delete(c.token); c.profile = readProfile(pp.signed); c.send({ t: 'profileUpdate', profile: pp.signed, gain: pp.gain }); }
         // reconexión automática a su sala
         for (const r of rooms.values()) {
@@ -192,6 +201,13 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'setName': c.name = cleanName(m.name); break;
+      case 'friends': {
+        // fichas actualizadas de tus jugadores recientes (las que el servidor conoce) y quién está conectado
+        const ids = Array.isArray(m.ids) ? m.ids.slice(0, 60).map(String) : [];
+        const list = ids.map((id) => { const x = profileCache.get(id); return { id, p: x ? x.p : null, at: x ? x.at : null, online: onlineIds.has(id) }; });
+        c.send({ t: 'friends', req: m.req, list });
+        break;
+      }
       case 'profile': {
         // crear un perfil nuevo, comprobar uno (p. ej. del enlace de recuperación) o cambiar el emblema
         let p = null;
@@ -200,7 +216,7 @@ wss.on('connection', (ws) => {
         if (m.name) p.name = cleanName(m.name);
         if (m.emblem && Profile.emblemOk(m.emblem, Profile.levelOf(p.xp))) p.emblem = m.emblem;
         if (!m.check) {
-          c.profile = p;
+          c.profile = p; setOnline(c, p);
           if (c.room) { const si = c.room.seatOf(c.token); if (si >= 0) { c.room.seats[si].prof = p; c.room.sendRoom(); } }
         }
         c.send({ t: 'profile', profile: signProfile(p), req: m.req, fresh: !m.profile });
@@ -239,6 +255,7 @@ wss.on('connection', (ws) => {
       case 'botLevel': if (c.room) err(c.room.setBotLevel(c.token, m.i, m.level)); break;
       case 'removeSeat': if (c.room) err(c.room.removeSeat(c.token, m.i)); break;
       case 'start': if (c.room) err(c.room.start(c.token)); break;
+      case 'rematch': if (c.room) err(c.room.voteRematch(c.token)); break;
       case 'setRules': if (c.room) err(c.room.setRules(c.token, m.rules)); break;
       case 'chat': if (c.room) c.room.say(c.token, m.text); break;
       case 'action': if (c.room) err(c.room.action(c.token, m.action)); break;
@@ -247,6 +264,7 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     clients.delete(c);
+    setOnline(c, null);
     if (c.room) { c.room.disconnect(c.token); cleanup(c.room); }
     pushRoomList();
   });
