@@ -444,7 +444,6 @@ function renderRoom() {
   $('#host-tools').classList.add('hidden'); // se añade desde el hueco libre de la lista
   setHTML($('#rules-sum'), roomRulesHTML(r.rules, r.seats.length));
   bindRoomRules();
-  $('#btn-room-rules').textContent = '📜 Detalles';
   const seats = [];
   const lvlName = (l) => LVL_NAME[l][0] + LVL_NAME[l].slice(1).toLowerCase();
   const canGrow = r.seats.length < maxP && !(r.started && !r.over);
@@ -650,7 +649,6 @@ function rulesDetail(R, n, map) {
   return `<div class="rr-mini"><span class="rchip">🗺️ Mapa ${(map || Engine.mapKind(R, n)) === 'big' ? 'grande' : 'normal'}</span><span class="rchip">🏆 ${R.vp} puntos</span>${R.teams ? `<span class="rchip sp">👥 ${R.teams === 2 ? 'Parejas' : 'Tríos'} · meta del equipo ${Engine.teamTarget(R.vp, R.teams)}</span>` : ''}<span class="rchip">🏠 ${pc.settlements} · 🏙️ ${pc.cities} · 🛣️ ${pc.roads}</span><span class="rchip">🃏 ${R.hand === 99 ? 'Sin límite de cartas' : 'Límite ' + R.hand + ' cartas con el 7'}</span></div>
     ${sp.length ? `<ul class="rr-ul">${sp.map((x) => `<li><b>${x.icon} ${x.name}:</b> ${x.desc}</li>`).join('')}</ul>` : '<p class="muted">Sin normas especiales.</p>'}`;
 }
-$('#btn-room-rules').onclick = () => { Sfx.click(); openModal({ kind: 'roomRules' }); };
 
 function renderRoomChat() {
   const html = App.chat.slice(-30).map((m) => m.sys ? `<div class="sys">» ${esc(m.text)}</div>` : `<div><b style="color:${m.color}">${esc(m.name)}:</b> ${esc(m.text)}</div>`).join('');
