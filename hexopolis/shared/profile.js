@@ -48,6 +48,7 @@
     { key: 'big_table', icon: '🎪', name: 'Casa llena', desc: 'Juega una partida de 7 jugadores.' },
   ];
 
+  const MODE_KEYS = ['classic', 'teams', 'custom'];
   function newProfile(id, name) {
     const now = Date.now();
     return { v: 1, id, name: name || 'Jugador', emblem: '🏠', xp: 0, games: 0, wins: 0, streak: 0, best: 0, prod: 0, stole: 0, robbed: 0, trades: 0, vpTotal: 0, ach: [], created: now, updated: now };
@@ -89,6 +90,13 @@
     p.xp += xp; p.games++;
     if (won) { p.wins++; p.streak++; p.best = Math.max(p.best, p.streak); } else p.streak = 0;
     p.prod += st.prod || 0; p.stole += st.stole || 0; p.robbed += st.robbed || 0; p.trades += st.trades || 0; p.vpTotal += vp;
+    // estadísticas por modo de juego (clásica, por equipos, personalizada)
+    const mode = MODE_KEYS.includes(s.rules && s.rules.mode) ? s.rules.mode : 'classic';
+    p.modes = p.modes || {};
+    const M = p.modes[mode] || (p.modes[mode] = { games: 0, wins: 0, streak: 0, best: 0, prod: 0, stole: 0, vpTotal: 0 });
+    M.games++;
+    if (won) { M.wins++; M.streak++; M.best = Math.max(M.best, M.streak); } else M.streak = 0;
+    M.prod += st.prod || 0; M.stole += st.stole || 0; M.vpTotal += vp;
     // logros
     const got = new Set(p.ach), newAch = [];
     const give = (k, cond) => { if (cond && !got.has(k)) { got.add(k); newAch.push(k); } };
@@ -114,5 +122,5 @@
     return { profile: p, gain: { xp, from, total: p.xp, lvlFrom, lvlTo: levelOf(p.xp), newAch, won } };
   }
 
-  return { xpFor, levelOf, progress, RANKS, rankOf, EMBLEMS, emblemOk, ACH, newProfile, applyGame };
+  return { xpFor, levelOf, progress, RANKS, rankOf, EMBLEMS, emblemOk, ACH, MODE_KEYS, newProfile, applyGame };
 });
