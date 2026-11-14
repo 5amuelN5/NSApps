@@ -577,7 +577,13 @@ function handleEvents(events, prev) {
       case 'trade': case 'bankTrade': Sfx.trade(); if (e.type === 'trade' && (e.with === me || e.pid === me)) toast('¡Trato cerrado!', true); break;
       case 'offer': if (e.pid !== me) Sfx.card(); break;
       case 'tradeCancel': break;
-      case 'discard': if (e.to === me) { Sfx.coin(); toast(`${v.players[e.pid].name} te entrega ${e.n} cartas 🦹`, true); } break;
+      case 'discard':
+        if (e.split) {
+          const mine = e.split.find((x) => x.to === me);
+          if (mine && e.pid !== me) { Sfx.coin(); toast(`🧤 Recibes ${mine.n} ${mine.n === 1 ? 'carta' : 'cartas'} del descarte de ${v.players[e.pid].name}`, true); }
+          break;
+        }
+        if (e.to === me) { Sfx.coin(); toast(`${v.players[e.pid].name} te entrega ${e.n} cartas 🦹`, true); } break;
       case 'win':
         fx.confetti();
         if (e.pid === me) { bigMsg('¡VICTORIA!'); Sfx.win(); } else { bigMsg(`¡GANA ${v.players[e.pid].name}!`, v.players[e.pid].color); Sfx.lose(); }
@@ -627,7 +633,7 @@ function onPick(type, id) {
     act({ type: 'placeRoad', e: id });
   } else if (type === 'hex') {
     const victims = Engine.robberVictims(v, me, id);
-    if (victims.length > 1) openModal({ kind: 'victim', hex: id, victims });
+    if (victims.length > 1) openModal({ kind: 'victim', hex: id, victims, picks: [null, null] });
     else act({ type: 'moveRobber', hex: id, victim: victims[0] });
   }
   App.ui.build = null;
@@ -1072,7 +1078,7 @@ function renderModal() {
       if (!v.pendingDiscard || !v.pendingDiscard[me]) { closeModal(); return; }
       const need = v.pendingDiscard[me];
       const tot = Engine.total(m.sel);
-      h = `<h2>¡EL LADRÓN! DESCARTA ${need}</h2><p class="muted">Tienes más de ${handLimit(v)} cartas. Elige ${need} para ${Engine.rulesOf(v).robberKeeps && v.current !== me ? `entregar a <b style="color:${v.players[v.current].color}">${esc(v.players[v.current].name)}</b> (norma «El ladrón se queda el botín»)` : 'devolver al banco'}.</p>
+      h = `<h2>¡EL LADRÓN! DESCARTA ${need}</h2><p class="muted">Tienes más de ${handLimit(v)} cartas. Elige ${need} para ${Engine.rulesOf(v).doubleSteal ? 'repartir a partes iguales entre los demás jugadores (norma «Ladrón codicioso»)' : Engine.rulesOf(v).robberKeeps && v.current !== me ? `entregar a <b style="color:${v.players[v.current].color}">${esc(v.players[v.current].name)}</b> (norma «El ladrón se queda el botín»)` : 'devolver al banco'}.</p>
         <div class="steppers">${RES.map((r) => `<div class="stp">${resCard(r, `<span class="n">${P.res[r] - m.sel[r]}</span>`)}<div class="ctl"><button data-d="${r}:-1">-</button><span class="val">${m.sel[r]}</span><button data-d="${r}:1">+</button></div></div>`).join('')}</div>
         <button class="btn yellow" id="d-ok" ${tot === need ? '' : 'disabled'}>DESCARTAR (${tot}/${need})</button>`;
       box.innerHTML = h;
@@ -1103,6 +1109,19 @@ function renderModal() {
       break;
     }
     case 'victim': {
+      if (Engine.rulesOf(v).doubleSteal) {
+        // ladrón codicioso: elige a quién quitar cada una de las 2 cartas
+        const pk = m.picks;
+        const row = (k) => `<div class="vs-row"><span class="vs-lbl">${k + 1}ª carta</span><div class="vs-opts">${m.victims.map((pid) => { const p = v.players[pid]; return `<button class="vs-opt ${pk[k] === pid ? 'on' : ''}" style="--c:${p.color}" data-vk="${k}:${pid}">${esc(p.name)}<small>${p.resCount} cartas</small></button>`; }).join('')}</div></div>`;
+        h = `<h2>¿A QUIÉN ROBAS?</h2><p class="muted">🧤 Ladrón codicioso: robas 2 cartas. Elige a quién quitar cada una (puede ser la misma persona).</p>
+          ${row(0)}${row(1)}
+          <div class="row gap between"><button class="btn small ghost" id="v-back">ELEGIR OTRA CASILLA</button><button class="btn pink" id="v-go" ${pk[0] != null && pk[1] != null ? '' : 'disabled'}>ROBAR</button></div>`;
+        box.innerHTML = h;
+        box.querySelectorAll('[data-vk]').forEach((x) => (x.onclick = () => { const [k, pid] = x.dataset.vk.split(':').map(Number); pk[k] = pid; if (k === 0 && pk[1] == null) pk[1] = pid; Sfx.click(); renderModal(); }));
+        $('#v-go').onclick = () => { act({ type: 'moveRobber', hex: m.hex, victims: pk }); closeModal(); };
+        $('#v-back').onclick = () => { closeModal(); updateTargets(); };
+        break;
+      }
       h = `<h2>¿A QUIÉN ROBAS?</h2><div class="resp-list">${m.victims.map((pid) => { const p = v.players[pid]; return `<div class="resp" style="--c:${p.color}"><span class="grow" style="color:${p.color}">${esc(p.name)} · ${p.resCount} cartas</span><button class="btn small pink" data-v="${pid}">ROBAR</button></div>`; }).join('')}</div>
         <button class="btn small ghost" id="v-back">ELEGIR OTRA CASILLA</button>`;
       box.innerHTML = h;
@@ -1153,12 +1172,19 @@ function renderModal() {
         box.querySelectorAll('[data-rmap]').forEach((b) => (b.onclick = () => put({ map: b.dataset.rmap })));
         box.querySelectorAll('[data-rhand]').forEach((b) => (b.onclick = () => put({ hand: +b.dataset.rhand })));
         box.querySelectorAll('[data-rvp]').forEach((b) => (b.onclick = () => { const nv = R.vp + +b.dataset.rvp; if (nv >= 5 && nv <= 16) put({ vp: nv }); }));
-        box.querySelectorAll('[data-rsp]').forEach((b) => (b.onclick = () => put({ [b.dataset.rsp]: !R[b.dataset.rsp] })));
+        box.querySelectorAll('[data-rsp]').forEach((b) => (b.onclick = () => {
+          const k = b.dataset.rsp, on = !R[k], x = Engine.SPECIAL_RULES.find((y) => y.key === k);
+          const patch = { [k]: on };
+          if (on && x.excludes && R[x.excludes]) { patch[x.excludes] = false; toast(`«${Engine.SPECIAL_RULES.find((y) => y.key === x.excludes).name}» se desactiva: no se puede combinar con «${x.name}»`); }
+          put(patch);
+        }));
         $('#rr-none').onclick = () => put(Object.fromEntries(Engine.SPECIAL_RULES.map((x) => [x.key, false])));
         $('#rr-random').onclick = () => {
           const keys = Engine.SPECIAL_RULES.map((x) => x.key).sort(() => Math.random() - 0.5);
           const k = 2 + Math.floor(Math.random() * 2);
-          put(Object.fromEntries(keys.map((key, i) => [key, i < k])));
+          const pickd = Object.fromEntries(keys.map((key, i) => [key, i < k]));
+          if (pickd.doubleSteal && pickd.robberKeeps) pickd.robberKeeps = false;
+          put(pickd);
           toast('🎲 Normas sorpresa elegidas', true);
         };
         $('#rr-reset').onclick = () => put(Object.assign({}, Engine.DEFAULT_RULES));

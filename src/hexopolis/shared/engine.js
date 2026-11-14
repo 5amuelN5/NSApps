@@ -29,8 +29,8 @@
   };
   // normas especiales (activables una a una)
   const SPECIAL_RULES = [
-    { key: 'robberKeeps', icon: '🦹', name: 'El ladrón se queda el botín', desc: 'Cuando sale un 7, las cartas que descartan los demás no vuelven al banco: se las queda quien ha sacado el 7.' },
-    { key: 'doubleSteal', icon: '🧤', name: 'Ladrón codicioso', desc: 'Al mover el ladrón robas 2 cartas en lugar de 1.' },
+    { key: 'robberKeeps', icon: '🦹', name: 'El ladrón se queda el botín', desc: 'Cuando sale un 7, las cartas que descartan los demás no vuelven al banco: se las queda quien ha sacado el 7.', excludes: 'doubleSteal' },
+    { key: 'doubleSteal', icon: '🧤', name: 'Ladrón codicioso', desc: 'Al mover el ladrón robas 2 cartas y eliges a quién quitar cada una. Con un 7, las cartas que descarta cada uno se reparten a partes iguales entre los demás jugadores (las que sobran van al banco).', excludes: 'robberKeeps' },
     { key: 'friendlyRobber', icon: '🕊️', name: 'Ladrón amable', desc: 'No se puede poner el ladrón junto a quien tenga 2 puntos o menos, ni robarle.' },
     { key: 'peaceStart', icon: '🌱', name: 'Comienzo en paz', desc: 'Durante las 2 primeras rondas no sale el 7: si sale, se vuelven a tirar los dados.' },
     { key: 'doublesBonus', icon: '🎯', name: 'Dobles dorados', desc: 'Si los dos dados sacan el mismo número, todas las casillas producen el doble.' },
@@ -46,6 +46,7 @@
     if (r.vp != null && Number.isFinite(+r.vp)) o.vp = Math.max(5, Math.min(16, Math.round(+r.vp)));
     if (HAND_OPTS.includes(r.hand | 0)) o.hand = r.hand | 0;
     for (const x of SPECIAL_RULES) o[x.key] = !!r[x.key];
+    if (o.doubleSteal) o.robberKeeps = false; // son incompatibles: manda el ladrón codicioso
     return o;
   }
   function R(s) { return s.rules || DEFAULT_RULES; }
@@ -591,7 +592,24 @@
         if (total(a.cards) !== s.pendingDiscard[pid]) return `Debes descartar ${s.pendingDiscard[pid]} cartas`;
         if (!has(P.res, a.cards)) return 'No tienes esas cartas';
         const to = s.current;
-        if (R(s).robberKeeps && to !== pid) {
+        if (R(s).doubleSteal && s.players.length > 1) {
+          // ladrón codicioso: lo descartado se reparte a partes iguales entre los demás; lo que sobra va al banco
+          const cards = [];
+          RES.forEach((r) => { for (let i = 0; i < (a.cards[r] || 0); i++) cards.push(r); });
+          for (const r of cards) P.res[r]--;
+          shuffle(s, cards);
+          const others = s.players.filter((o) => o.id !== pid);
+          const each = Math.floor(cards.length / others.length);
+          const split = [];
+          others.forEach((o) => {
+            const got = cards.splice(0, each);
+            got.forEach((r) => o.res[r]++);
+            if (got.length) split.push({ to: o.id, n: got.length });
+          });
+          cards.forEach((r) => s.bank[r]++);
+          log(s, `🧤 ${P.name} descarta ${total(a.cards)} cartas: ${each ? `${each} para cada rival` : 'no llegan para repartir'}${cards.length ? ` y ${cards.length} al banco` : ''}`);
+          ev.push({ type: 'discard', pid, n: total(a.cards), split, toBank: cards.length });
+        } else if (R(s).robberKeeps && to !== pid) {
           const T = s.players[to];
           for (const k in a.cards) { P.res[k] -= a.cards[k]; T.res[k] += a.cards[k]; }
           log(s, `🦹 ${P.name} entrega ${total(a.cards)} cartas a ${T.name}`);
@@ -611,27 +629,36 @@
         if (!H || H.id === B.robber) return 'Elige otra casilla';
         if (!robberHexOk(s, pid, H.id)) return 'Ladrón amable: no puedes molestar a quien tiene 2 puntos o menos';
         const victims = robberVictims(s, pid, H.id);
-        let victim = null;
+        const times = R(s).doubleSteal ? 2 : 1;
+        // a quién se le quita cada carta (con el ladrón codicioso se puede elegir una persona distinta para cada carta)
+        let picks = [];
         if (victims.length) {
-          victim = a.victim != null ? a.victim : victims.length === 1 ? victims[0] : null;
-          if (!victims.includes(victim)) return 'Elige a quién robar';
+          if (Array.isArray(a.victims) && a.victims.length) picks = a.victims.slice(0, times);
+          else {
+            const v0 = a.victim != null ? a.victim : victims.length === 1 ? victims[0] : null;
+            picks = Array(times).fill(v0);
+          }
+          if (!picks.every((x) => victims.includes(x))) return 'Elige a quién robar';
+          while (picks.length < times) picks.push(picks[picks.length - 1]);
         }
         const from = B.robber;
         B.robber = H.id;
         ev.push({ type: 'robber', pid, hex: H.id, from });
-        if (victim != null) {
-          const V = s.players[victim];
-          const times = R(s).doubleSteal ? 2 : 1;
-          let got = 0;
-          for (let k = 0; k < times; k++) {
+        if (picks.length) {
+          const got = {};
+          for (const victim of picks) {
+            let V = s.players[victim];
+            let vid = victim;
+            // si a esa persona ya no le quedan cartas, se le quita a otra de la casilla
+            if (!total(V.res)) { const alt = victims.find((x) => total(s.players[x].res) > 0); if (alt == null) break; vid = alt; V = s.players[alt]; }
             const pool = [];
             RES.forEach((r) => { for (let i = 0; i < V.res[r]; i++) pool.push(r); });
-            if (!pool.length) break;
             const r = pool[randInt(s, pool.length)];
-            V.res[r]--; P.res[r]++; got++;
-            ev.push({ type: 'steal', pid, from: victim, res: r, private: [pid, victim] });
+            V.res[r]--; P.res[r]++; got[vid] = (got[vid] || 0) + 1;
+            ev.push({ type: 'steal', pid, from: vid, res: r, private: [pid, vid] });
           }
-          log(s, `🦹 ${P.name} roba ${got === 1 ? 'una carta' : got + ' cartas'} a ${V.name}`);
+          const parts = Object.keys(got).map((k) => `${got[k] === 1 ? 'una carta' : got[k] + ' cartas'} a ${s.players[k].name}`);
+          log(s, `🦹 ${P.name} roba ${parts.join(' y ')}`);
         } else log(s, `🦹 ${P.name} mueve el ladrón`);
         s.phase = s.returnPhase || 'main';
         return;

@@ -389,6 +389,11 @@
       else victim = victims.sort((a, b) => score(b) - score(a))[0];
     }
     function score(o) { const p = s.players[o]; return (level >= 3 ? E.vp(s, o, false) * 2 : 0) + tot(p.res) * 0.6; }
+    if (victim != null && E.rulesOf(s).doubleSteal) {
+      // segunda carta: al mismo si le quedan cartas, si no a otro de la casilla
+      const v2 = tot(s.players[victim].res) >= 2 || victims.length < 2 ? victim : victims.find((x) => x !== victim);
+      return { type: 'moveRobber', hex: best, victims: [victim, v2] };
+    }
     return { type: 'moveRobber', hex: best, victim };
   }
 

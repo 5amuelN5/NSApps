@@ -555,3 +555,9 @@ input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(58,163,217,0
 .rr-ul b { color: var(--text); }
 .tr-note { font-size: 13px; }
 .rr-seg button[data-off] { opacity: 0.35; text-decoration: line-through; cursor: not-allowed; }
+.vs-row { display: flex; flex-direction: column; gap: 6px; }
+.vs-lbl { font-family: var(--px); font-weight: 600; font-size: 14px; color: var(--muted); }
+.vs-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.vs-opt { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); border-left: 4px solid var(--c); background: rgba(255,255,255,0.05); color: var(--c); font-family: var(--px); font-weight: 600; font-size: 14px; }
+.vs-opt small { color: var(--muted); font-family: inherit; font-weight: 500; font-size: 12px; }
+.vs-opt.on { background: color-mix(in srgb, var(--c) 22%, transparent); box-shadow: 0 0 0 2px var(--c); }
