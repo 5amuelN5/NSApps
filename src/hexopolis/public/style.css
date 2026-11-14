@@ -1108,3 +1108,8 @@ body.spec .spec-qc { display: flex; margin-top: 8px; }
 .st-dots { display: flex; justify-content: center; gap: 6px; }
 .st-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); transition: background .2s, transform .2s; }
 .st-dots i.on { background: var(--yellow); transform: scale(1.2); }
+
+/* contador del banco encima de la gráfica de tiradas (ordenador) */
+.bank-hud.in-col { position: static; zoom: 1; max-width: none; justify-content: center; background: var(--panel); box-shadow: 0 4px 14px rgba(0,0,0,0.3); border-radius: 14px; padding: 6px 10px; gap: 4px; font-size: 13px; }
+.bank-hud.in-col .bh-c img { width: 18px; height: 18px; }
+.bank-hud.in-col .bh-mk { flex-basis: 100%; text-align: center; margin: 0; }

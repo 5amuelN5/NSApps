@@ -814,8 +814,10 @@ function smallDicePos() {
     const pb = $('#players').getBoundingClientRect().bottom;
     return { cx: W - size * 2.6, cy: pb + size * 1.1, size, small: true };
   }
-  const info = $('#info').getBoundingClientRect();
-  return { cx: info.left + info.width / 2, cy: info.top - size * 0.95, size, small: true };
+  const rc = document.querySelector('.rightcol').getBoundingClientRect();
+  // pantalla baja: no cabe el hueco entre el registro y la gráfica → los dados van a la izquierda de la gráfica
+  if (W > 1100 && $('#side').classList.contains('over')) return { cx: rc.left - size * 1.25, cy: rc.top + size * 0.75, size, small: true };
+  return { cx: rc.left + rc.width / 2, cy: rc.top - size * 0.95, size, small: true };
 }
 
 function applyState(view, events) {
@@ -1909,8 +1911,10 @@ function computeRegion() {
   // hueco entre el registro y la gráfica para los dados de los demás jugadores
   // el chat/registro se queda siempre con al menos 220 px de alto aunque la gráfica sea muy grande
   const sTop = parseFloat($('#side').style.top) || $('#side').getBoundingClientRect().top || 60;
-  const want = rc.height + 20 + 78 * Prefs.ui;
-  const maxBottom = innerHeight - sTop - 220;
+  // hueco exacto para los dados pequeños (miden 'size' y van centrados 0,95·size encima de la columna) + margen
+  const dsz = Math.min(46, Math.max(30, W * 0.035)) * Prefs.ui;
+  const want = (innerHeight - rc.top) + dsz * 1.5 + 18;
+  const maxBottom = innerHeight - sTop - 200;
   $('#side').style.bottom = Math.round(Math.max(10, Math.min(want, maxBottom))) + 'px';
   $('#side').classList.toggle('over', want > maxBottom);
   const cc = $('#centercol').getBoundingClientRect();
@@ -1949,9 +1953,15 @@ function renderBankHUD() {
 }
 function placeBankHUD() {
   const el = $('#bank-hud'), r = board.region, ui = Prefs.ui;
+  // en el ordenador va encima de la gráfica de tiradas (dentro de la columna derecha); en el móvil y mirando, sobre el tablero
+  const inCol = innerWidth > 800 && !document.body.classList.contains('spec');
+  const home = inCol ? document.querySelector('.rightcol') : $('#scr-game');
+  if (el.parentElement !== home) { if (inCol) home.insertBefore(el, home.firstChild); else home.appendChild(el); setTimeout(layout, 0); }
+  el.classList.toggle('in-col', inCol);
+  if (inCol) { el.style.left = el.style.top = ''; return; }
   if (App.screen !== 'game' || !r || r.w < 50 || !el.innerHTML) return;
   el.style.left = Math.round((r.x + 4) / ui) + 'px';
-  // en el móvil arriba del tablero (abajo está el cartel de turno); en el ordenador, abajo a la izquierda
+  // en el móvil arriba del tablero (abajo está el cartel de turno); mirando, abajo a la izquierda del tablero
   el.style.top = Math.round((innerWidth <= 800 ? r.y - 2 : r.y + r.h - el.getBoundingClientRect().height - 4) / ui) + 'px';
 }
 // aviso grande del mercado del día en el centro del tablero
