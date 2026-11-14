@@ -352,7 +352,7 @@ input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(58,163,217,0
 @media (min-width: 801px) { .rightcol { width: 350px; } }
 @media (min-width: 1101px) { .side { width: calc(350px * var(--ui)); top: calc(56px * var(--ui)); } }
 /* escalado del HUD */
-.plw, .topright, .hand, .devs, .rightcol, .buildbar, .banner, .offer-pop, .modal-box, .toast, .size-pop { zoom: var(--ui); }
+.plw, .topright, .hand, .devs, .rightcol, .buildbar, .banner, .offer-pop, .bank-hud, .market-pop, .modal-box, .toast, .size-pop { zoom: var(--ui); }
 .side h3 { font-size: calc(13px * var(--ui)) !important; }
 .log { font-size: calc(13px * var(--ui)) !important; }
 .chat-wrap input { font-size: calc(14px * var(--ui)) !important; }
@@ -1062,3 +1062,28 @@ body.spec .spec-qc { display: flex; margin-top: 8px; }
 .tw-opt .tw-gos .tw-go:disabled { cursor: default; }
 .tw-opt .tw-go:disabled { opacity: 0.4; }
 .tw-opt small i { font-style: normal; color: var(--muted); }
+
+/* cartas que le quedan al banco */
+.bank-hud { position: fixed; z-index: 20; display: flex; align-items: center; gap: 3px; flex-wrap: wrap; max-width: calc(100vw - 16px); padding: 4px 7px; background: rgba(14,22,36,0.82); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); font-size: 12px; backdrop-filter: blur(4px); }
+.bank-hud:empty { display: none; }
+.bank-hud .bh-t { font-size: 14px; margin-right: 1px; cursor: default; }
+.bank-hud .bh-c { display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px; border-radius: 7px; cursor: default; }
+.bank-hud .bh-c img { width: 16px; height: 16px; image-rendering: pixelated; }
+.bank-hud .bh-c b { font-weight: 800; color: var(--text); min-width: 13px; }
+.bank-hud .bh-c.low b { color: #ffb347; }
+.bank-hud .bh-c.out { opacity: 0.55; }
+.bank-hud .bh-c.out b { color: #ff6b6b; }
+.bank-hud .bh-c.mk { background: rgba(242,193,78,0.22); box-shadow: inset 0 0 0 1px rgba(242,193,78,0.7); }
+.bank-hud .bh-sep { width: 1px; height: 14px; background: var(--line); margin: 0 2px; }
+.bank-hud .bh-mk { font-weight: 800; color: var(--yellow); margin-left: 3px; white-space: nowrap; cursor: default; }
+.bank-hud .bh-mk small { font-weight: 600; color: var(--muted); }
+.bank-hud .bh-mk i { font-style: normal; }
+@media (max-width: 800px) { .bank-hud { font-size: 11px; padding: 2px 5px; gap: 1px; flex-wrap: nowrap; } .bank-hud .bh-c { padding: 1px 3px; } .bank-hud .bh-c img { width: 13px; height: 13px; } .bank-hud .bh-mk i, .bank-hud .bh-mk small { display: none; } }
+/* aviso del mercado del día */
+.market-pop { position: fixed; z-index: 64; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 22px 16px; min-width: 220px; max-width: min(340px, calc(100vw - 30px)); text-align: center; background: var(--panel); border: 2px solid rgba(242,193,78,0.85); border-radius: 18px; box-shadow: 0 0 0 6px rgba(242,193,78,0.12), var(--shadow); pointer-events: none; }
+.market-pop small { font-family: var(--px); font-weight: 700; font-size: 13px; letter-spacing: 1px; color: var(--yellow); }
+.market-pop img { width: 54px; height: 54px; image-rendering: pixelated; }
+.market-pop b { font-family: var(--px); font-weight: 700; font-size: 26px; color: var(--text); }
+.market-pop span { font-size: 13px; color: var(--muted); line-height: 1.35; }
+.market-pop.show { animation: mkpop 3.6s ease-out forwards; }
+@keyframes mkpop { 0% { opacity: 0; transform: translate(-50%, -50%) scale(0.6); } 8% { opacity: 1; transform: translate(-50%, -50%) scale(1.06); } 13% { transform: translate(-50%, -50%) scale(1); } 85% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -60%) scale(0.96); } }

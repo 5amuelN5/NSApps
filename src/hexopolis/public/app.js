@@ -107,7 +107,10 @@ function bigMsg(text, color) {
   b.style.right = 'auto';
   b.style.width = c.w + 'px';
   b.style.top = Math.round(c.y - b.offsetHeight / 2 || c.y - 30) + 'px';
-  b.textContent = text; b.style.color = color || '';
+  // si está el aviso del mercado en el centro, el mensaje sale encima de él
+  const mp = $('#market-pop');
+  if (mp && !mp.classList.contains('hidden')) { const mr = mp.getBoundingClientRect(); if (mr.height) b.style.top = Math.max(4, Math.round(mr.top - (b.offsetHeight || 60) - 8)) + 'px'; }
+  b.textContent = text; b.style.color = color || ''; App.bigAt = Date.now();
   b.classList.remove('show'); void b.offsetWidth; b.classList.add('show');
 }
 
@@ -768,6 +771,10 @@ function applyState(view, events) {
   autoModals();
   renderHUD();
   handleEvents(events, prev);
+  // mercado del día: aviso en el centro del tablero cuando cambia la oferta (no al reconectar)
+  if (prev && prev.boardKey === view.boardKey && view.market && view.market !== prev.market && view.phase !== 'gameOver') {
+    marketPop(view.market, events.some((e) => e.type === 'turn' && e.pid === App.me) ? 1300 : 0);
+  }
   updateTargets();
   if (typeof maybeTutorial === 'function') maybeTutorial();
 }
@@ -921,7 +928,7 @@ function renderHUD() {
   const spec = isSpec();
   if (document.body.classList.contains('spec') !== spec) { document.body.classList.toggle('spec', spec); if (spec) { App.ui.stab = App.ui.stab || 'chat'; $('#spec-qc').innerHTML = qcHTML(); } setTimeout(layout, 0); }
   if (spec) renderSpecCards();
-  renderPlayers(); renderHand(); renderBuild(); renderActions(); renderBanner(); renderLog(); renderOffer(); renderInfo();
+  renderPlayers(); renderHand(); renderBuild(); renderActions(); renderBanner(); renderLog(); renderOffer(); renderInfo(); renderBankHUD();
   if (App.view.dice) renderDiceMini(App.view.dice);
   if (App.ui.modal) renderModal();
   layoutIfNeeded();
@@ -1870,6 +1877,38 @@ function placeOverlays(r) {
   toastEl.style.left = Math.round(cx / ui) + 'px';
   toastEl.style.top = Math.round((r.y + r.h * 0.18) / ui) + 'px';
   bn.style.left = innerWidth > 800 ? Math.round(cx / ui) + 'px' : '';
+  placeBankHUD();
+}
+// cartas que le quedan al banco (y al mazo de desarrollo), en una esquina del tablero
+function marketLeft(v) { const n = v.players.length, round = Math.floor((Math.max(1, v.turn) - 1) / n) + 1; return 5 - ((round - 1) % 5); }
+function renderBankHUD() {
+  const v = App.view, el = $('#bank-hud');
+  if (!v || !v.bank || v.phase === 'setup') { setHTML(el, ''); return; }
+  const mk = Engine.rulesOf(v).market && v.market;
+  const chip = (img, n, title, cls = '') => `<span class="bh-c ${cls} ${n <= 0 ? 'out' : n <= 3 ? 'low' : ''}" title="${title}"><img src="${img}" alt=""><b>${n}</b></span>`;
+  setHTML(el, `<span class="bh-t" title="Cartas que le quedan al banco">🏦</span>${RES.map((r) => chip(Sprites.url(r, 3), v.bank[r], `${RN[r]}: le quedan ${v.bank[r]} al banco${mk === r ? ' · 🛒 en oferta: 2 a 1' : ''}`, mk === r ? 'mk' : '')).join('')}<span class="bh-sep"></span>${chip(Sprites.url('card', 3), v.devDeck, `Cartas de desarrollo: quedan ${v.devDeck}`, 'dev')}${mk ? `<span class="bh-mk" title="Mercado del día: ${RN[mk]} se cambia 2 a 1 con el banco">🛒 <i>${RN[mk]} </i>2:1 <small>· ${marketLeft(v)} ${marketLeft(v) === 1 ? 'ronda' : 'rondas'}</small></span>` : ''}`);
+  placeBankHUD();
+}
+function placeBankHUD() {
+  const el = $('#bank-hud'), r = board.region, ui = Prefs.ui;
+  if (App.screen !== 'game' || !r || r.w < 50 || !el.innerHTML) return;
+  el.style.left = Math.round((r.x + 4) / ui) + 'px';
+  // en el móvil arriba del tablero (abajo está el cartel de turno); en el ordenador, abajo a la izquierda
+  el.style.top = Math.round((innerWidth <= 800 ? r.y - 2 : r.y + r.h - el.getBoundingClientRect().height - 4) / ui) + 'px';
+}
+// aviso grande del mercado del día en el centro del tablero
+function marketPop(res, delay) {
+  clearTimeout(App.mkT1); clearTimeout(App.mkT2);
+  // si hay un mensaje grande en pantalla (¡TU TURNO!, ¡A JUGAR!…), esperar a que acabe
+  delay = Math.max(delay || 0, 1250 - (Date.now() - (App.bigAt || 0)));
+  App.mkT1 = setTimeout(() => {
+    const el = $('#market-pop'), c = boardCenter(), ui = Prefs.ui;
+    el.innerHTML = `<small>🛒 MERCADO DEL DÍA</small><img src="${Sprites.url(res, 6)}" alt=""><b>${RN[res]} 2 : 1</b><span>Durante 5 rondas, todos cambian ${RN[res].toLowerCase()} con el banco 2 a 1</span>`;
+    el.style.left = Math.round(c.x / ui) + 'px'; el.style.top = Math.round(c.y / ui) + 'px';
+    el.classList.remove('hidden', 'show'); void el.offsetWidth; el.classList.add('show');
+    Sfx.bonus();
+    App.mkT2 = setTimeout(() => el.classList.add('hidden'), 3600);
+  }, delay || 0);
 }
 function layoutIfNeeded() {
   if (JSON.stringify(computeRegion()) !== lastLayoutKey) layout();
