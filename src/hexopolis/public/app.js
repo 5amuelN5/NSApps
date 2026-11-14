@@ -1713,17 +1713,16 @@ function renderModal() {
     }
     case 'quit': {
       if (App.me < 0) {
-        h = `<h2>¿DEJAR DE MIRAR?</h2><p class="muted">Estás viendo la partida como espectador. Puedes volver a entrar cuando quieras.</p>
-          <div class="row gap between"><button class="btn ghost" data-close>SEGUIR MIRANDO</button><button class="btn red" id="q-ok">SALIR</button></div>`;
+        h = `<div class="quit-box"><h2>¿Dejar de mirar?</h2><p class="muted">Puedes volver a entrar cuando quieras.</p>
+          <div class="quit-btns"><button class="btn ghost" data-close>Seguir mirando</button><button class="btn red" id="q-ok">Salir</button></div></div>`;
         box.innerHTML = h;
         $('#q-ok').onclick = () => { closeModal(); leaveRoom(); };
         break;
       }
-      h = `<h2>¿SALIR DE LA PARTIDA?</h2><p class="muted">${App.mode === 'online' ? 'Un bot jugará en tu lugar. Puedes volver cuando quieras desde la lista de salas (↩ Volver).' : App.mode === 'p2p' && P2P.role === 'host' ? 'Eres el anfitrión: si sales, la partida termina para todos.' : App.mode === 'p2p' ? 'Un bot jugará en tu lugar.' : 'Se perderá la partida.'}</p>
-        <div class="row gap between"><button class="btn ghost" data-close>SEGUIR JUGANDO</button>${canDeleteRoom() ? '<button class="btn small trash" id="q-del" title="Cerrar la sala para todos">🗑 Eliminar la sala</button>' : ''}<button class="btn red" id="q-ok">SALIR</button></div>`;
+      h = `<div class="quit-box"><h2>¿Salir de la partida?</h2><p class="muted">${App.mode === 'online' ? 'Un bot jugará en tu lugar. Puedes volver desde «Unirse a partida» (↩ Volver).' : App.mode === 'p2p' && P2P.role === 'host' ? 'Eres el anfitrión: si sales, la partida termina para todos.' : App.mode === 'p2p' ? 'Un bot jugará en tu lugar.' : 'La partida se queda guardada: puedes seguirla desde el menú.'}</p>
+        <div class="quit-btns"><button class="btn ghost" data-close>Seguir jugando</button><button class="btn red" id="q-ok">Salir</button></div></div>`;
       box.innerHTML = h;
       $('#q-ok').onclick = () => { closeModal(); leaveRoom(); };
-      if ($('#q-del')) $('#q-del').onclick = () => openModal({ kind: 'delroom' });
       break;
     }
   }
