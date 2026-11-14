@@ -1,0 +1,58 @@
+[
+  {
+    "id": "clasico",
+    "name": "Mundo Clásico",
+    "description": "El tablero tradicional de 42 territorios y 6 continentes.",
+    "territories": 42,
+    "regions": 6,
+    "recommendedPlayers": "2-6"
+  },
+  {
+    "id": "europa",
+    "name": "Europa",
+    "description": "El Viejo Continente, del Atlántico a los Urales y el Cáucaso.",
+    "territories": 46,
+    "regions": 7,
+    "recommendedPlayers": "2-6"
+  },
+  {
+    "id": "africa",
+    "name": "África",
+    "description": "Todo el continente africano, del Magreb al cabo de Buena Esperanza.",
+    "territories": 54,
+    "regions": 7,
+    "recommendedPlayers": "2-6"
+  },
+  {
+    "id": "americas",
+    "name": "Las Américas",
+    "description": "El continente americano de Alaska a Tierra del Fuego.",
+    "territories": 50,
+    "regions": 7,
+    "recommendedPlayers": "2-6"
+  },
+  {
+    "id": "asia",
+    "name": "Asia y Oceanía",
+    "description": "De Anatolia al Pacífico: Asia, el archipiélago malayo y Oceanía.",
+    "territories": 67,
+    "regions": 7,
+    "recommendedPlayers": "2-6"
+  },
+  {
+    "id": "espana",
+    "name": "España",
+    "description": "Las 50 provincias españolas más Ceuta y Melilla, agrupadas por comunidades autónomas.",
+    "territories": 52,
+    "regions": 18,
+    "recommendedPlayers": "2-6"
+  },
+  {
+    "id": "eeuu",
+    "name": "Estados Unidos",
+    "description": "Los 50 estados agrupados en las 9 divisiones del censo.",
+    "territories": 50,
+    "regions": 9,
+    "recommendedPlayers": "2-6"
+  }
+]

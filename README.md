@@ -6,6 +6,7 @@ Para añadir un juego al menú: mete su carpeta aquí, una carátula 4:3 en `cov
 
 | Juego | Jugar | Código |
 |---|---|---|
+| Dominium — conquista mundial por turnos, salas online con amigos y bots de 4 niveles | [`dominium/`](https://5amueln5.github.io/nsgames/dominium/) | [`src/dominium`](src/dominium) |
 | Hexópolis — colonizar una isla, salas online con amigos y bots de 4 niveles | [`hexopolis/`](https://5amueln5.github.io/nsgames/hexopolis/) | [`src/hexopolis`](src/hexopolis) |
 | MineMergeMatic — mina, fusiona y automatiza | [`minemergematic/`](https://5amueln5.github.io/nsgames/minemergematic/) | |
 | Bills Must Be Paid — rompe huchas para pagar facturas | [`bills-must-be-paid/`](https://5amueln5.github.io/nsgames/bills-must-be-paid/) | |
@@ -22,4 +23,17 @@ Para regenerar la web tras un cambio:
 cd src/hexopolis
 SERVER_URL=https://hexopolis.onrender.com npm run build
 rm -rf ../../hexopolis && cp -R dist ../../hexopolis
+```
+
+## Cómo está montado Dominium
+
+- `dominium/` — la web del juego que publica GitHub Pages (se genera con `npm run build`).
+- `src/dominium/` — el código. El servidor de salas online corre gratis en Render (*Root Directory* `src/dominium`, `npm install`, `npm start`) y se actualiza solo con cada cambio en este repositorio. No tiene dependencias.
+
+Para regenerar la web tras un cambio:
+
+```bash
+cd src/dominium
+SERVER_URL=https://dominium.onrender.com npm run build
+rm -rf ../../dominium && cp -R dist ../../dominium
 ```

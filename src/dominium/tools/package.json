@@ -1,0 +1,24 @@
+{
+  "name": "dominium-map-tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build-maps.mjs",
+    "validate": "node validate-maps.mjs",
+    "previews": "node render-previews.mjs"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "d3-composite-projections": "^2.0.0",
+    "d3-geo": "^3.1.2",
+    "d3-geo-projection": "^4.0.0",
+    "es-atlas": "^0.6.0",
+    "polygon-clipping": "^0.15.7",
+    "polylabel": "^2.1.0",
+    "topojson-client": "^3.1.0",
+    "topojson-server": "^3.0.1",
+    "topojson-simplify": "^3.0.3",
+    "us-atlas": "^3.0.1",
+    "world-atlas": "^2.0.2"
+  }
+}

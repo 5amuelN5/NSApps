@@ -1,0 +1,17 @@
+{
+  "name": "dominium",
+  "version": "1.0.0",
+  "description": "DOMINIUM — juego de conquista mundial por turnos, multijugador online con salas y bots",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server/server.js",
+    "test": "node test/simulate.mjs 6",
+    "build-maps": "cd tools && npm install && node build-maps.mjs && node validate-maps.mjs",
+    "build": "node build.js"
+  },
+  "main": "server/server.js"
+}
