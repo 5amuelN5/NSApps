@@ -929,3 +929,17 @@ body.spec .spec-qc { display: flex; margin-top: 8px; }
 .rt-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .room-panel.solo .rt-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @media (max-width: 680px) { .room-panel.solo .rt-grid { grid-template-columns: 1fr 1fr; } }
+
+/* ===== crear / unirse ===== */
+.play-card .pc-ic { font-weight: 700; }
+.menu-foot { flex-wrap: wrap; justify-content: center; row-gap: 2px; }
+.ng-field { display: flex; flex-direction: column; gap: 6px; font-family: var(--px); font-size: 14px; color: var(--muted); }
+.ng-field input { font-size: 18px; font-weight: 700; padding: 12px 14px; }
+.jg-code { text-align: center; font-family: var(--px) !important; font-size: 30px !important; letter-spacing: 10px; text-transform: uppercase; color: var(--yellow); }
+.ng-vis { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ng-vis button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border-radius: 12px; border: 2px solid var(--line); background: rgba(255,255,255,0.04); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.ng-vis button b { font-family: var(--px); font-weight: 600; font-size: 15px; }
+.ng-vis button small { color: var(--muted); font-size: 12px; }
+.ng-vis button.on { border-color: var(--yellow); background: rgba(242,193,78,0.1); }
+.ng-note { margin: 0; font-size: 13px; text-align: center; }
+.modal-box:has(.ng-field) { width: min(460px, 100%); }

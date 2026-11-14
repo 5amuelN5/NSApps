@@ -120,6 +120,22 @@ $('#in-name').addEventListener('input', (e) => {
 });
 $('#btn-local').onclick = () => { Sfx.unlock(); Sfx.click(); startLocal(); };
 $('#btn-online').onclick = () => { Sfx.unlock(); Sfx.click(); goOnline(); };
+$('#btn-create-game').onclick = () => { Sfx.unlock(); Sfx.click(); openModal({ kind: 'newgame' }); };
+$('#btn-join-game').onclick = () => { Sfx.unlock(); Sfx.click(); openModal({ kind: 'joingame' }); };
+// crear una sala online con nombre (si no hay servidor, se crea en modo directo)
+async function createRoomFlow(name, isPublic) {
+  $('#in-roomname').value = name; $('#in-public').checked = isPublic;
+  await App.configReady;
+  if (!App.hasServer) { goOnline(); setTimeout(() => directHost(), 300); return; }
+  App.pendingCreate = { name, isPublic };
+  await goOnline();
+  if (App.ws && App.ws.readyState === 1) flushPendingCreate();
+}
+function flushPendingCreate() {
+  const p = App.pendingCreate; if (!p) return;
+  App.pendingCreate = null;
+  send({ t: 'createRoom', name: p.name, isPublic: p.isPublic });
+}
 $('#btn-rules').onclick = () => { Sfx.click(); openModal({ kind: 'rules' }); };
 document.querySelectorAll('[data-back]').forEach((b) => (b.onclick = () => { Sfx.click(); show('menu'); }));
 
@@ -235,6 +251,7 @@ function connect() {
     const sv = Saves.mine();
     if (sv) ws.send(JSON.stringify({ t: 'restore', code: sv.code, blob: sv.blob }));
     if (App.pendingJoin) { send({ t: 'joinRoom', code: App.pendingJoin }); App.pendingJoin = null; }
+    flushPendingCreate();
   };
   ws.onmessage = (e) => { try { onMsg(JSON.parse(e.data)); } catch (err) { console.error(err); } };
   ws.onclose = () => {
@@ -1560,6 +1577,44 @@ function renderModal() {
         <div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close>Cerrar</button></div>`;
       box.innerHTML = h;
       if ($('#pd-prof')) $('#pd-prof').onclick = () => { Sfx.click(); openModal({ kind: 'pcard', prof: App.room.seats[m.pid].prof }); };
+      break;
+    }
+    case 'newgame': {
+      const def = `Sala de ${App.name}`;
+      h = `<div class="row between"><h2>＋ Crear partida</h2><button class="btn small ghost" data-close>✕</button></div>
+        <label class="ng-field"><span>Nombre de la sala</span><input id="ng-name" maxlength="22" placeholder="${esc(def)}" value="${esc(m.name || '')}" autocomplete="off"></label>
+        <div class="ng-vis"><button class="${m.priv ? '' : 'on'}" data-vis="pub"><b>🌐 Pública</b><small>Sale en la lista de salas</small></button><button class="${m.priv ? 'on' : ''}" data-vis="priv"><b>🔒 Privada</b><small>Solo con el código o el enlace</small></button></div>
+        <button class="btn big pink" id="ng-ok">Crear sala</button>
+        <p class="muted ng-note">Dentro podrás añadir bots, invitar a amigos con el enlace y elegir las reglas.</p>`;
+      box.innerHTML = h;
+      const inp = $('#ng-name'); setTimeout(() => inp.focus(), 50);
+      box.querySelectorAll('[data-vis]').forEach((b) => (b.onclick = () => { m.priv = b.dataset.vis === 'priv'; m.name = inp.value; Sfx.click(); renderModal(); }));
+      const go = () => { const name = inp.value.trim() || def; closeModal(); createRoomFlow(name, !m.priv); };
+      $('#ng-ok').onclick = go;
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); e.stopPropagation(); });
+      break;
+    }
+    case 'joingame': {
+      h = `<div class="row between"><h2>🔑 Unirse a partida</h2><button class="btn small ghost" data-close>✕</button></div>
+        <label class="ng-field"><span>Código de la sala</span><input id="jg-code" class="jg-code" maxlength="4" placeholder="ABCD" autocomplete="off" autocapitalize="characters" spellcheck="false" value="${esc(m.code || '')}"></label>
+        <div class="row gap"><button class="btn big pink" id="jg-play" style="flex:1">▶ Jugar</button><button class="btn big cyan" id="jg-watch" style="flex:1">👁 Mirar</button></div>
+        <p class="muted ng-note">Pide el código a quien creó la sala (son 4 letras o números). Si la partida ya ha empezado, entrarás a mirarla.</p>
+        <p class="ng-note"><button class="link-btn" id="jg-list">🌐 Ver salas públicas</button></p>`;
+      box.innerHTML = h;
+      const inp = $('#jg-code'); setTimeout(() => inp.focus(), 50);
+      const val = () => inp.value.trim().toUpperCase();
+      const ok = () => { const c = val(); if (!/^[A-Z0-9]{4}$/.test(c)) { toast('El código tiene 4 letras o números'); inp.focus(); return null; } return c; };
+      inp.addEventListener('input', () => { inp.value = inp.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4); m.code = inp.value; });
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#jg-play').click(); e.stopPropagation(); });
+      $('#jg-play').onclick = () => { const c = ok(); if (!c) return; Sfx.click(); closeModal(); goOnline(c); };
+      $('#jg-watch').onclick = async () => {
+        const c = ok(); if (!c) return; Sfx.click(); closeModal();
+        await goOnline();
+        const t0 = Date.now();
+        const tryWatch = () => { if (App.ws && App.ws.readyState === 1) send({ t: 'joinRoom', code: c, watch: true }); else if (Date.now() - t0 < 70000) setTimeout(tryWatch, 400); };
+        tryWatch();
+      };
+      $('#jg-list').onclick = () => { Sfx.click(); closeModal(); goOnline(); };
       break;
     }
     case 'hostleave': {
