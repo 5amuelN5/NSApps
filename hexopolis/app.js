@@ -302,12 +302,15 @@ function renderRoomList(list) {
   if (!list.length) { el.innerHTML = '<p class="muted">No hay salas públicas. ¡Crea una!</p>'; return; }
   el.innerHTML = list.map((r) => {
     const full = r.players >= (r.max || 4);
-    const why = r.started ? 'La partida ya ha empezado: puedes mirarla' : full ? 'La sala está llena: puedes mirarla' : 'Entrar a jugar en esta sala';
-    return `<div class="room-item"><b>${esc(r.code)}</b><div class="grow">${esc(r.name)}<br><span class="muted">${r.players}/${r.max || 4} jugadores · ${r.started ? 'EN PARTIDA' : 'ESPERANDO'}${r.watchers ? ` · 👁 ${r.watchers}` : ''}</span></div>
-    <div class="ri-btns"><button class="btn small pink" data-join="${esc(r.code)}" ${r.started || full ? 'disabled' : ''} title="${why}">▶ ENTRAR</button><button class="btn small cyan" data-watch="${esc(r.code)}" title="Entrar como espectador: ves la partida en directo sin jugar">👁 MIRAR</button></div></div>`;
+    const why = r.mine ? 'Vuelve a tu sitio en esta sala' : r.started ? 'La partida ya ha empezado: puedes mirarla' : full ? 'La sala está llena: puedes mirarla' : 'Entrar a jugar en esta sala';
+    const enter = r.mine ? `<button class="btn small green" data-join="${esc(r.code)}" title="${why}">↩ VOLVER</button>` : `<button class="btn small pink" data-join="${esc(r.code)}" ${r.started || full ? 'disabled' : ''} title="${why}">▶ ENTRAR</button>`;
+    const del = r.canDelete ? `<button class="btn small trash" data-del="${esc(r.code)}" title="Eliminar la sala para todos">🗑</button>` : '';
+    return `<div class="room-item ${r.mine ? 'mine' : ''}"><b>${esc(r.code)}</b><div class="grow">${esc(r.name)}${r.mine ? ' <span class="ri-mine">Tu sala</span>' : ''}<br><span class="muted">${r.players}/${r.max || 4} jugadores · ${r.started ? 'EN PARTIDA' : 'ESPERANDO'}${r.watchers ? ` · 👁 ${r.watchers}` : ''}</span></div>
+    <div class="ri-btns">${enter}<button class="btn small cyan" data-watch="${esc(r.code)}" title="Entrar como espectador: ves la partida en directo sin jugar">👁 MIRAR</button>${del}</div></div>`;
   }).join('');
   el.querySelectorAll('[data-join]').forEach((b) => (b.onclick = () => { Sfx.click(); send({ t: 'joinRoom', code: b.dataset.join }); }));
   el.querySelectorAll('[data-watch]').forEach((b) => (b.onclick = () => { Sfx.click(); send({ t: 'joinRoom', code: b.dataset.watch, watch: true }); }));
+  el.querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => { Sfx.click(); const r = list.find((x) => x.code === b.dataset.del); if (r) openModal({ kind: 'delroom', code: r.code, name: r.name, started: r.started, people: r.humans - (r.mine ? 1 : 0) + (r.watchers || 0) }); }));
 }
 
 // ================= SALA =================
@@ -569,6 +572,7 @@ function onMsg(m) {
     case 'error': toast(m.msg); Sfx.error(); break;
     case 'joinFail': App.room = null; if (App.mode === 'p2p') P2P.close(); show('lobby'); $('#net-status').textContent = m.msg || 'No se pudo entrar en la sala'; break;
     case 'roomClosed': {
+      if (m.fromList) { closeModal(); toast('🗑 Sala eliminada', true); break; } // eliminada desde la lista: te quedas en la lista
       // la sala ya no existe: todos vuelven al menú principal
       closeModal();
       Saves.set(App.token, m.code, null);
@@ -1536,13 +1540,15 @@ function renderModal() {
       break;
     }
     case 'delroom': {
-      const R = App.room; if (!R) { closeModal(); return; }
-      const others = R.seats.filter((s, i) => s.kind === 'human' && i !== App.you).length + (R.spectators || []).length;
+      // desde dentro de la sala o desde la lista de salas (m.code)
+      const R = m.code ? { name: m.name, code: m.code, started: m.started, over: false } : App.room;
+      if (!R) { closeModal(); return; }
+      const others = m.code ? Math.max(0, m.people || 0) : R.seats.filter((s, i) => s.kind === 'human' && i !== App.you).length + (R.spectators || []).length;
       h = `<h2>🗑 ¿Eliminar la sala?</h2>
         <p>La sala <b>${esc(R.name)}</b> (${esc(R.code)}) se cerrará${others ? ` para todos: ${others === 1 ? 'la otra persona vuelve' : `las otras ${others} personas vuelven`} al menú` : ''}.${R.started && !R.over ? ' <b>La partida en curso se perderá.</b>' : ''} No se puede deshacer.</p>
         <div class="row gap between"><button class="btn ghost" data-close>Cancelar</button><button class="btn red" id="dr-ok">🗑 Eliminar la sala</button></div>`;
       box.innerHTML = h;
-      $('#dr-ok').onclick = () => { Sfx.click(); closeModal(); send({ t: 'closeRoom' }); };
+      $('#dr-ok').onclick = () => { Sfx.click(); closeModal(); send({ t: 'closeRoom', code: R.code }); };
       break;
     }
     case 'quit': {
@@ -1553,7 +1559,7 @@ function renderModal() {
         $('#q-ok').onclick = () => { closeModal(); leaveRoom(); };
         break;
       }
-      h = `<h2>¿SALIR DE LA PARTIDA?</h2><p class="muted">${App.mode === 'online' ? 'Un bot jugará en tu lugar.' : App.mode === 'p2p' && P2P.role === 'host' ? 'Eres el anfitrión: si sales, la partida termina para todos.' : App.mode === 'p2p' ? 'Un bot jugará en tu lugar.' : 'Se perderá la partida.'}</p>
+      h = `<h2>¿SALIR DE LA PARTIDA?</h2><p class="muted">${App.mode === 'online' ? 'Un bot jugará en tu lugar. Puedes volver cuando quieras desde la lista de salas (↩ Volver).' : App.mode === 'p2p' && P2P.role === 'host' ? 'Eres el anfitrión: si sales, la partida termina para todos.' : App.mode === 'p2p' ? 'Un bot jugará en tu lugar.' : 'Se perderá la partida.'}</p>
         <div class="row gap between"><button class="btn ghost" data-close>SEGUIR JUGANDO</button>${isHost() && App.mode === 'online' ? '<button class="btn small trash" id="q-del" title="Cerrar la sala para todos">🗑 Eliminar la sala</button>' : ''}<button class="btn red" id="q-ok">SALIR</button></div>`;
       box.innerHTML = h;
       $('#q-ok').onclick = () => { closeModal(); leaveRoom(); };

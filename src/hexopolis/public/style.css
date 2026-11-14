@@ -836,3 +836,5 @@ body.spec .spec-qc { display: flex; margin-top: 8px; }
 .ri-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .ri-btns .btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .col.gap { display: flex; flex-direction: column; gap: 8px; }
+.room-item.mine { border-color: rgba(76,184,122,0.55); background: rgba(76,184,122,0.08); }
+.ri-mine { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: rgba(76,184,122,0.2); color: #9fe3bd; font-size: 11.5px; font-weight: 800; vertical-align: middle; }

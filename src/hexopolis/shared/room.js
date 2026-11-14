@@ -58,6 +58,7 @@
       if (this.spectators.has(token)) this.spectators.delete(token); // un espectador ocupa un sitio libre
       this.seats.push({ kind: 'human', token, name: name || 'Jugador', client, connected: true, prof: (client && client.profile) || null });
       if (!this.host) this.host = token;
+      if (!this.creator) this.creator = token; // quien creó la sala (puede eliminarla aunque haya salido)
       this.sysChat(`${name} entra en la sala`);
       this.sendRoom();
       return { ok: true };
@@ -320,14 +321,14 @@
     snapshot() {
       return {
         v: 1, code: this.code, name: this.name, isPublic: this.isPublic, local: this.local, speed: this.speed,
-        host: this.host, rules: this.rules, startedAt: this.startedAt, lastTurn: this.lastTurn, chat: this.chat.slice(-30), state: this.state, savedAt: Date.now(),
+        host: this.host, creator: this.creator, rules: this.rules, startedAt: this.startedAt, lastTurn: this.lastTurn, chat: this.chat.slice(-30), state: this.state, savedAt: Date.now(),
         seats: this.seats.map((x) => ({ kind: x.kind, token: x.token, name: x.name, level: x.level, left: !!x.left, prof: x.prof || null, acts: x.acts || 0, autoActs: x.autoActs || 0 })),
       };
     }
     static fromSnapshot(snap, opts = {}) {
       const r = new Room({ code: snap.code, name: snap.name, isPublic: snap.isPublic, local: snap.local, ...opts });
       const now = Date.now();
-      r.startedAt = snap.startedAt || null;
+      r.startedAt = snap.startedAt || null; r.creator = snap.creator || snap.host;
       r.speed = snap.speed || 1; r.rules = E.normRules(snap.rules || (snap.state && snap.state.rules)); r.host = snap.host; r.lastTurn = snap.lastTurn; r.chat = snap.chat || []; r.state = snap.state;
       // los humanos vuelven como desconectados: si alguien no regresa, un bot juega por él pasado el tiempo de gracia
       r.seats = snap.seats.map((x) => (x.kind === 'bot' ? { kind: 'bot', name: x.name, level: x.level, connected: true }

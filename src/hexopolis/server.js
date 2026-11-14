@@ -129,18 +129,25 @@ function code() {
   do { c = ''; for (let i = 0; i < 4; i++) c += A[Math.floor(Math.random() * A.length)]; } while (rooms.has(c));
   return c;
 }
-function roomList() {
-  return [...rooms.values()].filter((r) => r.isPublic).map((r) => {
+// lista de salas para un cliente: las públicas y además las suyas (aunque sean privadas o estén empezadas)
+function roomList(c) {
+  const tok = c && c.token;
+  return [...rooms.values()].filter((r) => r.isPublic || (tok && r.seatOf(tok) >= 0)).map((r) => {
     const i = r.info();
-    return { code: i.code, name: i.name, players: i.seats.length, max: i.max, watchers: i.spectators.length, humans: i.seats.filter((s) => s.kind === 'human').length, started: i.started && !i.over, host: (i.seats.find((s) => s.host) || {}).name };
+    const si = tok ? r.seatOf(tok) : -1;
+    return {
+      code: i.code, name: i.name, players: i.seats.length, max: i.max, watchers: i.spectators.length,
+      humans: i.seats.filter((s) => s.kind === 'human').length, started: i.started && !i.over,
+      host: (i.seats.find((s) => s.host) || {}).name,
+      mine: si >= 0, canDelete: !!tok && (r.creator === tok || r.host === tok),
+    };
   });
 }
 let listTimer = null;
 function pushRoomList() {
   clearTimeout(listTimer);
   listTimer = setTimeout(() => {
-    const list = roomList();
-    for (const c of clients) if (!c.room) c.send({ t: 'rooms', list });
+    for (const c of clients) if (!c.room) c.send({ t: 'rooms', list: roomList(c) });
   }, 100);
 }
 
@@ -169,7 +176,7 @@ wss.on('connection', (ws) => {
           const si = r.seatOf(c.token);
           if (si >= 0 && !r.seats[si].left && r.state && r.state.phase !== 'gameOver') { c.room = r; r.join(c, c.token, c.name); c.send({ t: 'joined', code: r.code }); return; }
         }
-        c.send({ t: 'rooms', list: roomList() });
+        c.send({ t: 'rooms', list: roomList(c) });
         break;
       }
       case 'restore': {
@@ -224,7 +231,7 @@ wss.on('connection', (ws) => {
         c.send({ t: 'profile', profile: signProfile(p), req: m.req, fresh: !m.profile });
         break;
       }
-      case 'listRooms': c.send({ t: 'rooms', list: roomList() }); break;
+      case 'listRooms': c.send({ t: 'rooms', list: roomList(c) }); break;
       case 'createRoom': {
         if (!c.token) return;
         if (c.room) c.room.leave(c.token);
@@ -249,27 +256,27 @@ wss.on('connection', (ws) => {
       }
       case 'leaveRoom': {
         if (c.room) { c.room.leave(c.token); cleanup(c.room); c.room = null; }
-        c.send({ t: 'rooms', list: roomList() });
+        c.send({ t: 'rooms', list: roomList(c) });
         pushRoomList();
         break;
       }
       case 'closeRoom': {
-        // el anfitrión elimina la sala: todos (jugadores y espectadores) vuelven a la lista de salas
-        const r = c.room;
-        if (!r) return;
-        if (r.host !== c.token) return err('Solo quien creó la sala puede eliminarla');
+        // el anfitrión (o quien la creó, aunque haya salido) elimina la sala: todos vuelven al menú
+        const r = c.room || rooms.get(String(m.code || '').toUpperCase());
+        if (!r) return c.send({ t: 'rooms', list: roomList(c) });
+        if (r.host !== c.token && r.creator !== c.token) return err('Solo quien creó la sala puede eliminarla');
         closedRooms.set(r.code, Date.now());
+        const inRoom = c.room === r;
         for (const o of clients) {
           if (o.room !== r) continue;
           o.room = null;
           o.send({ t: 'save', code: r.code, blob: null });
           o.send({ t: 'roomClosed', code: r.code, byMe: o === c });
-          o.send({ t: 'rooms', list: [] });
         }
+        if (!inRoom) c.send({ t: 'roomClosed', code: r.code, byMe: true, fromList: true });
         clearTimeout(saveTimers.get(r)); saveTimers.delete(r);
         r.destroy(); rooms.delete(r.code);
-        const list = roomList();
-        for (const o of clients) if (!o.room) o.send({ t: 'rooms', list });
+        for (const o of clients) if (!o.room) o.send({ t: 'rooms', list: roomList(o) });
         console.log(`  Sala ${r.code} eliminada por su anfitrión`);
         break;
       }
