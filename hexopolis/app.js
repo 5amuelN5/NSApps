@@ -7,6 +7,8 @@ const DEV_ICON = { knight: 'knight', vp: 'vp', roadBuilding: 'road', yop: 'yop',
 const DEV_SHORT = { knight: 'Caballero', vp: 'Punto', roadBuilding: 'Caminos', yop: 'Abundancia', monopoly: 'Monopolio' };
 const LVL_NAME = { 1: 'NOVATO', 2: 'NORMAL', 3: 'DIFÍCIL', 4: 'EXPERTO' };
 const stars = (n) => `<span class="st">${'★'.repeat(n)}</span>`;
+// solo toca el DOM si el contenido ha cambiado (evita repintados y parpadeos)
+function setHTML(el, html) { if (!el) return false; if (el._h === html) return false; el.innerHTML = html; el._h = html; return true; }
 const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } },
@@ -586,12 +588,12 @@ function pump() {
     App.busy = true; Sfx.dice();
     if (App.screen !== 'game') applyState(it.view, []);
     let done = false;
-    const finish = () => { if (done) return; done = true; applyState(it.view, it.events); setTimeout(() => { App.busy = false; pump(); }, 200); };
+    const finish = () => { if (done) return; done = true; applyState(it.view, it.events); setTimeout(() => { App.busy = false; pump(); }, 120); };
     fx.rollDice(roll.dice, finish, roll.pid === App.me ? bigDicePos() : smallDicePos());
-    setTimeout(finish, 1100); // por si la pestaña está en segundo plano (sin requestAnimationFrame)
+    setTimeout(finish, 800); // por si la pestaña está en segundo plano (sin requestAnimationFrame)
   } else {
     applyState(it.view, it.events);
-    if (App.queue.length) { App.busy = true; setTimeout(() => { App.busy = false; pump(); }, 90); }
+    if (App.queue.length) { App.busy = true; setTimeout(() => { App.busy = false; pump(); }, 60); }
   }
 }
 
@@ -717,9 +719,9 @@ function handleEvents(events, prev) {
 function midEdge(id) { const e = App.view.board.edges[id]; const a = board.vertexScreen(e.a), b = board.vertexScreen(e.b); return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
 function renderDiceMini(d) {
   const el = $('#dice-mini');
-  if (!d) { el.innerHTML = ''; return; }
+  if (!d) { setHTML(el, ''); return; }
   const seven = d[0] + d[1] === 7 ? ' seven' : '';
-  el.innerHTML = `<div class="d${seven}">${d[0]}</div><div class="d${seven}">${d[1]}</div>`;
+  setHTML(el, `<div class="d${seven}">${d[0]}</div><div class="d${seven}">${d[1]}</div>`);
 }
 
 // ================= OBJETIVOS EN EL TABLERO =================
@@ -787,7 +789,7 @@ function renderPlayers() {
   const T = v.trade;
   const seatInfo = App.room ? App.room.seats : [];
   const open = App.ui.plOpen || (App.ui.plOpen = new Set());
-  $('#players').innerHTML = v.players.map((p, i) => {
+  setHTML($('#players'), v.players.map((p, i) => {
     const cur = v.current === i && v.phase !== 'gameOver';
     let tag = '';
     if (T && i in T.responses) {
@@ -829,7 +831,7 @@ function renderPlayers() {
       </div></div>` : '';
     const tt = v.teams ? `<span class="tm-tag" style="--tc:${Engine.TEAM_COLORS[Engine.teamOf(v, i)]}" title="Equipo ${Engine.TEAM_NAMES[Engine.teamOf(v, i)]}">${Engine.TEAM_NAMES[Engine.teamOf(v, i)]}</span>` : '';
     return `<div class="plw" style="--c:${p.color}">${line.replace('<span class="nm">', tt + '<span class="nm">')}${big}</div>`;
-  }).join('') + teamBarHTML(v);
+  }).join('') + teamBarHTML(v));
   $('#players').querySelectorAll('[data-pl]').forEach((el) => (el.onclick = () => {
     const i = +el.dataset.pl; Sfx.click();
     if (open.has(i)) open.delete(i); else open.add(i);
@@ -861,17 +863,17 @@ function playerDetails(v, pid) {
 }
 function renderHand() {
   const v = App.view, me = App.me;
-  if (me < 0) { $('#hand').innerHTML = ''; $('#devs').innerHTML = ''; return; }
+  if (me < 0) { setHTML($('#hand'), ''); setHTML($('#devs'), ''); return; }
   const P = v.players[me];
-  $('#hand').innerHTML = RES.map((r) => `<div class="rc ${P.res[r] ? '' : 'zero'}" id="rc-${r}" style="--rc:${CARD_BG[r]}" title="${RN[r]}"><span class="art"><img src="${Sprites.url(r, 5)}"></span><span class="lbl">${RN[r]}</span><span class="n">${P.res[r]}</span></div>`).join('');
+  setHTML($('#hand'), RES.map((r) => `<div class="rc ${P.res[r] ? '' : 'zero'}" id="rc-${r}" style="--rc:${CARD_BG[r]}" title="${RN[r]}"><span class="art"><img src="${Sprites.url(r, 5)}"></span><span class="lbl">${RN[r]}</span><span class="n">${P.res[r]}</span></div>`).join(''));
   const canPlayNow = v.current === me && (v.phase === 'roll' || v.phase === 'main') && !v.devPlayed;
   const cards = Object.keys(P.dev).filter((c) => P.dev[c] > 0);
-  $('#devs').innerHTML = cards.map((c) => {
+  setHTML($('#devs'), cards.map((c) => {
     const ready = devReady(v, P, c);
     const play = c !== 'vp' && canPlayNow && ready > 0;
     return `<div class="dc ${play ? 'play' : ''} ${ready <= 0 && c !== 'vp' ? 'new' : ''}" data-dev="${c}" title="${Engine.DEV_NAMES[c]}${c === 'vp' ? ' (cuenta automáticamente)' : ready <= 0 ? ' (podrás jugarla el próximo turno)' : play ? ' — ¡clic para jugar!' : ''}">
       <span class="art"><img src="${Sprites.url(DEV_ICON[c], 5, DEV_ICON[c] === 'road' ? '#c9a46a' : undefined)}"></span><span class="t">${DEV_SHORT[c]}</span>${P.dev[c] > 1 ? `<span class="n">${P.dev[c]}</span>` : ''}</div>`;
-  }).join('');
+  }).join(''));
   $('#devs').querySelectorAll('.dc').forEach((d) => (d.onclick = () => { Sfx.click(); openModal({ kind: 'devinfo', card: d.dataset.dev }); }));
 }
 
@@ -895,11 +897,11 @@ function renderInfo() {
     const exp = tot * ROLL_WAYS[n] / 36;
     h += `<div class="col" title="${n}: ${c} veces (esperado ${exp.toFixed(1)})"><div class="area"><span class="cnt">${c || ''}</span><div class="bar ${red ? 'red' : ''} ${n === last ? 'last' : ''}" style="height:${(c / max) * 100}%"></div>${tot ? `<div class="exp" style="bottom:${(exp / max) * 100}%"></div>` : ''}</div><span class="lab ${red ? 'red' : ''}">${n}</span></div>`;
   }
-  $('#roll-chart').innerHTML = h;
-  $('#roll-chart').previousElementSibling.innerHTML = `Tiradas <small title="La línea punteada marca lo esperado por probabilidad">${tot} en total</small>`;
+  setHTML($('#roll-chart'), h);
+  setHTML($('#roll-chart').previousElementSibling, `Tiradas <small title="La línea punteada marca lo esperado por probabilidad">${tot} en total</small>`);
   if ($('#cost-card') && !$('#cost-card').dataset.ready) {
     const row = (n, c, pv) => `<div class="crow"><span class="cname">${n}${pv ? `<small>${pv}</small>` : ''}</span>${costHTML(c)}</div>`;
-    $('#cost-card').innerHTML = row('Camino', COST.road) + row('Poblado', COST.settlement, '1 PV') + row('Ciudad', COST.city, '2 PV') + row('Carta', COST.dev, '?');
+    setHTML($('#cost-card'), row('Camino', COST.road) + row('Poblado', COST.settlement, '1 PV') + row('Ciudad', COST.city, '2 PV') + row('Carta', COST.dev, '?'));
     $('#cost-card').dataset.ready = '1';
   }
 }
@@ -918,25 +920,25 @@ function costHTML(cost) { return `<span class="cost">${Object.keys(cost).map((r)
 
 function renderActions() {
   const v = App.view, me = App.me, el = $('#actions');
-  if (me < 0) { el.innerHTML = ''; return; }
+  if (me < 0) { setHTML(el, ''); return; }
   const P = v.players[me];
   const mine = v.current === me;
   const b = App.ui.build;
-  if (v.phase === 'gameOver') { el.innerHTML = `<button class="btn yellow wide" id="a-results">Resultados</button>`; $('#a-results').onclick = () => openModal({ kind: 'gameover' }); return; }
+  if (v.phase === 'gameOver') { setHTML(el, `<button class="btn yellow wide" id="a-results">Resultados</button>`); $('#a-results').onclick = () => openModal({ kind: 'gameover' }); return; }
   if (mine && v.phase === 'roll') {
-    el.innerHTML = `<button class="btn yellow wide glow" id="a-roll">🎲 Tirar dados <span class="k">espacio</span></button>`;
+    setHTML(el, `<button class="btn yellow wide glow" id="a-roll">🎲 Tirar dados <span class="k">espacio</span></button>`);
     $('#a-roll').onclick = () => act({ type: 'roll' });
     return;
   }
   if (mine && v.phase === 'roadBuilding') {
-    el.innerHTML = `<button class="btn wide" id="a-endrb">Terminar caminos gratis</button>`;
+    setHTML(el, `<button class="btn wide" id="a-endrb">Terminar caminos gratis</button>`);
     $('#a-endrb').onclick = () => act({ type: 'endRoadBuilding' });
     return;
   }
   const main = mine && v.phase === 'main' && !v.trade;
-  el.innerHTML = `
+  setHTML(el, `
     <button class="btn cyan" id="a-trade" ${main ? '' : 'disabled'}><span class="k">T</span>Comercio<span class="cost">⇄</span></button>
-    <button class="btn pink" id="a-end" ${mine && v.phase === 'main' ? '' : 'disabled'}><span class="k">esp</span>Fin de turno<span class="cost">▶</span></button>`;
+    <button class="btn pink" id="a-end" ${mine && v.phase === 'main' ? '' : 'disabled'}><span class="k">esp</span>Fin de turno<span class="cost">▶</span></button>`);
   $('#a-trade').onclick = () => {
     Sfx.click();
     openModal({ kind: 'trade', want: {}, give: {} });
@@ -947,7 +949,7 @@ function renderActions() {
 // fichas que puedes construir (debajo del tablero)
 function renderBuild() {
   const v = App.view, me = App.me, el = $('#build');
-  if (me < 0 || v.phase === 'gameOver') { el.innerHTML = ''; el.classList.add('hidden'); return; }
+  if (me < 0 || v.phase === 'gameOver') { setHTML(el, ''); el.classList.add('hidden'); return; }
   el.classList.remove('hidden');
   const P = v.players[me];
   const main = v.current === me && v.phase === 'main' && !v.trade;
@@ -964,14 +966,14 @@ function renderBuild() {
   ];
   // cuántas se pueden hacer con los materiales actuales (sin pasar de las piezas que quedan)
   const howMany = (cost, left) => Math.max(0, Math.min(left, ...Object.keys(cost).map((r) => Math.floor(P.res[r] / cost[r]))));
-  el.innerHTML = items.map((it) => {
+  setHTML(el, items.map((it) => {
     const can = howMany(it.cost, it.left);
     const why = it.ok ? 'Puedes construirlo' : it.left <= 0 ? (it.k === 'dev' ? 'No quedan cartas' : 'No te quedan piezas') : !main ? 'Solo en tu turno, después de tirar' : !Engine.has(P.res, it.cost) ? 'Te faltan recursos' : 'No hay sitio donde ponerlo';
     return `<button class="bp ${it.ok ? 'ok' : ''} ${b === it.k ? 'on' : ''}" data-bp="${it.k}" ${it.ok ? '' : 'disabled'} title="${it.nm}: ${why}">
       <span class="k">${it.key}</span><span class="can ${can ? '' : 'zero'}" title="Con tus materiales actuales puedes ${it.k === 'dev' ? 'comprar' : 'construir'} ${can}">${can}</span>
       <img class="pc" src="${it.icon}" alt=""><span class="nm">${it.nm}</span>${costHTML(it.cost)}
       <span class="left" title="${it.k === 'dev' ? 'Cartas que quedan en el mazo' : 'Piezas que te quedan'}">Quedan ${it.left}</span></button>`;
-  }).join('');
+  }).join(''));
   el.querySelectorAll('[data-bp]').forEach((x) => (x.onclick = () => { const k = x.dataset.bp; if (k === 'dev') act({ type: 'buyDev' }); else setBuild(k); }));
 }
 
@@ -1005,7 +1007,7 @@ function renderBanner() {
     case 'gameOver': t = v.winTeam != null ? `🏆 Gana el equipo ${Engine.TEAM_NAMES[v.winTeam]}` : `🏆 ${esc(v.players[v.winner].name)} gana`; m = true; break;
   }
   if (me < 0 && v.phase !== 'gameOver') t = `<span class="spec-tag">👁 Espectador</span> ${t}`;
-  el.innerHTML = t; el.classList.toggle('me', m);
+  setHTML(el, t); el.classList.toggle('me', m);
 }
 
 function renderLog() {
@@ -1013,7 +1015,7 @@ function renderLog() {
   if (isSpec()) return renderSpecSide();
   $('#log').classList.remove('hidden');
   const el = $('#log');
-  el.innerHTML = v.log.slice(-40).map((l) => `<div>${esc(l)}</div>`).join('') + App.chat.slice(-8).filter((c) => !c.sys).map((c) => `<div class="chat" style="--c:${c.color}"><b>${esc(c.name)}:</b> ${esc(c.text)}</div>`).join('');
+  setHTML(el, v.log.slice(-40).map((l) => `<div>${esc(l)}</div>`).join('') + App.chat.slice(-8).filter((c) => !c.sys).map((c) => `<div class="chat" style="--c:${c.color}"><b>${esc(c.name)}:</b> ${esc(c.text)}</div>`).join(''));
   el.scrollTop = el.scrollHeight;
   const hasChat = App.mode === 'online' || App.mode === 'p2p';
   $('#chat-wrap').classList.toggle('hidden', !hasChat);
@@ -1086,10 +1088,10 @@ function renderOffer() {
       const st = r === 'accept' ? `<button class="btn small green" data-confirm="${pid}">✔ Cerrar trato</button>` : r === 'reject' ? '<span class="of-st no">No acepta</span>' : '<span class="of-st wait">Pensando…</span>';
       return `<div class="resp" style="--c:${p.color}"><span class="grow" style="color:${p.color}">${esc(p.name)}</span>${st}</div>`;
     }).join('');
-    el.innerHTML = `<span class="who">Tu oferta</span>
+    setHTML(el, `<span class="who">Tu oferta</span>
       <div class="of-line"><div class="of-side give"><small>Das</small>${chips(T.give)}</div><span class="of-arrow">⇄</span><div class="of-side get"><small>Pides</small>${chips(T.get)}</div></div>
       <div class="resp-list" style="width:100%">${rows}</div>
-      ${allNo ? '<span class="of-st no">Nadie ha aceptado</span><div class="row gap"><button class="btn small yellow" id="o-edit">✎ Cambiar la oferta</button><button class="btn small ghost" id="o-cancel">Cerrar</button></div>' : '<button class="btn small ghost" id="o-cancel">Cancelar oferta</button>'}`;
+      ${allNo ? '<span class="of-st no">Nadie ha aceptado</span><div class="row gap"><button class="btn small yellow" id="o-edit">✎ Cambiar la oferta</button><button class="btn small ghost" id="o-cancel">Cerrar</button></div>' : '<button class="btn small ghost" id="o-cancel">Cancelar oferta</button>'}`);
     el.querySelectorAll('[data-confirm]').forEach((b) => (b.onclick = () => act({ type: 'confirmTrade', with: +b.dataset.confirm })));
     $('#o-cancel').onclick = () => act({ type: 'cancelTrade' });
     if ($('#o-edit')) $('#o-edit').onclick = () => {
@@ -1102,11 +1104,11 @@ function renderOffer() {
     const P = v.players[me];
     const canAcc = Engine.has(P.res, T.get);
     const have = RES.filter((x) => T.get[x]).map((x) => `${RN[x]}: tienes ${P.res[x]}`).join(' · ');
-    el.innerHTML = `<span class="who"><span style="color:${from.color}">${esc(from.name)}</span> te propone un trato</span>
+    setHTML(el, `<span class="who"><span style="color:${from.color}">${esc(from.name)}</span> te propone un trato</span>
       <div class="of-line"><div class="of-side get"><small>Recibes</small>${chips(T.give)}</div><span class="of-arrow">⇄</span><div class="of-side give"><small>Das</small>${chips(T.get)}</div></div>
       <span class="of-have ${canAcc ? '' : 'no'}">${canAcc ? have : 'No tienes esas cartas'}</span>
       ${r === null ? `<div class="row gap"><button class="btn green" id="o-acc" ${canAcc ? '' : 'disabled'}>✔ Aceptar</button><button class="btn red" id="o-rej">✕ Rechazar</button></div>`
-        : `<span class="of-st ${r === 'accept' ? 'ok' : 'no'}">${r === 'accept' ? 'Has aceptado · esperando a que cierre el trato…' : 'Has rechazado'}</span>`}`;
+        : `<span class="of-st ${r === 'accept' ? 'ok' : 'no'}">${r === 'accept' ? 'Has aceptado · esperando a que cierre el trato…' : 'Has rechazado'}</span>`}`);
     if (r === null) {
       if ($('#o-acc')) $('#o-acc').onclick = () => act({ type: 'respondTrade', id: T.id, accept: true });
       $('#o-rej').onclick = () => act({ type: 'respondTrade', id: T.id, accept: false });
@@ -1120,7 +1122,7 @@ function renderOffer() {
 function renderSpecCards() {
   const v = App.view, T = v.trade, seats = (App.room && App.room.seats) || [];
   const goal = Engine.winVP(v);
-  $('#spec-cards').innerHTML = `<div class="spc-title">👁 Estás mirando · ${App.room ? esc(App.room.name) : ''}</div>` + (v.teams ? teamBarHTML(v) : '') + v.players.map((p, i) => {
+  setHTML($('#spec-cards'), `<div class="spc-title">👁 Estás mirando · ${App.room ? esc(App.room.name) : ''}</div>` + (v.teams ? teamBarHTML(v) : '') + v.players.map((p, i) => {
     const cur = v.current === i && v.phase !== 'gameOver', seat = seats[i] || {};
     const lr = v.longestRoad.owner === i, la = v.largestArmy.owner === i;
     let tag = '';
@@ -1138,7 +1140,7 @@ function renderSpecCards() {
       <div class="spc-stats">${st(Sprites.url('card', 3), p.resCount, 'Cartas de recurso en la mano', p.resCount > handLimit(v) ? 'warn' : '')}${st(Sprites.url('devcard', 3), p.devCount, 'Cartas de desarrollo sin jugar')}${st(Sprites.url('knight', 3), p.knights, 'Caballeros jugados', la ? 'gold' : '')}${st(Sprites.url('road', 3, p.color), p.roadLen, 'Camino más largo propio', lr ? 'gold' : '')}</div>
       ${lr || la || tag ? `<div class="spc-aw">${lr ? '<span class="aw">🛣️ Camino</span>' : ''}${la ? '<span class="aw">⚔️ Ejército</span>' : ''}${tag}</div>` : ''}
     </div>`;
-  }).join('');
+  }).join(''));
   $('#spec-cards').querySelectorAll('[data-spc]').forEach((el) => (el.onclick = () => { Sfx.click(); openModal({ kind: 'player', pid: +el.dataset.spc }); }));
 }
 function renderSpecSide() {
@@ -1150,10 +1152,10 @@ function renderSpecSide() {
   $('#chat-wrap').classList.toggle('hidden', tab !== 'chat');
   $('#btn-qchat').classList.add('hidden');
   if (tab === 'log') {
-    const el = $('#log'); el.innerHTML = v.log.map((l) => `<div>${esc(l)}</div>`).join(''); el.scrollTop = el.scrollHeight;
+    const el = $('#log'); setHTML(el, v.log.map((l) => `<div>${esc(l)}</div>`).join('')); el.scrollTop = el.scrollHeight;
   } else {
     const el = $('#chatlog');
-    el.innerHTML = App.chat.length ? App.chat.map((c) => c.sys ? `<div class="sys">» ${esc(c.text)}</div>` : `<div class="chat" style="--c:${c.color}"><b>${esc(c.name)}:</b> ${esc(c.text)}</div>`).join('') : '<div class="sys">Todavía no hay mensajes. ¡Saluda!</div>';
+    setHTML(el, App.chat.length ? App.chat.map((c) => c.sys ? `<div class="sys">» ${esc(c.text)}</div>` : `<div class="chat" style="--c:${c.color}"><b>${esc(c.name)}:</b> ${esc(c.text)}</div>`).join('') : '<div class="sys">Todavía no hay mensajes. ¡Saluda!</div>');
     el.scrollTop = el.scrollHeight;
   }
 }

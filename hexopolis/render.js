@@ -235,6 +235,7 @@ class BoardRenderer {
     this.robberAnim = null;
     this.introT = 0;
     this.shakeT = 0;
+    this.dirty = true; // se redibuja solo cuando algo cambia o hay una animación en marcha
     this.stars = Array.from({ length: 90 }, () => ({ x: Math.random(), y: Math.random(), s: Math.random() * 2 + 0.5, p: Math.random() * 6 }));
     this.onPick = null;
     this.onZoom = null;
@@ -257,7 +258,7 @@ class BoardRenderer {
       if (d.moved) { this.cv.style.cursor = 'default'; return; }
       if (e.target === canvas) this.click(e.clientX, e.clientY);
     });
-    canvas.addEventListener('mouseleave', () => { this.hover = null; });
+    canvas.addEventListener('mouseleave', () => { if (this.hover != null) { this.hover = null; this.dirty = true; } });
     canvas.addEventListener('wheel', (e) => {
       if (!this.interactive) return;
       e.preventDefault();
@@ -342,6 +343,7 @@ class BoardRenderer {
     this.panY = Math.max(-lim, Math.min(lim, this.panY));
     this.S = this.baseS * this.zoom;
     this.cx = r.x + r.w / 2 + this.panX; this.cy = r.y + r.h / 2 + this.panY;
+    this.dirty = true;
     if (rebuild) {
       clearTimeout(this.cacheT);
       // reconstruir las texturas al terminar el gesto; mientras, se escalan las actuales
@@ -350,9 +352,11 @@ class BoardRenderer {
   }
 
   resize(region) {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    this.dpr = dpr;
     this.W = window.innerWidth; this.H = window.innerHeight;
+    // en pantallas muy grandes se baja un poco la resolución interna para que vaya fluido
+    let dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (this.W * this.H * dpr * dpr > 4.2e6) dpr = Math.max(1, Math.sqrt(4.2e6 / (this.W * this.H)));
+    this.dpr = dpr;
     this.cv.width = this.W * dpr; this.cv.height = this.H * dpr;
     this.cv.style.width = this.W + 'px'; this.cv.style.height = this.H + 'px';
     if (region) this.region = region;
@@ -380,7 +384,7 @@ class BoardRenderer {
   setView(view, events = [], me = -1) {
     const first = !this.view || this.boardId !== view.boardKey;
     const prevRobber = this.view ? this.view.board.robber : null;
-    this.view = view; this.me = me;
+    this.view = view; this.me = me; this.dirty = true;
     if (first) {
       this.boardId = view.boardKey;
       this.introT = performance.now();
@@ -405,6 +409,7 @@ class BoardRenderer {
 
   // ---------- caché de casillas ----------
   buildCaches() {
+    this.dirty = true;
     if (!this.view) return;
     const S = this.S, dpr = this.dpr || 1;
     this.cacheS = S;
@@ -525,7 +530,7 @@ class BoardRenderer {
   }
 
   // ---------- interacción ----------
-  setTargets(t) { this.targets = t; if (!t) this.hover = null; }
+  setTargets(t) { this.targets = t; if (!t) this.hover = null; this.dirty = true; }
   findTarget(px, py) {
     const t = this.targets; if (!t || !this.view) return null;
     const B = this.view.board, S = this.S;
@@ -539,9 +544,20 @@ class BoardRenderer {
     const lim = t.type === 'hex' ? S * 0.85 : S * 0.42;
     return bd <= lim ? best : null;
   }
-  move(x, y) { this.hover = this.findTarget(x, y); this.cv.style.cursor = this.hover != null ? 'pointer' : 'default'; }
+  move(x, y) { const h = this.findTarget(x, y); if (h !== this.hover) { this.hover = h; this.dirty = true; } this.cv.style.cursor = this.hover != null ? 'pointer' : 'default'; }
   click(x, y) { const id = this.findTarget(x, y); if (id != null && this.onPick) this.onPick(this.targets.type, id); }
-  shake() { this.shakeT = performance.now(); }
+  shake() { this.shakeT = performance.now(); this.dirty = true; }
+  // ¿hay algo moviéndose? (entrada del tablero, piezas nuevas, brillo de la tirada, ladrón, temblor u objetivos que laten)
+  animating(now) {
+    if (!this.view) return false;
+    if (now - this.introT < 900 + this.view.board.hexes.length * 45) return true;
+    if (this.targets) return true;
+    if (now - this.shakeT < 450) return true;
+    if (this.glowNum && now - this.glowNum.t0 < 2200) return true;
+    if (this.robberAnim && now - this.robberAnim.t0 < 600) return true;
+    for (const [k, t0] of this.pop) { if (now - t0 < 450) return true; this.pop.delete(k); }
+    return false;
+  }
 
   // ---------- fondo ----------
   drawBackground(now) {
@@ -559,6 +575,9 @@ class BoardRenderer {
 
   // ---------- frame ----------
   frame(now) {
+    const anim = this.animating(now);
+    if (!this.dirty && !anim) return; // nada ha cambiado: no se vuelve a pintar
+    this.dirty = anim; // tras una animación se pinta una vez más para dejarla en su sitio
     const x = this.ctx;
     x.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     x.imageSmoothingEnabled = true;
@@ -684,7 +703,7 @@ class BoardRenderer {
       rp = { x: a.x + (b.x - a.x) * p, y: a.y + (b.y - a.y) * p - Math.sin(Math.PI * p) * S * 1.2 };
     } else rp = this.hexScreen(B.robber);
     const rs = Sprites.get('robber', S / 9);
-    const bob = Math.sin(now / 300) * S * 0.03;
+    const bob = 0;
     x.fillStyle = 'rgba(0,0,0,0.4)';
     x.beginPath(); x.ellipse(rp.x + S * 0.42, rp.y + S * 0.33, rs.cw * 0.5, rs.cw * 0.16, 0, 0, Math.PI * 2); x.fill();
     x.drawImage(rs, rp.x + S * 0.42 - rs.cw / 2, rp.y + S * 0.33 - rs.ch + bob, rs.cw, rs.ch);
@@ -704,8 +723,10 @@ class FX {
     this.parts = []; this.flyers = []; this.texts = []; this.dice = null; this.flash = null;
   }
   resize() {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    this.dpr = dpr; this.W = window.innerWidth; this.H = window.innerHeight;
+    this.W = window.innerWidth; this.H = window.innerHeight;
+    let dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (this.W * this.H * dpr * dpr > 4.2e6) dpr = Math.max(1, Math.sqrt(4.2e6 / (this.W * this.H)));
+    this.dpr = dpr; this.drawn = false;
     this.cv.width = this.W * dpr; this.cv.height = this.H * dpr;
     this.cv.style.width = this.W + 'px'; this.cv.style.height = this.H + 'px';
   }
@@ -742,6 +763,9 @@ class FX {
   }
 
   frame(now) {
+    const busy = this.parts.length || this.flyers.length || this.texts.length || this.dice || this.flash;
+    if (!busy) { if (this.drawn) { this.ctx.setTransform(1, 0, 0, 1, 0, 0); this.ctx.clearRect(0, 0, this.cv.width, this.cv.height); this.drawn = false; } return; }
+    this.drawn = true;
     const x = this.ctx;
     x.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     x.clearRect(0, 0, this.W, this.H);
@@ -790,7 +814,7 @@ class FX {
       const d = this.dice, t = now - d.t0;
       const P0 = d.pos;
       const P = P0 && P0.small ? P0 : null; // P: dados pequeños (otros jugadores)
-      const ROLL = P ? 600 : 750, HOLD = P ? 900 : 650, OUT = 300;
+      const ROLL = P ? 430 : 560, HOLD = P ? 850 : 600, OUT = 280;
       const size = P0 ? P0.size : Math.min(84, this.W * 0.14);
       const cy = P0 ? P0.cy : this.H * 0.45;
       const cx = P ? P.cx - size * 0.55 : P0 ? P0.cx : this.W / 2;

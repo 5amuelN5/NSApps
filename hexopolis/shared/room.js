@@ -5,7 +5,7 @@
 })(typeof self !== 'undefined' ? self : this, function (E, B) {
   'use strict';
 
-  const DELAY = { setup: 650, roll: 750, main: 600, robber: 900, discard: 600, respond: 1100, confirm: 700, roadBuilding: 600 };
+  const DELAY = { setup: 560, roll: 640, main: 520, robber: 780, discard: 520, respond: 950, confirm: 600, roadBuilding: 520 };
   const AUTO_GRACE = 20000; // ms antes de que un bot sustituya a un humano desconectado
   const TRADE_TIMEOUT = 12000;
 
