@@ -483,6 +483,7 @@ function renderRoom() {
   $('#room-watchers').textContent = watchers.length ? `👁 Mirando: ${watchers.join(', ')}` : '';
   $('#btn-take-seat').classList.toggle('hidden', !(App.spectator && !r.started && r.seats.length < maxP));
   $('#btn-start').classList.toggle('hidden', !host);
+  $('#btn-start').textContent = r.over ? '▶ EMPEZAR OTRA PARTIDA' : '▶ EMPEZAR PARTIDA';
   $('#btn-start').disabled = r.seats.length < 2;
   $('#room-wait').textContent = host ? (r.seats.length < 2 ? 'Añade bots o espera a otros jugadores (mínimo 2).' : '') : 'Esperando a que el anfitrión empiece la partida…';
   if (App.spectator) $('#room-wait').textContent = r.started ? '👁 Estás mirando esta sala como espectador. Ya no se puede entrar a jugar en esta partida.' : '👁 Estás mirando esta sala como espectador. Pulsa «Jugar en esta sala» para ocupar un sitio libre.';
@@ -510,7 +511,7 @@ function rematchHTML() {
   const vote = me >= 0 ? `<button class="btn big ${voted ? 'ghost' : 'pink'}" id="g-vote">${voted ? (all ? 'Empezando…' : '✔ Esperando a los demás') : '🔁 Revancha'}</button>` : '';
   const force = isHost() && humans.length > 1 && votes.size && !all ? '<button class="btn small yellow" id="g-force" title="Empieza la revancha con quien esté conectado">▶ Empezar ya sin esperar</button>' : '';
   return `${humans.length > 1 ? `<div class="rm-box"><b>Revancha</b>${list}<small class="muted">${note}</small>${force}</div>` : ''}
-    <div class="go-actions"><button class="btn big cyan" id="g-menu">🏠 Volver al menú</button>${vote}</div>
+    <div class="go-actions"><button class="btn big cyan" id="g-menu" title="Vuelve a la sala: ahí puedes cambiar las reglas, añadir bots o salir al menú">🚪 Volver a la sala</button>${vote}</div>
     <div class="go-links"><button class="link-btn" data-close>🗺️ Ver el tablero</button></div>`;
 }
 
@@ -1513,7 +1514,8 @@ function renderModal() {
       h = `<h2>🏆 FIN DE LA PARTIDA</h2>${me >= 0 ? gainHTML() : ''}${gameSummaryHTML(v)}
         ${rematchHTML()}`;
       box.innerHTML = h;
-      $('#g-menu').onclick = () => { closeModal(); leaveRoom(); };
+      // volver a la sala (reglas, bots, empezar otra o salir al menú desde ahí)
+      $('#g-menu').onclick = () => { Sfx.click(); closeModal(); show('room'); renderRoom(); };
       if ($('#g-vote')) $('#g-vote').onclick = () => { Sfx.click(); send({ t: 'rematch' }); };
       if ($('#g-force')) $('#g-force').onclick = () => { Sfx.click(); closeModal(); send({ t: 'start' }); };
       break;
