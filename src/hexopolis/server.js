@@ -80,7 +80,7 @@ function code() {
 function roomList() {
   return [...rooms.values()].filter((r) => r.isPublic).map((r) => {
     const i = r.info();
-    return { code: i.code, name: i.name, players: i.seats.length, max: i.max, humans: i.seats.filter((s) => s.kind === 'human').length, started: i.started && !i.over, host: (i.seats.find((s) => s.host) || {}).name };
+    return { code: i.code, name: i.name, players: i.seats.length, max: i.max, watchers: i.spectators.length, humans: i.seats.filter((s) => s.kind === 'human').length, started: i.started && !i.over, host: (i.seats.find((s) => s.host) || {}).name };
   });
 }
 let listTimer = null;
@@ -163,7 +163,7 @@ wss.on('connection', (ws) => {
         const r = rooms.get(String(m.code || '').toUpperCase().trim());
         if (!r) return err('No existe esa sala');
         if (c.room && c.room !== r) c.room.leave(c.token);
-        const res = r.join(c, c.token, c.name);
+        const res = r.join(c, c.token, c.name, { watch: !!m.watch });
         if (!res.ok) return err(res.error);
         c.room = r;
         c.send({ t: 'joined', code: r.code });

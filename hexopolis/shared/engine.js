@@ -248,7 +248,7 @@
       largestArmy: { owner: null, size: 0 },
       winner: null,
       log: [],
-      stats: { rolls: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+      stats: { rolls: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], pl: cfg.map(() => newPlStats()), vpHist: [] },
     };
     s.board = buildBoard(s, kind);
     const deck = [];
@@ -373,7 +373,7 @@
     if (s.winner != null) return;
     const p = s.current;
     if (vp(s, p, true) >= winVP(s)) {
-      s.winner = p; s.phase = 'gameOver'; s.trade = null;
+      s.winner = p; s.phase = 'gameOver'; s.trade = null; recordVP(s);
       ev.push({ type: 'win', pid: p });
       log(s, `🏆 ¡${nm(s, p)} GANA LA PARTIDA con ${vp(s, p, true)} puntos!`);
     }
@@ -410,10 +410,22 @@
         log(s, `¡No hay suficiente ${RES_NAMES[r]} en el banco! Nadie la recibe`);
       }
     }
+    final.forEach((g) => (st(s, g.pid).prod += g.n));
     ev.push({ type: 'produce', gains: final, roll });
   }
 
   function pay(s, P, cost) { for (const k in cost) { P.res[k] -= cost[k]; s.bank[k] += cost[k]; } }
+
+  // ---------- estadísticas (para el resumen final) ----------
+  function newPlStats() { return { prod: 0, stole: 0, robbed: 0, discarded: 0, trades: 0, bank: 0, devBought: 0, monopoly: 0, sevens: 0 }; }
+  function st(s, pid) {
+    if (!s.stats.pl) s.stats.pl = s.players.map(() => newPlStats());
+    return s.stats.pl[pid] || {};
+  }
+  function recordVP(s) {
+    if (!s.stats.vpHist) s.stats.vpHist = [];
+    s.stats.vpHist.push(s.players.map((p) => vp(s, p.id, true)));
+  }
 
   function nextTurn(s, ev) {
     const P = s.players[s.current];
@@ -421,6 +433,7 @@
     s.trade = null;
     s.current = (s.current + 1) % s.players.length;
     s.turn++;
+    if (s.current === s.first) recordVP(s); // una muestra de puntos por ronda
     s.rolled = false; s.devPlayed = false; s.dice = null;
     s.phase = 'roll';
     ev.push({ type: 'turn', pid: s.current });
@@ -438,7 +451,7 @@
     if (s.turn - s.stallTurn < STALL_ROUNDS * s.players.length) return;
     let best = 0;
     s.players.forEach((p) => { if (vp(s, p.id, true) > vp(s, best, true)) best = p.id; });
-    s.winner = best; s.phase = 'gameOver'; s.trade = null; s.stalled = true;
+    s.winner = best; s.phase = 'gameOver'; s.trade = null; s.stalled = true; recordVP(s);
     ev.push({ type: 'win', pid: best });
     log(s, `🔒 Nadie puede avanzar desde hace ${STALL_ROUNDS} rondas: gana ${nm(s, best)} con ${vp(s, best, true)} puntos`);
   }
@@ -507,7 +520,7 @@
           ev.push({ type: 'build', kind: 'road', pid, e: a.e });
           s.setup.idx++;
           if (s.setup.idx >= s.setup.order.length) {
-            s.phase = 'roll'; s.current = s.first; s.turn = 1; s.setup.step = null;
+            s.phase = 'roll'; s.current = s.first; s.turn = 1; s.setup.step = null; recordVP(s);
             ev.push({ type: 'turn', pid: s.current });
             log(s, `¡Comienza la partida! Turno de ${nm(s, s.current)}`);
           } else {
@@ -566,6 +579,7 @@
         }
         const sum = d1 + d2;
         s.dice = [d1, d2]; s.rolled = true; s.stats.rolls[sum]++;
+        if (sum === 7) st(s, pid).sevens++;
         ev.push({ type: 'roll', pid, dice: [d1, d2], sum });
         if (rerolled) log(s, `🌱 Comienzo en paz: salió un 7 y se repite la tirada`);
         log(s, `🎲 ${P.name} saca ${sum}`);
@@ -611,6 +625,7 @@
           log(s, `${P.name} descarta ${total(a.cards)} cartas`);
           ev.push({ type: 'discard', pid, n: total(a.cards) });
         }
+        st(s, pid).discarded += total(a.cards);
         delete s.pendingDiscard[pid];
         if (!Object.keys(s.pendingDiscard).length) { s.pendingDiscard = null; s.phase = 'robber'; }
         return;
@@ -647,6 +662,7 @@
             RES.forEach((r) => { for (let i = 0; i < V.res[r]; i++) pool.push(r); });
             const r = pool[randInt(s, pool.length)];
             V.res[r]--; P.res[r]++; got[vid] = (got[vid] || 0) + 1;
+            st(s, pid).stole++; st(s, vid).robbed++;
             ev.push({ type: 'steal', pid, from: vid, res: r, private: [pid, vid] });
           }
           const parts = Object.keys(got).map((k) => `${got[k] === 1 ? 'una carta' : got[k] + ' cartas'} a ${s.players[k].name}`);
@@ -662,6 +678,7 @@
         pay(s, P, COST.dev);
         const c = s.devDeck.pop();
         P.dev[c]++; P.devNew[c]++;
+        st(s, pid).devBought++;
         ev.push({ type: 'buyDev', pid, card: c, private: [pid] });
         log(s, `🃏 ${P.name} compra una carta de desarrollo`);
         checkWin(s, ev);
@@ -711,6 +728,7 @@
           const takes = [];
           s.players.forEach((o) => { if (o.id !== pid && o.res[r] > 0) { got += o.res[r]; takes.push({ from: o.id, n: o.res[r] }); P.res[r] += o.res[r]; o.res[r] = 0; } });
           ev.push({ type: 'playDev', pid, card: c, res: r });
+          st(s, pid).monopoly += got;
           ev.push({ type: 'monopoly', pid, res: r, takes, got });
           log(s, `💰 ${P.name} juega Monopolio de ${RES_NAMES[r]} y se lleva ${got}`);
           return;
@@ -727,6 +745,7 @@
         if (s.bank[get] < n) return 'El banco no tiene ese recurso';
         P.res[give] -= ratio * n; s.bank[give] += ratio * n;
         P.res[get] += n; s.bank[get] -= n;
+        st(s, pid).bank++;
         ev.push({ type: 'bankTrade', pid, give, get, ratio, n });
         log(s, `🏦 ${P.name} cambia ${ratio * n} ${RES_NAMES[give]} por ${n} ${RES_NAMES[get]}`);
         return;
@@ -766,6 +785,7 @@
         if (!has(O.res, T.get)) { T.responses[w] = 'reject'; return `${O.name} ya no tiene esas cartas`; }
         for (const r in T.give) { P.res[r] -= T.give[r]; O.res[r] += T.give[r]; }
         for (const r in T.get) { O.res[r] -= T.get[r]; P.res[r] += T.get[r]; }
+        st(s, pid).trades++; st(s, w).trades++;
         ev.push({ type: 'trade', pid, with: w, give: T.give, get: T.get });
         log(s, `🤝 ${P.name} comercia con ${O.name}`);
         s.trade = null;
@@ -810,6 +830,7 @@
       p.res[r]++; s.bank[r]--;
       got.push({ pid: p.id, res: r, n: 1, hex: null });
     });
+    got.forEach((g) => (st(s, g.pid).prod += g.n));
     if (got.length) { ev.push({ type: 'produce', gains: got, rain: true }); log(s, `🌧️ ¡Lluvia de oro! Todos reciben una carta`); }
   }
   function robberVictims(s, pid, hex) {
@@ -831,6 +852,8 @@
     delete v.rng;
     v.devDeck = s.devDeck.length;
     v.me = pid;
+    // la evolución de puntos incluye cartas de punto ocultas: solo se enseña al final
+    if (s.phase !== 'gameOver' && v.stats) delete v.stats.vpHist;
     v.players.forEach((p, i) => {
       p.resCount = total(s.players[i].res);
       p.devCount = total(s.players[i].dev);

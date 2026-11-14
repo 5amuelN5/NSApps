@@ -71,6 +71,7 @@
       <p class="share-warn hidden" id="link-warn"></p>
     </div>
     <div id="seats" class="seats"></div>
+    <p class="muted watchers hidden" id="room-watchers"></p>
     <div class="row gap wrap" id="host-tools">
       <span class="muted">Añadir bot:</span>
       <button class="btn small" data-addbot="1"><span class="st">★</span> NOVATO</button>
@@ -89,10 +90,12 @@
       <div class="rules-sum" id="rules-sum"></div>
     </div>
     <button class="btn big pink" id="btn-start">▶ EMPEZAR PARTIDA</button>
+    <button class="btn big green hidden" id="btn-take-seat">▶ JUGAR EN ESTA SALA</button>
     <p class="muted" id="room-wait"></p>
     <div class="chatbox" id="room-chatbox">
       <div class="chat-log" id="room-chat"></div>
-      <input id="room-chat-in" placeholder="Escribe y pulsa Enter…" maxlength="200">
+      <div class="chat-row"><input id="room-chat-in" placeholder="Escribe un mensaje…" maxlength="200"><button class="btn small cyan" id="room-chat-send">Enviar</button></div>
+      <div class="qc qc-room" id="qc-room"></div>
     </div>
   </div>
 </section>
@@ -103,6 +106,7 @@
   <div id="banner" class="banner"></div>
   <div id="topright" class="topright">
     <div id="dice-mini" class="dice-mini"></div>
+    <button class="icon-btn hidden" id="btn-qchat" title="Chat rápido: emotes y frases">💬</button>
     <button class="icon-btn" id="btn-size" title="Ajustes: tamaño y colocación">⚙</button>
     <button class="icon-btn" id="btn-mute" title="Sonido">♪</button>
     <button class="icon-btn" id="btn-help" title="Costes">?</button>
@@ -121,11 +125,16 @@
     <div class="sz-foot"><button class="btn small ghost" id="sz-reset">Restablecer</button><button class="btn small ghost" id="sz-center">Centrar tablero</button></div>
     <p class="muted">También puedes hacer zoom con la rueda del ratón (o pellizcando en el móvil) y arrastrar el tablero para moverlo. Teclas + y −.</p>
   </div>
+  <div id="qchat-pop" class="size-pop qchat-pop hidden">
+    <h4 class="sz-title">Chat rápido</h4>
+    <div class="qc" id="qc-game"></div>
+    <div class="chat-row"><input id="qchat-in" placeholder="Escribe un mensaje…" maxlength="200"><button class="btn small cyan" id="qchat-send">Enviar</button></div>
+  </div>
   <aside id="side" class="side">
     <h3>REGISTRO</h3>
     <div id="log" class="log"></div>
     <div id="chat-wrap" class="chat-wrap">
-      <input id="chat-in" placeholder="Chat…" maxlength="200">
+      <div class="chat-row"><input id="chat-in" placeholder="Chat…" maxlength="200"><button class="btn small cyan" id="chat-send" title="Enviar">➤</button></div>
     </div>
   </aside>
   <div id="offer-pop" class="offer-pop hidden"></div>

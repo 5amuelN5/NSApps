@@ -296,9 +296,13 @@ $('#in-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#bt
 function renderRoomList(list) {
   const el = $('#room-list');
   if (!list.length) { el.innerHTML = '<p class="muted">No hay salas públicas. ¡Crea una!</p>'; return; }
-  el.innerHTML = list.map((r) => `<div class="room-item"><b>${esc(r.code)}</b><div class="grow">${esc(r.name)}<br><span class="muted">${r.players}/${r.max || 4} jugadores · ${r.started ? 'EN PARTIDA' : 'ESPERANDO'}</span></div>
-    <button class="btn small cyan" data-join="${esc(r.code)}" ${r.started || r.players >= (r.max || 4) ? 'disabled' : ''}>ENTRAR</button></div>`).join('');
+  el.innerHTML = list.map((r) => {
+    const closed = r.started || r.players >= (r.max || 4);
+    return `<div class="room-item"><b>${esc(r.code)}</b><div class="grow">${esc(r.name)}<br><span class="muted">${r.players}/${r.max || 4} jugadores · ${r.started ? 'EN PARTIDA' : 'ESPERANDO'}${r.watchers ? ` · 👁 ${r.watchers}` : ''}</span></div>
+    ${closed ? '' : `<button class="btn small cyan" data-join="${esc(r.code)}">ENTRAR</button>`}<button class="btn small ${closed ? 'cyan' : 'ghost'}" data-watch="${esc(r.code)}" title="Entrar como espectador: ves la partida en directo sin jugar">👁 MIRAR</button></div>`;
+  }).join('');
   el.querySelectorAll('[data-join]').forEach((b) => (b.onclick = () => { Sfx.click(); send({ t: 'joinRoom', code: b.dataset.join }); }));
+  el.querySelectorAll('[data-watch]').forEach((b) => (b.onclick = () => { Sfx.click(); send({ t: 'joinRoom', code: b.dataset.watch, watch: true }); }));
 }
 
 // ================= SALA =================
@@ -344,13 +348,15 @@ document.querySelectorAll('[data-speed]').forEach((b) => (b.onclick = () => {
   if (App.localRoom) { App.localRoom.speed = +b.dataset.speed; App.localRoom.sendRoom(); }
 }));
 $('#btn-start').onclick = () => { Sfx.unlock(); Sfx.click(); send({ t: 'start' }); };
-$('#room-chat-in').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.value.trim()) { send({ t: 'chat', text: e.target.value }); e.target.value = ''; } });
+$('#room-chat-in').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendFromInput('#room-chat-in'); });
+$('#room-chat-send').onclick = () => sendFromInput('#room-chat-in');
+$('#btn-take-seat').onclick = () => { Sfx.click(); if (App.room) send({ t: 'joinRoom', code: App.room.code }); };
 
 function leaveRoom() {
   send({ t: 'leaveRoom' });
   if (App.mode === 'local') LocalSave.clear();
   else if (App.room) Saves.set(App.token, App.room.code, null);
-  App.room = null; App.view = null; App.queue = []; App.busy = false;
+  App.room = null; App.view = null; App.queue = []; App.busy = false; App.spectator = false;
   if (App.mode === 'local') { App.mode = null; show('menu'); }
   else show('lobby');
   history.replaceState(null, '', location.pathname);
@@ -385,11 +391,72 @@ function renderRoom() {
   $('#seats').innerHTML = seats.join('');
   $('#seats').querySelectorAll('[data-lvl]').forEach((b) => (b.onclick = () => { const [i, l] = b.dataset.lvl.split(':').map(Number); Sfx.click(); send({ t: 'botLevel', i, level: l }); }));
   $('#seats').querySelectorAll('[data-kick]').forEach((b) => (b.onclick = () => { Sfx.click(); send({ t: 'removeSeat', i: +b.dataset.kick }); }));
+  const watchers = r.spectators || [];
+  $('#room-watchers').classList.toggle('hidden', !watchers.length);
+  $('#room-watchers').textContent = watchers.length ? `👁 Mirando: ${watchers.join(', ')}` : '';
+  $('#btn-take-seat').classList.toggle('hidden', !(App.spectator && !r.started && r.seats.length < maxP));
   $('#btn-start').classList.toggle('hidden', !host);
   $('#btn-start').disabled = r.seats.length < 2;
   $('#room-wait').textContent = host ? (r.seats.length < 2 ? 'Añade bots o espera a otros jugadores (mínimo 2).' : '') : 'Esperando a que el anfitrión empiece la partida…';
+  if (App.spectator) $('#room-wait').textContent = r.started ? '👁 Estás mirando esta sala como espectador. Ya no se puede entrar a jugar en esta partida.' : '👁 Estás mirando esta sala como espectador. Pulsa «Jugar en esta sala» para ocupar un sitio libre.';
   renderRoomChat();
 }
+// ----- resumen al final de la partida -----
+function gameSummaryHTML(v) {
+  const order = v.players.slice().sort((a, b) => b.vp - a.vp || (a.id === v.winner ? -1 : b.id === v.winner ? 1 : 0));
+  const S = (v.stats && v.stats.pl) || v.players.map(() => ({}));
+  const g = (i, k) => (S[i] && S[i][k]) || 0;
+  const rank = `<div class="gameover-list">${order.map((p, k) => `<div class="go-row ${p.id === v.winner ? 'win' : ''}" style="--c:${p.color}"><span>${k + 1}º</span><span class="grow" style="color:${p.color}">${esc(p.name)}${p.bot ? ' ' + stars(p.bot) : ''}</span><span>${p.vp} PV</span></div>`).join('')}</div>`;
+  // datos generales
+  const R = App.room || {};
+  const mins = R.startedAt ? Math.max(1, Math.round(((R.endedAt || Date.now()) - R.startedAt) / 60000)) : null;
+  const rolls = (v.stats && v.stats.rolls) || [];
+  let lucky = null; for (let n = 2; n <= 12; n++) if ((rolls[n] || 0) > (lucky ? rolls[lucky] : 0)) lucky = n;
+  const facts = [`🔁 ${v.turn} turnos`, mins ? `⏱️ ${mins} min` : '', `🗺️ Mapa ${v.map === 'big' ? 'grande' : 'normal'}`, `🏆 A ${Engine.winVP(v)} puntos`].filter(Boolean)
+    .map((t) => `<span class="rchip">${t}</span>`).join('');
+  // premios
+  const best = (fn) => { let b = -1, bv = 0; v.players.forEach((p, i) => { const x = fn(i); if (x > bv) { bv = x; b = i; } }); return b >= 0 ? { i: b, n: bv } : null; };
+  const aw = [];
+  const add = (icon, title, r, txt) => { if (r) aw.push(`<div class="aw-card" style="--c:${v.players[r.i].color}"><span class="aw-ic">${icon}</span><span><b>${title}</b><small><i style="color:${v.players[r.i].color}">${esc(v.players[r.i].name)}</i> · ${txt(r.n)}</small></span></div>`); };
+  add('🌾', 'Gran productor', best((i) => g(i, 'prod')), (n) => `${n} cartas producidas`);
+  add('🦹', 'Mano larga', best((i) => g(i, 'stole')), (n) => `robó ${n} ${n === 1 ? 'carta' : 'cartas'}`);
+  add('🎯', 'Diana del ladrón', best((i) => g(i, 'robbed')), (n) => `le robaron ${n} ${n === 1 ? 'carta' : 'cartas'}`);
+  add('🤝', 'Comerciante', best((i) => g(i, 'trades') + g(i, 'bank')), (n) => `${n} intercambios`);
+  add('🃏', 'Coleccionista', best((i) => g(i, 'devBought')), (n) => `${n} cartas de desarrollo`);
+  add('🗑️', 'Manos llenas', best((i) => g(i, 'discarded')), (n) => `descartó ${n} cartas con el 7`);
+  if (v.longestRoad.owner != null) aw.push(`<div class="aw-card" style="--c:${v.players[v.longestRoad.owner].color}"><span class="aw-ic">🛣️</span><span><b>Camino más largo</b><small><i style="color:${v.players[v.longestRoad.owner].color}">${esc(v.players[v.longestRoad.owner].name)}</i> · ${v.longestRoad.len} tramos</small></span></div>`);
+  if (v.largestArmy.owner != null) aw.push(`<div class="aw-card" style="--c:${v.players[v.largestArmy.owner].color}"><span class="aw-ic">⚔️</span><span><b>Ejército más grande</b><small><i style="color:${v.players[v.largestArmy.owner].color}">${esc(v.players[v.largestArmy.owner].name)}</i> · ${v.largestArmy.size} caballeros</small></span></div>`);
+  if (lucky) aw.push(`<div class="aw-card"><span class="aw-ic">🎲</span><span><b>Número de la suerte</b><small>El ${lucky} salió ${rolls[lucky]} veces</small></span></div>`);
+  // gráfica de puntos por ronda
+  const hist = (v.stats && v.stats.vpHist) || [];
+  let chart = '';
+  if (hist.length >= 2) {
+    const W = 600, H = 210, L = 28, B = 22, T = 10, Rr = 10;
+    const maxY = Math.max(Engine.winVP(v), ...hist.flat());
+    const x = (k) => L + (k / (hist.length - 1)) * (W - L - Rr), y = (n) => T + (1 - n / maxY) * (H - T - B);
+    let grid = '';
+    for (let n = 0; n <= maxY; n += maxY > 12 ? 4 : 2) grid += `<line x1="${L}" x2="${W - Rr}" y1="${y(n)}" y2="${y(n)}" class="gl"/><text x="${L - 6}" y="${y(n) + 4}" class="gt" text-anchor="end">${n}</text>`;
+    grid += `<line x1="${L}" x2="${W - Rr}" y1="${y(Engine.winVP(v))}" y2="${y(Engine.winVP(v))}" class="gl goal"/>`;
+    const step = Math.max(1, Math.ceil(hist.length / 8));
+    for (let k = 0; k < hist.length; k += step) grid += `<text x="${x(k)}" y="${H - 5}" class="gt" text-anchor="middle">${k + 1}</text>`;
+    const lines = v.players.map((p, i) => `<polyline points="${hist.map((r, k) => `${x(k).toFixed(1)},${y(r[i] || 0).toFixed(1)}`).join(' ')}" fill="none" stroke="${p.color}" stroke-width="${i === v.winner ? 3.2 : 2}" stroke-linejoin="round" stroke-linecap="round" ${i === v.winner ? '' : 'opacity=".8"'}/>`).join('');
+    chart = `<h4 class="tr-sub">Puntos ronda a ronda</h4><svg class="vp-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Evolución de los puntos de cada jugador">${grid}${lines}</svg>
+      <div class="vp-legend">${v.players.map((p) => `<span><i style="background:${p.color}"></i>${esc(p.name)}</span>`).join('')}</div>`;
+  }
+  // tabla
+  const cols = [['PV', (p) => p.vp], ['Producidas', (p) => g(p.id, 'prod')], ['Robó', (p) => g(p.id, 'stole')], ['Le robaron', (p) => g(p.id, 'robbed')], ['Descartó', (p) => g(p.id, 'discarded')], ['Tratos', (p) => g(p.id, 'trades')], ['Banco', (p) => g(p.id, 'bank')], ['Cartas desarr.', (p) => g(p.id, 'devBought')], ['Caballeros', (p) => p.knights], ['Camino', (p) => p.roadLen]];
+  const table = `<h4 class="tr-sub">Estadísticas</h4><div class="st-wrap"><table class="st-table"><thead><tr><th></th>${cols.map((c) => `<th>${c[0]}</th>`).join('')}</tr></thead><tbody>${order.map((p) => `<tr><td style="color:${p.color}">${esc(p.name)}</td>${cols.map((c) => `<td>${c[1](p)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+  // tiradas
+  let tot = 0; for (let n = 2; n <= 12; n++) tot += rolls[n] || 0;
+  let mx = 1; for (let n = 2; n <= 12; n++) mx = Math.max(mx, rolls[n] || 0, tot * ROLL_WAYS[n] / 36);
+  let bars = ''; for (let n = 2; n <= 12; n++) { const c = rolls[n] || 0, red = n === 6 || n === 8 || n === 7; bars += `<div class="col" title="${n}: ${c} veces (esperado ${(tot * ROLL_WAYS[n] / 36).toFixed(1)})"><div class="area"><span class="cnt">${c || ''}</span><div class="bar ${red ? 'red' : ''}" style="height:${(c / mx) * 100}%"></div>${tot ? `<div class="exp" style="bottom:${(tot * ROLL_WAYS[n] / 36 / mx) * 100}%"></div>` : ''}</div><span class="lab ${red ? 'red' : ''}">${n}</span></div>`; }
+  const dice = `<h4 class="tr-sub">Tiradas de dados <small class="muted">(${tot}; la línea marca lo esperado)</small></h4><div class="roll-chart go-rolls">${bars}</div>`;
+  return `<div class="go-sum">${rank}<div class="rr-mini">${facts}</div>
+    ${v.stalled ? '<p class="muted">Terminó porque nadie podía avanzar: gana quien más puntos tenía.</p>' : ''}
+    ${aw.length ? `<h4 class="tr-sub">Premios</h4><div class="aw-grid">${aw.join('')}</div>` : ''}
+    ${chart}${table}${dice}</div>`;
+}
+
 // ----- reglas de la partida -----
 function handLimit(v) { return Engine.rulesOf(v).hand; }
 function devReady(v, P, c) { return P.dev[c] - P.devNew[c]; }
@@ -431,7 +498,7 @@ function onMsg(m) {
       if (App.mode === 'online' || App.mode === 'p2p') history.replaceState(null, '', '?sala=' + m.code);
       break;
     case 'room': {
-      App.room = m.room; App.you = m.you; App.chat = m.chat || [];
+      App.room = m.room; App.you = m.you; App.chat = m.chat || []; App.spectator = !!m.spectator;
       if (!m.room.started || m.room.over) {
         if (!m.room.started) { App.view = null; App.queue = []; App.busy = false; if (App.screen !== 'room') show('room'); }
         else if (App.screen === 'game') renderHUD();
@@ -442,7 +509,7 @@ function onMsg(m) {
     }
     case 'chat':
       App.chat.push(m.msg); if (App.chat.length > 60) App.chat.shift();
-      renderRoomChat(); if (App.screen === 'game') renderChatSide();
+      renderRoomChat(); if (App.screen === 'game') { renderChatSide(); if (!m.msg.sys && m.msg.seat >= 0) chatBubble(m.msg.seat, m.msg.text); }
       if (!m.msg.sys && App.screen === 'game') Sfx.hover();
       break;
     case 'state': enqueue(m.view, m.events || []); break;
@@ -880,6 +947,7 @@ function renderBanner() {
       break;
     case 'gameOver': t = `🏆 ${esc(v.players[v.winner].name)} gana`; m = true; break;
   }
+  if (me < 0 && v.phase !== 'gameOver') t = `<span class="spec-tag">👁 Espectador</span> ${t}`;
   el.innerHTML = t; el.classList.toggle('me', m);
 }
 
@@ -888,10 +956,62 @@ function renderLog() {
   const el = $('#log');
   el.innerHTML = v.log.slice(-40).map((l) => `<div>${esc(l)}</div>`).join('') + App.chat.slice(-8).filter((c) => !c.sys).map((c) => `<div class="chat" style="--c:${c.color}"><b>${esc(c.name)}:</b> ${esc(c.text)}</div>`).join('');
   el.scrollTop = el.scrollHeight;
-  $('#chat-wrap').classList.toggle('hidden', App.mode !== 'online');
+  const hasChat = App.mode === 'online' || App.mode === 'p2p';
+  $('#chat-wrap').classList.toggle('hidden', !hasChat);
+  $('#btn-qchat').classList.toggle('hidden', !hasChat);
 }
 function renderChatSide() { if (App.view) renderLog(); }
-$('#chat-in').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.value.trim()) { send({ t: 'chat', text: e.target.value }); e.target.value = ''; } e.stopPropagation(); });
+$('#chat-in').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendFromInput('#chat-in'); e.stopPropagation(); });
+$('#chat-send').onclick = () => sendFromInput('#chat-in');
+$('#qchat-in').addEventListener('keydown', (e) => { if (e.key === 'Enter') { sendFromInput('#qchat-in'); toggleQChat(false); } e.stopPropagation(); });
+$('#qchat-send').onclick = () => { sendFromInput('#qchat-in'); toggleQChat(false); };
+$('#btn-qchat').onclick = () => { Sfx.click(); toggleQChat(); };
+function toggleQChat(on) {
+  const p = $('#qchat-pop');
+  const show = on != null ? on : p.classList.contains('hidden');
+  p.classList.toggle('hidden', !show); $('#btn-qchat').classList.toggle('on', show);
+  if (show) { $('#size-pop').classList.add('hidden'); $('#btn-size').classList.remove('on'); }
+}
+
+// ----- chat rápido: emotes y frases -----
+const QC_EMOTES = ['👍', '👎', '😂', '😎', '😭', '😡', '🤔', '😱', '🔥', '🎉', '👏', '🙏', '🦹', '🎲', '🤝', '😴'];
+const QC_PHRASES = ['¡Buen trato!', '¿Alguien tiene madera?', '¿Alguien tiene ladrillo?', '¿Quién me da trigo?', 'Cambio lana por lo que sea', '¡El ladrón no, por favor!', '¡Te toca!', 'Bien jugado 👏', 'Nooo 😭', '¡Casi lo tengo!', 'Gracias 🙏', '¿Revancha?'];
+function qcHTML() {
+  return `<div class="qc-emotes">${QC_EMOTES.map((e) => `<button class="qc-e" data-qc="${e}">${e}</button>`).join('')}</div>
+    <div class="qc-phrases">${QC_PHRASES.map((t) => `<button class="qc-p" data-qc="${esc(t)}">${esc(t)}</button>`).join('')}</div>`;
+}
+$('#qc-game').innerHTML = qcHTML();
+$('#qc-room').innerHTML = qcHTML();
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-qc]'); if (!b) return;
+  if (sendChat(b.dataset.qc)) { Sfx.click(); if (b.closest('#qchat-pop')) toggleQChat(false); }
+});
+function sendChat(text) {
+  text = String(text || '').trim(); if (!text) return false;
+  const now = Date.now();
+  if (now - (App.lastChat || 0) < 800) { toast('Espera un momento antes de enviar otro mensaje'); return false; }
+  App.lastChat = now;
+  send({ t: 'chat', text });
+  return true;
+}
+function sendFromInput(sel) { const el = $(sel); if (sendChat(el.value)) el.value = ''; }
+// bocadillo encima del jugador que habla
+const EMOJI_ONLY = /^(\p{Extended_Pictographic}|\uFE0F|\u200D|\s)+$/u;
+function chatBubble(seat, text) {
+  const line = $('#pl-' + seat); if (!line) return;
+  App.bubbles = App.bubbles || {};
+  if (App.bubbles[seat]) App.bubbles[seat].remove();
+  const r = line.getBoundingClientRect();
+  const b = document.createElement('div');
+  b.className = 'chat-bubble' + (EMOJI_ONLY.test(text) ? ' big' : '');
+  b.style.setProperty('--c', App.view && App.view.players[seat] ? App.view.players[seat].color : '#fff');
+  b.textContent = text;
+  b.style.left = Math.max(6, Math.min(innerWidth - 240, r.left)) + 'px';
+  b.style.top = (r.bottom + 6) + 'px';
+  document.body.appendChild(b);
+  App.bubbles[seat] = b;
+  setTimeout(() => { b.classList.add('out'); setTimeout(() => { b.remove(); if (App.bubbles[seat] === b) delete App.bubbles[seat]; }, 400); }, 3600);
+}
 
 function chips(o) { return `<span class="chips">${RES.filter((r) => o[r]).map((r) => `<span class="chip"><img src="${Sprites.url(r, 3)}">${o[r]}</span>`).join('')}</span>`; }
 
@@ -1130,9 +1250,7 @@ function renderModal() {
       break;
     }
     case 'gameover': {
-      const order = v.players.slice().sort((a, b) => b.vp - a.vp);
-      h = `<h2>🏆 FIN DE LA PARTIDA</h2><div class="gameover-list">${order.map((p, k) => `<div class="go-row ${p.id === v.winner ? 'win' : ''}" style="--c:${p.color}"><span>${k + 1}º</span><span class="grow" style="color:${p.color}">${esc(p.name)}${p.bot ? ' ' + stars(p.bot) : ''}</span><span>${p.vp} PV</span></div>`).join('')}</div>
-        <p class="muted">Turnos jugados: ${v.turn}${v.stalled ? ' · Terminó porque nadie podía avanzar: gana quien más puntos tenía' : ''}</p>
+      h = `<h2>🏆 FIN DE LA PARTIDA</h2>${gameSummaryHTML(v)}
         <div class="row gap between wrap"><button class="btn ghost" id="g-menu">SALIR</button><button class="btn small" data-close>VER TABLERO</button>${isHost() ? '<button class="btn pink" id="g-again">▶ REVANCHA (MAPA NUEVO)</button>' : '<span class="muted">El anfitrión puede iniciar la revancha</span>'}</div>`;
       box.innerHTML = h;
       $('#g-menu').onclick = () => { closeModal(); leaveRoom(); };
@@ -1268,6 +1386,13 @@ function renderModal() {
       break;
     }
     case 'quit': {
+      if (App.me < 0) {
+        h = `<h2>¿DEJAR DE MIRAR?</h2><p class="muted">Estás viendo la partida como espectador. Puedes volver a entrar cuando quieras.</p>
+          <div class="row gap between"><button class="btn ghost" data-close>SEGUIR MIRANDO</button><button class="btn red" id="q-ok">SALIR</button></div>`;
+        box.innerHTML = h;
+        $('#q-ok').onclick = () => { closeModal(); leaveRoom(); };
+        break;
+      }
       h = `<h2>¿SALIR DE LA PARTIDA?</h2><p class="muted">${App.mode === 'online' ? 'Un bot jugará en tu lugar.' : App.mode === 'p2p' && P2P.role === 'host' ? 'Eres el anfitrión: si sales, la partida termina para todos.' : App.mode === 'p2p' ? 'Un bot jugará en tu lugar.' : 'Se perderá la partida.'}</p>
         <div class="row gap between"><button class="btn ghost" data-close>SEGUIR JUGANDO</button><button class="btn red" id="q-ok">SALIR</button></div>`;
       box.innerHTML = h;

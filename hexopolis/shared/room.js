@@ -13,7 +13,9 @@
     constructor({ code, name, isPublic = true, local = false, onChange, onState }) {
       this.code = code; this.name = name; this.isPublic = isPublic; this.local = local;
       this.seats = []; // {kind, token, name, level, client, connected, discAt}
-      this.spectators = new Map();
+      this.spectators = new Map(); // token → {client, name}
+      this.startedAt = null; this.endedAt = null;
+      this.chatTimes = new Map();
       this.host = null;
       this.state = null;
       this.chat = [];
@@ -33,11 +35,13 @@
         code: this.code, name: this.name, isPublic: this.isPublic, hostSeat: this.seats.findIndex((x) => x.kind === 'human' && x.token === this.host), local: this.local, speed: this.speed,
         started: !!this.state, over: !!(this.state && this.state.phase === 'gameOver'), rules: this.rules, max: E.MAX_PLAYERS,
         seats: this.seats.map((s, i) => ({ i, kind: s.kind, name: s.name, level: s.level, connected: s.kind === 'bot' || s.connected, host: s.token === this.host, color: E.COLORS[i] })),
+        spectators: [...this.spectators.values()].map((x) => x.name),
+        startedAt: this.startedAt, endedAt: this.endedAt,
       };
     }
     seatOf(token) { return this.seats.findIndex((s) => s.kind === 'human' && s.token === token); }
 
-    join(client, token, name) {
+    join(client, token, name, opts = {}) {
       const i = this.seatOf(token);
       if (i >= 0) {
         const seat = this.seats[i];
@@ -45,8 +49,9 @@
         this.sendRoom(); this.sendStateTo(i, []); this.schedule();
         return { ok: true };
       }
-      if (this.state) return { ok: false, error: 'La partida ya ha empezado' };
-      if (this.seats.length >= E.MAX_PLAYERS) return { ok: false, error: 'La sala está llena' };
+      // partida empezada, sala llena o quiere mirar: entra como espectador
+      if (opts.watch || this.state || this.seats.length >= E.MAX_PLAYERS) return this.watch(client, token, name);
+      if (this.spectators.has(token)) this.spectators.delete(token); // un espectador ocupa un sitio libre
       this.seats.push({ kind: 'human', token, name: name || 'Jugador', client, connected: true });
       if (!this.host) this.host = token;
       this.sysChat(`${name} entra en la sala`);
@@ -54,7 +59,22 @@
       return { ok: true };
     }
 
+    watch(client, token, name) {
+      const was = this.spectators.has(token);
+      this.spectators.set(token, { client, name: name || 'Espectador' });
+      if (!was) this.sysChat(`👁 ${name || 'Alguien'} está mirando la partida`);
+      this.sendRoom();
+      if (this.state) { this.sendSpectator(token, []); this.schedule(); }
+      return { ok: true, spectator: true };
+    }
+    sendSpectator(token, events) {
+      const x = this.spectators.get(token);
+      if (!x || !x.client || !this.state) return;
+      x.client.send({ t: 'state', view: E.viewFor(this.state, -1), events: E.filterEvents(events, -1) });
+    }
+
     leave(token) {
+      if (this.spectators.has(token)) { const x = this.spectators.get(token); this.spectators.delete(token); this.sysChat(`👁 ${x.name} deja de mirar`); this.sendRoom(); return; }
       const i = this.seatOf(token);
       if (i < 0) return;
       const seat = this.seats[i];
@@ -77,6 +97,7 @@
     }
 
     disconnect(token) {
+      if (this.spectators.has(token)) { this.spectators.delete(token); this.sendRoom(); return; }
       const i = this.seatOf(token);
       if (i < 0) return;
       const seat = this.seats[i];
@@ -86,7 +107,8 @@
       setTimeout(() => this.schedule(), AUTO_GRACE + 50);
     }
 
-    humansConnected() { return this.seats.some((s) => s.kind === 'human' && s.connected); }
+    // la sala sigue jugando mientras haya alguien conectado (jugador o espectador)
+    humansConnected() { return this.seats.some((s) => s.kind === 'human' && s.connected) || this.spectators.size > 0; }
 
     addBot(token, level) {
       if (token !== this.host) return 'Solo el anfitrión puede añadir bots';
@@ -131,6 +153,7 @@
       this.seats = this.seats.filter((s) => s.kind === 'bot' || s.connected);
       this.state = E.createGame(this.seats.map((s, i) => ({ name: s.name, bot: s.kind === 'bot' ? s.level : 0, color: E.COLORS[i] })), Object.assign({}, opts, { rules: this.rules }));
       this.mem = {}; this.lastTurn = -1;
+      this.startedAt = Date.now(); this.endedAt = null;
       this.sysChat(`¡Partida iniciada! Mapa ${this.state.map === 'big' ? 'grande' : 'normal'} a ${this.rules.vp} puntos.`);
       this.sendRoom();
       this.broadcast([{ type: 'start' }]);
@@ -142,14 +165,21 @@
     sysChat(text) { this.pushChat({ sys: true, text }); }
     say(token, text) {
       const i = this.seatOf(token);
-      const name = i >= 0 ? this.seats[i].name : '¿?';
+      const spec = i < 0 ? this.spectators.get(token) : null;
+      if (i < 0 && !spec) return;
       text = String(text || '').slice(0, 200).trim();
       if (!text) return;
-      this.pushChat({ name, color: E.COLORS[i] || '#fff', text });
+      // anti-spam: como mucho 6 mensajes cada 8 segundos
+      const now = Date.now(), times = (this.chatTimes.get(token) || []).filter((t) => now - t < 8000);
+      if (times.length >= 6) return;
+      times.push(now); this.chatTimes.set(token, times);
+      if (spec) this.pushChat({ name: '👁 ' + spec.name, color: '#95a8bd', text, seat: -1 });
+      else this.pushChat({ name: this.seats[i].name, color: E.COLORS[i] || '#fff', text, seat: i });
     }
     pushChat(m) {
       this.chat.push(m); if (this.chat.length > 60) this.chat.shift();
       this.seats.forEach((s) => s.kind === 'human' && s.client && s.client.send({ t: 'chat', msg: m }));
+      this.spectators.forEach((x) => x.client && x.client.send({ t: 'chat', msg: m }));
     }
 
     // ----- juego -----
@@ -167,13 +197,17 @@
       const s = this.state;
       if (s.turn !== this.lastTurn) { this.lastTurn = s.turn; this.mem = {}; }
       this.broadcast(events);
-      if (s.phase === 'gameOver') { this.sendRoom(); this.onChange(); }
+      if (s.phase === 'gameOver') { if (!this.endedAt) this.endedAt = Date.now(); this.sendRoom(); this.onChange(); }
       this.schedule();
       this.onState();
     }
 
     broadcast(events) {
       this.seats.forEach((seat, i) => { if (seat.kind === 'human' && seat.client) this.sendStateTo(i, events); });
+      if (this.spectators.size && this.state) {
+        const msg = { t: 'state', view: E.viewFor(this.state, -1), events: E.filterEvents(events, -1) };
+        this.spectators.forEach((x) => x.client && x.client.send(msg));
+      }
     }
     sendStateTo(i, events) {
       const seat = this.seats[i];
@@ -183,6 +217,7 @@
     sendRoom() {
       const info = this.info();
       this.seats.forEach((s, i) => s.kind === 'human' && s.client && s.client.send({ t: 'room', room: info, you: i, chat: this.chat }));
+      this.spectators.forEach((x) => x.client && x.client.send({ t: 'room', room: info, you: -1, spectator: true, chat: this.chat }));
       this.onChange();
     }
 
@@ -248,13 +283,14 @@
     snapshot() {
       return {
         v: 1, code: this.code, name: this.name, isPublic: this.isPublic, local: this.local, speed: this.speed,
-        host: this.host, rules: this.rules, lastTurn: this.lastTurn, chat: this.chat.slice(-30), state: this.state, savedAt: Date.now(),
+        host: this.host, rules: this.rules, startedAt: this.startedAt, lastTurn: this.lastTurn, chat: this.chat.slice(-30), state: this.state, savedAt: Date.now(),
         seats: this.seats.map((x) => ({ kind: x.kind, token: x.token, name: x.name, level: x.level, left: !!x.left })),
       };
     }
     static fromSnapshot(snap, opts = {}) {
       const r = new Room({ code: snap.code, name: snap.name, isPublic: snap.isPublic, local: snap.local, ...opts });
       const now = Date.now();
+      r.startedAt = snap.startedAt || null;
       r.speed = snap.speed || 1; r.rules = E.normRules(snap.rules || (snap.state && snap.state.rules)); r.host = snap.host; r.lastTurn = snap.lastTurn; r.chat = snap.chat || []; r.state = snap.state;
       // los humanos vuelven como desconectados: si alguien no regresa, un bot juega por él pasado el tiempo de gracia
       r.seats = snap.seats.map((x) => (x.kind === 'bot' ? { kind: 'bot', name: x.name, level: x.level, connected: true }
