@@ -833,3 +833,6 @@ body.spec .spec-qc { display: flex; margin-top: 8px; }
 .link-btn { white-space: nowrap; } @media (max-width: 420px) { .menu-foot { gap: 2px; } .menu-foot .link-btn { font-size: 12.5px; padding: 4px 3px; } }
 .btn.trash { background: rgba(229,72,77,0.15); border: 1px solid rgba(229,72,77,0.6); color: #ff9a9a; font-size: 15px; }
 .btn.trash:hover { background: rgba(229,72,77,0.3); color: #fff; }
+.ri-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.ri-btns .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.col.gap { display: flex; flex-direction: column; gap: 8px; }

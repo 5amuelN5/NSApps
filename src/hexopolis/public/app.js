@@ -301,16 +301,23 @@ function renderRoomList(list) {
   const el = $('#room-list');
   if (!list.length) { el.innerHTML = '<p class="muted">No hay salas públicas. ¡Crea una!</p>'; return; }
   el.innerHTML = list.map((r) => {
-    const closed = r.started || r.players >= (r.max || 4);
+    const full = r.players >= (r.max || 4);
+    const why = r.started ? 'La partida ya ha empezado: puedes mirarla' : full ? 'La sala está llena: puedes mirarla' : 'Entrar a jugar en esta sala';
     return `<div class="room-item"><b>${esc(r.code)}</b><div class="grow">${esc(r.name)}<br><span class="muted">${r.players}/${r.max || 4} jugadores · ${r.started ? 'EN PARTIDA' : 'ESPERANDO'}${r.watchers ? ` · 👁 ${r.watchers}` : ''}</span></div>
-    ${closed ? '' : `<button class="btn small cyan" data-join="${esc(r.code)}">ENTRAR</button>`}<button class="btn small ${closed ? 'cyan' : 'ghost'}" data-watch="${esc(r.code)}" title="Entrar como espectador: ves la partida en directo sin jugar">👁 MIRAR</button></div>`;
+    <div class="ri-btns"><button class="btn small pink" data-join="${esc(r.code)}" ${r.started || full ? 'disabled' : ''} title="${why}">▶ ENTRAR</button><button class="btn small cyan" data-watch="${esc(r.code)}" title="Entrar como espectador: ves la partida en directo sin jugar">👁 MIRAR</button></div></div>`;
   }).join('');
   el.querySelectorAll('[data-join]').forEach((b) => (b.onclick = () => { Sfx.click(); send({ t: 'joinRoom', code: b.dataset.join }); }));
   el.querySelectorAll('[data-watch]').forEach((b) => (b.onclick = () => { Sfx.click(); send({ t: 'joinRoom', code: b.dataset.watch, watch: true }); }));
 }
 
 // ================= SALA =================
-$('#btn-leave').onclick = () => { Sfx.click(); leaveRoom(); };
+$('#btn-leave').onclick = () => {
+  Sfx.click();
+  const r = App.room;
+  const others = r ? r.seats.filter((x, i) => x.kind === 'human' && i !== App.you).length + (r.spectators || []).length : 0;
+  if (isHost() && App.mode === 'online' && others) return openModal({ kind: 'hostleave' });
+  leaveRoom();
+};
 $('#btn-delroom').onclick = () => { Sfx.click(); openModal({ kind: 'delroom' }); };
 function isPrivateHost(h) { return /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1)/.test(h); }
 function roomLink() {
@@ -539,6 +546,7 @@ function onMsg(m) {
       if (App.mode === 'online' || App.mode === 'p2p') history.replaceState(null, '', '?sala=' + m.code);
       break;
     case 'room': {
+      if (m.spectator && !App.spectator) toast('👁 Estás mirando como espectador', true);
       App.room = m.room; App.you = m.you; App.chat = m.chat || []; App.spectator = !!m.spectator;
       if (!m.room.started || m.room.over) {
         if (!m.room.started) { App.view = null; App.queue = []; App.busy = false; if (App.screen !== 'room') show('room'); }
@@ -560,14 +568,18 @@ function onMsg(m) {
     case 'restoreFail': Saves.set(App.token, m.code, null); break;
     case 'error': toast(m.msg); Sfx.error(); break;
     case 'joinFail': App.room = null; if (App.mode === 'p2p') P2P.close(); show('lobby'); $('#net-status').textContent = m.msg || 'No se pudo entrar en la sala'; break;
-    case 'roomClosed':
+    case 'roomClosed': {
+      // la sala ya no existe: todos vuelven al menú principal
       closeModal();
       Saves.set(App.token, m.code, null);
       App.room = null; App.view = null; App.queue = []; App.busy = false; App.spectator = false;
       history.replaceState(null, '', location.pathname);
-      show('lobby'); send({ t: 'listRooms' });
+      const ws = App.ws; App.ws = null; App.mode = null;
+      if (ws) { try { ws.close(); } catch (e) { /* */ } }
+      show('menu');
       toast(m.byMe ? '🗑 Sala eliminada' : 'El anfitrión ha eliminado la sala', !!m.byMe);
       break;
+    }
     case 'kicked': toast('Te han expulsado de la sala'); App.room = null; if (App.mode === 'p2p') P2P.close(); show('lobby'); if (App.mode === 'online') send({ t: 'listRooms' }); break;
   }
 }
@@ -1515,11 +1527,19 @@ function renderModal() {
       if ($('#pd-prof')) $('#pd-prof').onclick = () => { Sfx.click(); openModal({ kind: 'pcard', prof: App.room.seats[m.pid].prof }); };
       break;
     }
+    case 'hostleave': {
+      h = `<h2>¿Salir de la sala?</h2><p class="muted">Eres quien la creó. Puedes dejarla abierta (otra persona pasa a ser anfitriona) o eliminarla: entonces todos los que están dentro vuelven al menú.</p>
+        <div class="col gap"><button class="btn" id="hl-leave">✕ Salir y dejar la sala abierta</button><button class="btn red" id="hl-del">🗑 Eliminar la sala para todos</button><button class="btn small ghost" data-close>Cancelar</button></div>`;
+      box.innerHTML = h;
+      $('#hl-leave').onclick = () => { closeModal(); leaveRoom(); };
+      $('#hl-del').onclick = () => { Sfx.click(); closeModal(); send({ t: 'closeRoom' }); };
+      break;
+    }
     case 'delroom': {
       const R = App.room; if (!R) { closeModal(); return; }
       const others = R.seats.filter((s, i) => s.kind === 'human' && i !== App.you).length + (R.spectators || []).length;
       h = `<h2>🗑 ¿Eliminar la sala?</h2>
-        <p>La sala <b>${esc(R.name)}</b> (${esc(R.code)}) se cerrará${others ? ` para todos: ${others === 1 ? 'la otra persona vuelve' : `las otras ${others} personas vuelven`} a la lista de salas` : ''}.${R.started && !R.over ? ' <b>La partida en curso se perderá.</b>' : ''} No se puede deshacer.</p>
+        <p>La sala <b>${esc(R.name)}</b> (${esc(R.code)}) se cerrará${others ? ` para todos: ${others === 1 ? 'la otra persona vuelve' : `las otras ${others} personas vuelven`} al menú` : ''}.${R.started && !R.over ? ' <b>La partida en curso se perderá.</b>' : ''} No se puede deshacer.</p>
         <div class="row gap between"><button class="btn ghost" data-close>Cancelar</button><button class="btn red" id="dr-ok">🗑 Eliminar la sala</button></div>`;
       box.innerHTML = h;
       $('#dr-ok').onclick = () => { Sfx.click(); closeModal(); send({ t: 'closeRoom' }); };
