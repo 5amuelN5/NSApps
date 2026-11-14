@@ -13,13 +13,13 @@ Abre <http://localhost:3000>. Para jugar con amigos en tu misma red, compártele
 ## Publicado en NS Games
 
 - Web: <https://5amueln5.github.io/nsgames/dominium/> (GitHub Pages, carpeta `dominium/` del repositorio).
-- Servidor de salas: <https://dominium.onrender.com> (Render, plan gratuito). Ajustes del servicio: *Root Directory* `src/dominium`, *Build Command* `npm install`, *Start Command* `npm start`.
+- Servidor de salas: <https://dominium-gt9w.onrender.com> (Render, plan gratuito). Ajustes del servicio: *Root Directory* `src/dominium`, *Build Command* `npm install`, *Start Command* `npm start`.
 - La web lee la dirección del servidor de `config.json`. En el plan gratuito el servidor se duerme tras unos minutos sin uso; la primera conexión puede tardar hasta un minuto y el juego lo avisa.
 
 Para regenerar la web tras un cambio:
 
 ```bash
-SERVER_URL=https://dominium.onrender.com npm run build
+SERVER_URL=https://dominium-gt9w.onrender.com npm run build
 rm -rf ../../dominium && cp -R dist ../../dominium
 ```
 

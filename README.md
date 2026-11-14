@@ -34,6 +34,6 @@ Para regenerar la web tras un cambio:
 
 ```bash
 cd src/dominium
-SERVER_URL=https://dominium.onrender.com npm run build
+SERVER_URL=https://dominium-gt9w.onrender.com npm run build
 rm -rf ../../dominium && cp -R dist ../../dominium
 ```
