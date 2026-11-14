@@ -24,13 +24,12 @@
   // ---------- reglas de la partida ----------
   const DEFAULT_RULES = {
     map: 'auto', vp: 10, hand: 7,
-    robberKeeps: false, doubleSteal: false, friendlyRobber: false, peaceStart: false, doublesBonus: false,
+    doubleSteal: false, friendlyRobber: false, peaceStart: false, doublesBonus: false,
     goldRain: false, fastStart: false, chaosNumbers: false,
   };
   // normas especiales (activables una a una)
   const SPECIAL_RULES = [
-    { key: 'robberKeeps', icon: '🦹', name: 'El ladrón se queda el botín', desc: 'Cuando sale un 7, las cartas que descartan los demás no vuelven al banco: se las queda quien ha sacado el 7.', excludes: 'doubleSteal' },
-    { key: 'doubleSteal', icon: '🧤', name: 'Ladrón codicioso', desc: 'Al mover el ladrón robas 2 cartas y eliges a quién quitar cada una. Con un 7, las cartas que descarta cada uno se reparten a partes iguales entre los demás jugadores (las que sobran van al banco).', excludes: 'robberKeeps' },
+    { key: 'doubleSteal', icon: '🧤', name: 'Ladrón codicioso', desc: 'Al mover el ladrón robas 2 cartas y eliges a quién quitar cada una. Con un 7, las cartas que descarta cada uno se reparten a partes iguales entre los demás jugadores (las que sobran van al banco).' },
     { key: 'friendlyRobber', icon: '🕊️', name: 'Ladrón amable', desc: 'No se puede poner el ladrón junto a quien tenga 2 puntos o menos, ni robarle.' },
     { key: 'peaceStart', icon: '🌱', name: 'Comienzo en paz', desc: 'Durante las 2 primeras rondas no sale el 7: si sale, se vuelven a tirar los dados.' },
     { key: 'doublesBonus', icon: '🎯', name: 'Dobles dorados', desc: 'Si los dos dados sacan el mismo número, todas las casillas producen el doble.' },
@@ -46,7 +45,6 @@
     if (r.vp != null && Number.isFinite(+r.vp)) o.vp = Math.max(5, Math.min(16, Math.round(+r.vp)));
     if (HAND_OPTS.includes(r.hand | 0)) o.hand = r.hand | 0;
     for (const x of SPECIAL_RULES) o[x.key] = !!r[x.key];
-    if (o.doubleSteal) o.robberKeeps = false; // son incompatibles: manda el ladrón codicioso
     return o;
   }
   function R(s) { return s.rules || DEFAULT_RULES; }
@@ -591,7 +589,6 @@
         if (!validResObj(a.cards)) return 'Cartas inválidas';
         if (total(a.cards) !== s.pendingDiscard[pid]) return `Debes descartar ${s.pendingDiscard[pid]} cartas`;
         if (!has(P.res, a.cards)) return 'No tienes esas cartas';
-        const to = s.current;
         if (R(s).doubleSteal && s.players.length > 1) {
           // ladrón codicioso: lo descartado se reparte a partes iguales entre los demás; lo que sobra va al banco
           const cards = [];
@@ -609,11 +606,6 @@
           cards.forEach((r) => s.bank[r]++);
           log(s, `🧤 ${P.name} descarta ${total(a.cards)} cartas: ${each ? `${each} para cada rival` : 'no llegan para repartir'}${cards.length ? ` y ${cards.length} al banco` : ''}`);
           ev.push({ type: 'discard', pid, n: total(a.cards), split, toBank: cards.length });
-        } else if (R(s).robberKeeps && to !== pid) {
-          const T = s.players[to];
-          for (const k in a.cards) { P.res[k] -= a.cards[k]; T.res[k] += a.cards[k]; }
-          log(s, `🦹 ${P.name} entrega ${total(a.cards)} cartas a ${T.name}`);
-          ev.push({ type: 'discard', pid, n: total(a.cards), to });
         } else {
           pay(s, P, a.cards);
           log(s, `${P.name} descarta ${total(a.cards)} cartas`);
