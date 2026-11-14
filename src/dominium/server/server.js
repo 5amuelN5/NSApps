@@ -491,7 +491,7 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname;
   try {
     if (req.method === 'OPTIONS' && p.startsWith('/api/')) { res.writeHead(204, CORS); return res.end(); }
-    if (p === '/api/ping') return sendJSON(res, 200, { ok: true, rooms: rooms.size });
+    if (p === '/api/ping') return sendJSON(res, 200, { ok: true, rooms: rooms.size, perfiles: process.env.DOM_PROFILE_KEY ? 'clave propia' : process.env.RENDER_SERVICE_ID ? 'clave fija del servicio' : 'clave temporal' });
     if (p === '/api/maps' && req.method === 'GET') return sendJSON(res, 200, MAP_INDEX);
     if (p === '/api/profile' && req.method === 'POST') {
       // crear un perfil, comprobarlo (enlace de recuperación) o cambiar nombre/emblema
