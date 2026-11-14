@@ -717,6 +717,9 @@ const game = {
   renderPlayers() {
     const g = this.g, graph = this.graph;
     const totalT = graph.n;
+    const cnt = g.players.map(() => 0);
+    for (const o of g.owners) if (o >= 0) cnt[o]++;
+    const ranking = g.players.map((_, i) => i).filter((i) => g.players[i].alive && !g.players[i].neutral).sort((a, b) => cnt[b] - cnt[a]);
     const html = g.players.map((p, i) => {
       const terr = territoriesOf(g, i);
       const armies = terr.reduce((s, t) => s + g.armies[t], 0);
@@ -728,12 +731,21 @@ const game = {
       const share = Math.round((terr.length / totalT) * 100);
       const thinking = isCur && (p.bot || slot?.afk || slot?.left) && g.phase !== 'setup';
       const em = this.emotes[i];
-      return `<div class="pcard ${isCur ? 'current' : ''} ${p.alive ? '' : 'dead'}" style="--pc:${p.color}" title="${esc(p.name)}">
+      const pos = ranking.indexOf(i);
+      const medal = p.alive && !p.neutral && pos >= 0 && pos < 3 && g.phase !== 'claim' && g.phase !== 'setup' ? ['🥇', '🥈', '🥉'][pos] : '';
+      const chip = (e, n, t, cls = '') => `<span class="pchip ${cls}" title="${t}"><i>${e}</i>${n}</span>`;
+      return `<div class="pcard ${isCur ? 'current' : ''} ${p.alive ? '' : 'dead'} ${p.neutral ? 'neutral' : ''}" style="--pc:${p.color}">
         ${em && em.until > Date.now() ? `<span class="bubble">${em.e}</span>` : ''}
-        <div class="ptop"><span class="av ${AVATARS[i] ? 'has-img' : ''}" style="background:${p.color}">${AVATARS[i] ? `<img src="${AVATARS[i]}" alt="">` : esc(initial(p.name))}</span>
-        <div class="pn" ${slot?.prof ? `data-pprof="${i}" title="Ver perfil"` : ''}>${esc(p.name)} ${slot?.prof ? Prof.levelBadge(slot.prof) : ''}</div>
-        ${thinking ? '<span class="dots"><i></i><i></i><i></i></span>' : p.alive && !p.neutral ? `<span class="share">${share}%</span>` : ''}</div>
-        <div class="ps">${tag || !p.alive ? `<em class="ptag">${p.alive ? tag : 'Eliminado'}</em>` : ''}<span title="Territorios">${IC('flag')}${terr.length}</span><span title="Ejércitos">${IC('army')}${armies}</span>${p.neutral ? '' : `<span title="Cartas">${IC('card')}${p.cardCount}</span>`}${rb && !p.neutral && g.phase !== 'claim' && g.phase !== 'setup' ? `<span title="Refuerzos por turno">${IC('plusarmy')}${rb.total}</span>` : ''}${g.phase === 'setup' && !p.neutral && g.pool[i] > 0 ? `<span title="Por desplegar">${IC('hourglass')}${g.pool[i]}</span>` : ''}</div>
+        ${isCur && !thinking && p.alive ? '<span class="pturn">Su turno</span>' : ''}
+        <div class="ptop">
+          <span class="av ${AVATARS[i] ? 'has-img' : ''}" style="background:${p.color}">${AVATARS[i] ? `<img src="${AVATARS[i]}" alt="">` : esc(initial(p.name))}${medal ? `<span class="medal">${medal}</span>` : ''}</span>
+          <div class="pid">
+            <div class="pn" ${slot?.prof ? `data-pprof="${i}" title="Ver perfil"` : ''}>${esc(p.name)}</div>
+            <div class="psub">${p.alive ? (tag ? `<em class="ptag">${esc(tag)}</em>` : '') : '<em class="ptag dead">💀 Eliminado</em>'}${slot?.prof ? Prof.levelBadge(slot.prof) : ''}</div>
+          </div>
+          ${thinking ? '<span class="dots" title="Pensando"><i></i><i></i><i></i></span>' : p.alive && !p.neutral ? `<span class="share"><b>${share}%</b><small>del mapa</small></span>` : ''}
+        </div>
+        <div class="ps">${chip('🚩', terr.length, 'Territorios')}${chip('🛡️', armies, 'Ejércitos')}${p.neutral ? '' : chip('🃏', p.cardCount, 'Cartas', p.cardCount >= 5 ? 'hot' : '')}${rb && !p.neutral && g.phase !== 'claim' && g.phase !== 'setup' ? chip('⚡', `+${rb.total}`, 'Refuerzos por turno') : ''}${g.phase === 'setup' && !p.neutral && g.pool[i] > 0 ? chip('⏳', g.pool[i], 'Por desplegar') : ''}</div>
         <div class="bar"><i style="width:${(terr.length / totalT) * 100}%"></i></div></div>`;
     }).join('');
     $('#players-panel').innerHTML = html;
@@ -1196,7 +1208,7 @@ const game = {
 
 // ------------------------------------------------------------ controles de partida
 $('#btn-cards').onclick = () => { sfx.click(); game.openCards(); };
-const EMOTES = ['👍', '😂', '😮', '😡', '🤝', '👏', '😭', '🔥'];
+const EMOTES = ['👍', '👎', '😂', '🤣', '😮', '😱', '😡', '🤬', '😭', '😎', '🤔', '😏', '🤝', '👏', '🙏', '💪', '🔥', '💀', '🎯', '⚔️', '🛡️', '👑', '🎲', '🏳️'];
 $('#emote-pop').innerHTML = EMOTES.map((e, i) => `<button data-emote="${i}" aria-label="Reacción ${e}">${e}</button>`).join('');
 $('#btn-emote').onclick = (ev) => { ev.stopPropagation(); $('#emote-pop').classList.toggle('open'); };
 $$('[data-emote]').forEach((b) => (b.onclick = () => { send({ type: 'emote', e: Number(b.dataset.emote) }).catch(() => {}); $('#emote-pop').classList.remove('open'); }));
@@ -1235,9 +1247,18 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'c') game.openCards();
 });
 
-// temporizador
+// temporizador y reloj de la partida
+const fmtClock = (ms) => {
+  const t = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+  return h ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}` : `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+};
 setInterval(() => {
   if (!S || !S.game || !$('#screen-game').classList.contains('active')) return;
+  const gc = S.game;
+  const clock = fmtClock((gc.endedAt || Date.now() + serverOffset) - gc.startedAt);
+  const ck = $('#clock-text');
+  if (ck.textContent !== clock) ck.textContent = clock;
+  $('#game-clock').classList.toggle('done', !!gc.endedAt);
   const tm = $('#timer');
   const total = Number(S.room.settings.turnTime) || 0;
   if (!S.deadline || !total) { tm.style.visibility = 'hidden'; return; }

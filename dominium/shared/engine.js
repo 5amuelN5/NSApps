@@ -758,7 +758,7 @@ export class Game {
 
   declareWinner(p, reason) {
     const s = this.state;
-    s.phase = 'over'; s.winner = p; s.winReason = reason; s.pending = s.pending || null;
+    s.phase = 'over'; s.winner = p; s.winReason = reason; s.pending = s.pending || null; s.endedAt = Date.now();
     s.history = s.history || [];
     s.history.push(s.players.map((_, i) => territoriesOf(s, i).length));
     this.pushEvent({ type: 'win', p, reason });

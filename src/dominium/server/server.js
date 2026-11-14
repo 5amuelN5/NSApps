@@ -340,7 +340,7 @@ function handleAction(room, cid, msg) {
       return;
     }
     case 'emote': {
-      const EMOTES = ['👍', '😂', '😮', '😡', '🤝', '👏', '😭', '🔥'];
+      const EMOTES = ['👍', '👎', '😂', '🤣', '😮', '😱', '😡', '🤬', '😭', '😎', '🤔', '😏', '🤝', '👏', '🙏', '💪', '🔥', '💀', '🎯', '⚔️', '🛡️', '👑', '🎲', '🏳️'];
       const e = EMOTES[msg.e];
       if (!e || !me) return;
       const now = Date.now();
