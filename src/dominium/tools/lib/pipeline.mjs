@@ -270,6 +270,17 @@ export function buildMap(def) {
   const T = ([x, y]) => [(x - X0) * f + PAD, (y - Y0) * f + PAD];
   arcs = arcs.map((a) => a.map(T));
   for (const g of terrGeoms) g.area *= f * f;
+  // Re-build the topology from the merged territories so arcs are only cut where territories meet
+  // (atom junctions such as merged provinces or Voronoi cells would otherwise pin every vertex).
+  {
+    const geoms = [...terrGeoms, ...(decorGeom ? [decorGeom] : [])];
+    const fc = { type: 'FeatureCollection', features: geoms.map((g, i) => ({ type: 'Feature', properties: { i }, geometry: { type: 'MultiPolygon', coordinates: g.arcs.map((poly) => poly.map((ring) => ringCoords(arcs, ring))) } })) };
+    const t2 = topology({ g: fc });
+    t2.objects.g.geometries.forEach((og, i) => {
+      geoms[i].arcs = og.type === 'Polygon' ? [og.arcs] : og.type === 'MultiPolygon' ? og.arcs : [];
+    });
+    arcs = t2.arcs;
+  }
   const ftopo = { type: 'Topology', arcs, objects: {} };
 
   // 6) simplification: Visvalingam with per-arc threshold, then Chaikin

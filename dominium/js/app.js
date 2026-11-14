@@ -2,7 +2,9 @@
 import {
   buildGraph, reachable, canFortify, reinforcementBreakdown, validSets, bestSet, isValidSet, tradeValue,
   missionText, winProbability, territoriesOf, CARD_KINDS, BOT_LEVELS, PLAYER_COLORS,
+  sameTeam, pactBetween, luckOf, goalTerritories, teamMembers,
 } from '../shared/engine.js';
+import { createTutorial } from './tutorial.js';
 import { MapView, renderPreview } from './mapview.js';
 import { sfx } from './sound.js';
 import * as Prof from './profile.js';
@@ -47,6 +49,30 @@ async function api(path, body) {
   return data;
 }
 
+// copias cifradas de las partidas en curso (las manda el servidor) para recuperarlas tras un reinicio
+const Saves = {
+  key: (c) => `dom.save.${c}`,
+  get(c) { try { const x = JSON.parse(localStorage.getItem(this.key(c)) || 'null'); return x && Date.now() - x.at < 3 * 864e5 ? x.blob : null; } catch { return null; } },
+  put(c, blob) {
+    try {
+      localStorage.setItem(this.key(c), JSON.stringify({ blob, at: Date.now() }));
+      const list = JSON.parse(localStorage.getItem('dom.saves') || '[]').filter((x) => x !== c);
+      list.push(c);
+      while (list.length > 3) localStorage.removeItem(this.key(list.shift()));
+      localStorage.setItem('dom.saves', JSON.stringify(list));
+    } catch { /* */ }
+  },
+  drop(c) { try { localStorage.removeItem(this.key(c)); } catch { /* */ } },
+};
+async function restoreAndJoin(code) {
+  const blob = Saves.get(code);
+  if (!blob) { leaveToMenu('Esa sala ya no existe'); return; }
+  try {
+    const r = await api('/api/restore', { cid: CID, blob });
+    await joinRoom(r.code);
+    if (r.restored) toast('Partida recuperada. ¡Seguimos!', true);
+  } catch (e) { Saves.drop(code); leaveToMenu(e.message); }
+}
 let unloading = false;
 addEventListener('pagehide', () => { unloading = true; });
 addEventListener('beforeunload', () => { unloading = true; });
@@ -70,11 +96,17 @@ function connect(code) {
   es.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type === 'kicked') { leaveToMenu('Te han expulsado de la sala'); return; }
+    if (msg.type === 'save') { Saves.put(msg.code, msg.blob); return; }
     if (msg.type === 'room') onSnapshot(msg);
   };
   es.onerror = () => {
     if (unloading) return; // al cerrar o recargar la página no se abandona la sala
-    if (es && es.readyState === 2) leaveToMenu('Se perdió la conexión con la sala');
+    if (es && es.readyState === 2) {
+      // el servidor se ha reiniciado: si tenemos copia de la partida, la recuperamos y volvemos
+      const c = ROOM;
+      if (c && Saves.get(c)) { es.close(); es = null; toast('Reconectando y recuperando la partida…', true); restoreAndJoin(c); }
+      else leaveToMenu('Se perdió la conexión con la sala');
+    }
   };
 }
 
@@ -158,6 +190,21 @@ async function createRoom({ isPublic, bots = 0, roomName = '' }) {
   } catch (e) { toast(e.message); }
 }
 
+// partida de práctica con el tutorial: 2 bots Recluta, sin prisa
+async function startTutorialGame() {
+  tutorial.start();
+  closeModal();
+  try {
+    const { code } = await api('/api/create', { cid: CID, name: myName(), public: false, roomName: 'Tutorial', ...profilePayload() });
+    connect(code);
+    ROOM = code;
+    for (let i = 0; i < 2; i++) await send({ type: 'addBot', level: 'recluta' });
+    await send({ type: 'setSettings', settings: { botSpeed: 'lenta', turnTime: 0, setup: 'rapido', objective: 'dominacion' } });
+    await send({ type: 'setMap', mapId: 'clasico' });
+    await send({ type: 'start', force: true });
+  } catch (e) { toast(e.message); }
+}
+
 async function joinRoom(code) {
   sfx.unlock(); sfx.click();
   code = String(code || '').toUpperCase().trim();
@@ -231,7 +278,14 @@ $('#btn-create-game').onclick = openCreate;
 $('#btn-join-game').onclick = () => openJoin();
 $('#btn-rules').onclick = () => showRules();
 $('#btn-invite').onclick = () => joinRoom($('#invite-code').textContent);
-$('#btn-resume').onclick = () => { const c = store.get('dom.room', ''); if (c) joinRoom(c); };
+$('#btn-resume').onclick = async () => {
+  const c = store.get('dom.room', '');
+  if (!c) return;
+  try {
+    const r = await api(`/api/roomcheck?code=${encodeURIComponent(c)}&cid=${encodeURIComponent(CID)}`);
+    if (r.exists) joinRoom(c); else restoreAndJoin(c);
+  } catch { joinRoom(c); }
+};
 
 // ¿hay una partida tuya a la que volver?
 async function checkResume() {
@@ -243,6 +297,9 @@ async function checkResume() {
     if (r.exists && r.member && r.status !== 'over' && !ROOM) {
       $('#btn-resume').hidden = false;
       $('#btn-resume').textContent = r.status === 'playing' ? '↻ Volver a tu partida online' : `↻ Volver a la sala ${r.name || code}`;
+    } else if (!r.exists && Saves.get(code) && !ROOM) {
+      $('#btn-resume').hidden = false;
+      $('#btn-resume').textContent = '↻ Recuperar tu partida online';
     } else if (!r.exists) store.set('dom.room', '');
   } catch { /* */ }
 }
@@ -268,7 +325,7 @@ async function wakeServer() {
 
 function showRules() {
   openModal(`<h3>Cómo se juega</h3><div class="rules">
-    <p><b>Objetivo:</b> conquistar todos los territorios eliminando a los demás jugadores (o cumplir tu misión secreta si se juega con misiones).</p>
+    <p><b>Objetivo:</b> según la sala, conquistar el mundo eliminando a los demás, cumplir tu misión secreta, tomar todas las capitales (⭐) o controlar el 60 % del mapa.</p>
     <h4>Preparación</h4><ul>
       <li><b>Reparto aleatorio:</b> los territorios se reparten al azar con 1 ejército y todos despliegan a la vez el resto.</li>
       <li><b>Clásico:</b> por turnos se elige un territorio libre; después se coloca 1 ejército por turno hasta agotar la reserva.</li>
@@ -287,11 +344,16 @@ function showRules() {
     <h4>3 · Fortificación</h4><ul>
       <li>Un único movimiento de ejércitos entre dos territorios tuyos conectados (o vecinos, según las reglas de la sala). Después termina tu turno.</li>
       <li>Si conquistaste al menos un territorio en el turno, robas una carta.</li></ul>
+    <h4>Equipos y pactos</h4><ul>
+      <li><b>Por equipos:</b> los compañeros no pueden atacarse y ganan juntos.</li>
+      <li><b>Pactos:</b> pulsa 🤝 en la tarjeta de otro jugador para proponer no atacaros durante 2, 3 o 5 rondas. Si acepta, el pacto se cumple sí o sí.</li>
+      <li>En la pestaña <b>Suerte</b> ves quién está teniendo mejores dados que lo normal.</li></ul>
     <h4>Controles</h4><ul>
       <li>Rueda/pellizco para zoom, arrastra para mover el mapa.</li>
-      <li>Atajos: <b>Espacio</b> atacar · <b>A</b> asalto total · <b>F</b> fortificar · <b>E</b> terminar turno · <b>C</b> cartas · <b>Esc</b> cancelar.</li></ul>
-    </div><div class="modal-actions"><button class="btn btn-gold" id="m-ok">Entendido</button></div>`);
+      <li>Atajos: <b>Espacio</b> atacar · <b>A</b> asalto total · <b>F</b> fortificar · <b>E</b> terminar turno · <b>C</b> cartas · <b>?</b> esta ayuda · <b>Esc</b> cancelar.</li></ul>
+    </div><div class="modal-actions">${ROOM ? '' : '<button class="btn" id="m-tut">🎓 Jugar el tutorial</button>'}<button class="btn btn-gold" id="m-ok">Entendido</button></div>`);
   $('#m-ok').onclick = closeModal;
+  if ($('#m-tut')) $('#m-tut').onclick = () => startTutorialGame();
 }
 
 // ------------------------------------------------------------ SNAPSHOTS
@@ -301,6 +363,7 @@ const AVATARS = [];
 function onSnapshot(snap) {
   if (snap.avatars) { AVATARS.length = 0; snap.avatars.forEach((a, i) => (AVATARS[i] = a)); }
   S = snap;
+  if (snap.game?.phase === 'over') Saves.drop(snap.room.code);
   if (snap.you.profileUpdate && snap.game?.phase === 'over') {
     if (Prof.handleProfileUpdate(snap.you.profileUpdate, snap) && modalKind === 'over') setTimeout(() => game.showGameOver(true), 50);
   }
@@ -328,15 +391,18 @@ function renderSnapshot() {
 }
 
 // ------------------------------------------------------------ LOBBY
+const TEAM_NAMES = ['A', 'B', 'C', 'D'];
 const MAP_GROUPS = [
   ['El mundo', ['clasico']],
-  ['Continentes', ['europa', 'africa', 'americas', 'asia']],
-  ['Países', ['espana', 'eeuu']],
+  ['Continentes', ['europa', 'africa', 'americas', 'latam', 'asia']],
+  ['Países', ['espana', 'eeuu', 'italia', 'alemania', 'britanicas']],
+  ['Fantasía', ['fantasia']],
   ['Otros', null],
 ];
 const SETTING_DEFS = [
   ['setup', 'Despliegue', [['rapido', 'Reparto aleatorio'], ['clasico', 'Clásico (elegir territorios)']]],
-  ['objective', 'Objetivo', [['dominacion', 'Dominación mundial'], ['misiones', 'Misiones secretas']]],
+  ['objective', 'Objetivo', [['dominacion', 'Dominación mundial'], ['capitales', 'Capitales (más corta)'], ['porcentaje', '60 % del mapa (más corta)'], ['misiones', 'Misiones secretas']]],
+  ['teams', 'Equipos', [['no', 'Todos contra todos'], ['si', 'Por equipos']]],
   ['cards', 'Cartas', [['progresivo', 'Progresivo (4·6·8·10·12·15…)'], ['fijo', 'Fijo (4/6/8/10)']]],
   ['fortify', 'Fortificar', [['conectado', 'Por territorios conectados'], ['adyacente', 'Solo a un vecino']]],
   ['turnTime', 'Tiempo/turno', [[0, 'Sin límite'], [45, '45 s'], [60, '1 min'], [90, '1:30 min'], [120, '2 min'], [180, '3 min'], [300, '5 min']]],
@@ -419,10 +485,11 @@ async function renderLobby() {
     const kick = host && !mine ? `<button class="x" data-kick="${i}" title="Quitar de la sala" aria-label="Quitar">×</button>` : '';
     const face = AVATARS[i] ? `<img src="${AVATARS[i]}" alt="">` : esc(initial(s.name));
     return `<li class="slot ${mine ? 'me' : ''}"><span class="sw ${AVATARS[i] ? 'has-img' : ''}" style="background:${s.color}" data-color="${i}" title="Cambiar color">${face}</span>
-      <span class="nm" ${s.prof ? `data-prof="${i}" title="Ver perfil"` : ''}>${esc(s.name)}${mine ? ' (tú)' : ''}</span>${s.prof ? Prof.levelBadge(s.prof) : ''}${tags}${lvl}${kick}</li>`;
+      <span class="nm" ${s.prof ? `data-prof="${i}" title="Ver perfil"` : ''}>${esc(s.name)}${mine ? ' (tú)' : ''}</span>${s.prof ? Prof.levelBadge(s.prof) : ''}${room.settings.teams === 'si' ? `<button class="team-chip t${s.team || 0}" data-team="${i}" ${host || mine ? '' : 'disabled'} title="Cambiar de equipo">Equipo ${TEAM_NAMES[s.team || 0]}</button>` : ''}${tags}${lvl}${kick}</li>`;
   }).join('') + (room.slots.length < 2 ? '<li class="muted">Añade bots o invita amigos con el código.</li>' : '');
   $$('[data-lvl]').forEach((s) => (s.onchange = () => send({ type: 'botLevel', slot: Number(s.dataset.lvl), level: s.value })));
   $$('[data-kick]').forEach((b) => (b.onclick = () => send({ type: 'removeSlot', slot: Number(b.dataset.kick) })));
+  $$('[data-team]', $('#slot-list')).forEach((b) => (b.onclick = () => { sfx.click(); send({ type: 'team', slot: Number(b.dataset.team) }); }));
   $$('[data-prof]', $('#slot-list')).forEach((b) => (b.onclick = () => { const i = Number(b.dataset.prof); Prof.openPcard(S.room.slots[i]?.prof, AVATARS[i]); }));
   $$('[data-color]').forEach((b) => (b.onclick = () => {
     const i = Number(b.dataset.color);
@@ -494,7 +561,7 @@ const game = {
   ui: { sel: -1, target: -1, dice: 3, amount: '1', regions: false, chatSeen: 0, hoverT: -1, emoteSeen: Date.now() },
   emotes: {},
 
-  reset() { this.startedAt = null; this.lastSeq = 0; this.ui.sel = -1; this.ui.target = -1; this.sig = {}; this.logLastKey = null; },
+  reset() { this.startedAt = null; this.lastSeq = 0; this.ui.sel = -1; this.ui.target = -1; this.sig = {}; this.logLastKey = null; this.countdownDone = false; this.offerKey = null; this.luckKey = null; this.myTurnsDone = 0; this.prevTurnMine = false; },
 
   get g() { return S?.game; },
   get me() { return S && !S.you.spectator ? S.you.slot : -1; },
@@ -525,6 +592,8 @@ const game = {
           });
         }
         this.view.load(map);
+        this.view.setBadgeScale(Comfort.v.badge);
+        this.view.setPatterns(Comfort.v.patterns);
         $('#map-label').textContent = map.name;
         this.loading = null;
         this.render(true);
@@ -537,7 +606,7 @@ const game = {
   render(fresh) {
     const g = this.g; if (!g || !this.view) return;
     if (this.startedAt !== g.startedAt) {
-      this.startedAt = g.startedAt; this.lastSeq = g.seq; this.ui.sel = -1; this.ui.target = -1;
+      this.startedAt = g.startedAt; this.lastSeq = g.seq; this.ui.sel = -1; this.ui.target = -1; this.countdownDone = false; this.myTurnsDone = 0;
       if (!fresh) this.view.fit();
     }
     this.view.setPlayers(g.players);
@@ -550,7 +619,7 @@ const game = {
     const own = g.owners.join(',');
     const army = g.armies.join(',');
     if (this.changed('top', `${g.phase}|${g.turn}|${g.round}|${own}`)) this.renderTop();
-    if (this.changed('players', `${own}|${army}|${g.phase}|${g.current}|${(g.pool || []).join(',')}|${g.players.map((p) => `${p.alive}${p.cardCount}`).join(',')}|${slots.map((x) => `${x.afk}${x.left}${x.connected}${x.prof ? x.prof.xp : ''}`).join(',')}|${S.avatarVer}`)) this.renderPlayers();
+    if (this.changed('players', `${JSON.stringify(g.pacts || [])}|${JSON.stringify(g.pactOffers || [])}|${own}|${army}|${g.phase}|${g.current}|${(g.pool || []).join(',')}|${g.players.map((p) => `${p.alive}${p.cardCount}`).join(',')}|${slots.map((x) => `${x.afk}${x.left}${x.connected}${x.prof ? x.prof.xp : ''}`).join(',')}|${S.avatarVer}`)) this.renderPlayers();
     const lg = g.log;
     if (this.changed('log', `${lg.length}|${lg[lg.length - 1]?.text}|${lg[lg.length - 2]?.text}`)) this.renderLog();
     if (this.changed('regions', own)) this.renderRegions();
@@ -560,6 +629,10 @@ const game = {
     if (this.changed('bar', `${g.phase}|${g.current}|${g.reinforcements}|${g.pool?.[me]}|${ui.sel}|${ui.target}|${ui.dice}|${ui.amount}|${hand.length}|${g.players[me]?.alive}|${slots[me]?.afk}|${g.winner}|${g.pending ? 1 : 0}|${me}|${g.armies[ui.sel]}|${g.armies[ui.target]}|${g.tradeCount}`)) this.renderActionBar();
     if (this.changed('hl', `${g.phase}|${g.current}|${ui.sel}|${ui.target}|${own}|${this.isMyTurn()}|${g.pending ? g.pending.to : -1}`)) this.applyHighlights();
     this.maybeModals();
+    this.renderPactOffer();
+    this.renderLuck();
+    if (this.startedAt && !this.countdownDone) this.countdown();
+    tutorial.check({ g, me, mine: this.isMyTurn(), ui, hand: hand.length, myTurnsDone: this.myTurnsDone || 0 });
   },
 
   sig: {},
@@ -589,14 +662,14 @@ const game = {
         case 'battle': {
           this.showDice(ev);
           sfx.dice();
-          this.view.flashArrow(ev.from, ev.to, g.players[ev.p].color);
+          if (!Comfort.calm) this.view.flashArrow(ev.from, ev.to, g.players[ev.p].color);
           setTimeout(() => {
             if (ev.aLoss) this.floater(ev.from, `-${ev.aLoss}`, 'neg');
             if (ev.dLoss) this.floater(ev.to, `-${ev.dLoss}`, 'neg');
             sfx.hit();
             if (ev.conquered) {
               this.view.flash(ev.to);
-              this.view.ripple(ev.to, g.players[ev.p].color);
+              if (!Comfort.calm) this.view.ripple(ev.to, g.players[ev.p].color);
               this.floater(ev.to, 'Conquistado', 'big');
               if (ev.def === me) { sfx.lose(); $('#map-area').classList.remove('shake'); void $('#map-area').offsetWidth; $('#map-area').classList.add('shake'); }
               else sfx.conquer();
@@ -612,11 +685,23 @@ const game = {
         case 'card': if (ev.p === me) { toast('Has ganado una carta', true); sfx.card(); } break;
         case 'turn': {
           const mine = ev.p === me;
+          if (this.prevTurnMine && !mine) this.myTurnsDone = (this.myTurnsDone || 0) + 1;
+          this.prevTurnMine = mine;
           this.turnCard(ev);
           if (mine) { sfx.turn(); this.focusMine(); notifyTurn(); }
           break;
         }
-        case 'eliminated': this.banner(`${g.players[ev.p].name} ha sido eliminado`, true); sfx.eliminated(); break;
+        case 'eliminated': this.banner(`💀 ${g.players[ev.p].name} ha sido eliminado`, true); sfx.eliminated(); break;
+        case 'region': {
+          const r = this.graph.regions[ev.r];
+          this.banner(`🏆 ${g.players[ev.p].name} domina ${r.name} (+${r.bonus})`, true);
+          if (!Comfort.calm) this.view.flashSet(r.members, g.players[ev.p].color);
+          sfx.trade();
+          break;
+        }
+        case 'capital': this.banner(`⭐ ${g.players[ev.p].name} toma la capital de ${g.players[ev.def]?.name}`, true); sfx.conquer(); break;
+        case 'pact': toast(`🤝 Pacto de no agresión entre ${g.players[ev.p].name} y ${g.players[ev.q].name} (${ev.rounds} rondas)`, true); sfx.card(); break;
+        case 'pactNo': if (ev.p === me) toast(`${g.players[ev.q].name} ha rechazado tu pacto`); break;
         case 'win': sfx.win(); break;
       }
     }
@@ -649,6 +734,88 @@ const game = {
     if (big) b.classList.add('big');
     clearTimeout(this.bannerT);
     this.bannerT = setTimeout(() => { b.textContent = ''; this.renderBannerHint(); }, 2300);
+  },
+
+  // tarjeta de objetivo (arriba del panel de jugadores) en Capitales y 60 %
+  objectiveHTML() {
+    const g = this.g, me = this.me, obj = g.settings.objective;
+    if (obj !== 'capitales' && obj !== 'porcentaje') return '';
+    const team = me >= 0 ? new Set(teamMembers(g, me)) : null;
+    if (obj === 'capitales' && g.capitals) {
+      const caps = g.capitals.filter((t) => t >= 0);
+      const held = team ? caps.filter((t) => team.has(g.owners[t])).length : 0;
+      return `<div class="obj-card"><span class="oc-e">⭐</span><span><b>Capitales</b><small>${me >= 0 ? `Controlas ${held} de ${caps.length}` : `${caps.length} capitales en juego`}. Gana quien las tenga todas.</small></span></div>`;
+    }
+    if (obj === 'porcentaje') {
+      const goal = goalTerritories(g.owners.length);
+      const mine = team ? g.owners.filter((o) => team.has(o)).length : 0;
+      return `<div class="obj-card"><span class="oc-e">🎯</span><span><b>60 % del mapa</b><small>${me >= 0 ? `Tienes ${mine} de ${goal} territorios` : `Hacen falta ${goal} territorios`}</small><i class="oc-bar"><i style="width:${Math.min(100, (mine / goal) * 100)}%"></i></i></span></div>`;
+    }
+    return '';
+  },
+
+  proposePact(q) {
+    const g = this.g;
+    openModal(`<div class="m-head"><h3>🤝 Pacto de no agresión</h3><button class="btn small" data-x>Cerrar</button></div>
+      <p>Propón a <b style="color:${g.players[q].color}">${esc(g.players[q].name)}</b> no atacaros durante unas rondas. Si acepta, ninguno de los dos podrá atacar al otro hasta que termine.</p>
+      <div class="seg pact-rounds">${[2, 3, 5].map((r) => `<button data-r="${r}" class="${r === 3 ? 'on' : ''}">${r} rondas</button>`).join('')}</div>
+      <div class="modal-actions"><button class="btn btn-gold" id="pact-send">Proponer pacto</button></div>`);
+    let rounds = 3;
+    $('[data-x]').onclick = closeModal;
+    $$('[data-r]').forEach((b) => (b.onclick = () => { rounds = Number(b.dataset.r); $$('[data-r]').forEach((x) => x.classList.toggle('on', x === b)); }));
+    $('#pact-send').onclick = () => { closeModal(); act({ type: 'pact', to: q, rounds }); toast('Propuesta enviada', true); };
+  },
+
+  renderPactOffer() {
+    const g = this.g, me = this.me, box = $('#pact-offer');
+    const offer = me >= 0 ? (g.pactOffers || []).find((o) => o.to === me) : null;
+    const key = offer ? `${offer.from}:${offer.round}` : '';
+    if (key === this.offerKey) return;
+    this.offerKey = key;
+    if (!offer) { box.hidden = true; return; }
+    const from = g.players[offer.from];
+    box.innerHTML = `<span class="po-e">🤝</span><div><b style="color:${from.color}">${esc(from.name)}</b> te propone un pacto de no agresión de <b>${offer.rounds} rondas</b>.</div>
+      <div class="po-btns"><button class="btn small btn-green" id="po-yes">Aceptar</button><button class="btn small" id="po-no">Rechazar</button></div>`;
+    box.hidden = false;
+    sfx.card();
+    $('#po-yes').onclick = () => { box.hidden = true; act({ type: 'answerPact', from: offer.from, accept: true }); };
+    $('#po-no').onclick = () => { box.hidden = true; act({ type: 'answerPact', from: offer.from, accept: false }); };
+  },
+
+  // pestaña de suerte: dados reales comparados con lo esperado
+  renderLuck() {
+    const g = this.g;
+    const vals = g.players.map((p) => (p.neutral ? null : luckOf(p)));
+    const key = vals.join(',');
+    if (key === this.luckKey) return;
+    this.luckKey = key;
+    const rows = g.players.map((p, i) => {
+      if (p.neutral) return '';
+      const v = vals[i], w = Math.min(50, Math.abs(v)) * 2;
+      return `<div class="luck-row"><span class="lr-name" style="color:${p.color}">${esc(p.name)}</span>
+        <span class="lr-bar"><i class="${v >= 0 ? 'up' : 'down'}" style="width:${w / 2}%"></i></span>
+        <b class="${v >= 0 ? 'up' : 'down'}">${v > 0 ? '+' : ''}${v}%</b></div>`;
+    }).join('');
+    $('#luck-list').innerHTML = `<p class="muted luck-help">Cuántos ejércitos ha ganado o perdido cada jugador con los dados respecto a lo esperado. 0 % es suerte normal.</p>${rows}`;
+  },
+
+  countdown() {
+    this.countdownDone = true;
+    const g = this.g;
+    if (Comfort.calm || Date.now() + serverOffset - g.startedAt > 5000) return;
+    const el = $('#countdown');
+    const steps = ['3', '2', '1', '¡A la guerra!'];
+    let i = 0;
+    const tick = () => {
+      if (i >= steps.length) { el.hidden = true; return; }
+      el.innerHTML = `<b class="${i === 3 ? 'go' : ''}">${steps[i]}</b>`;
+      el.hidden = false;
+      el.firstChild.classList.remove('pop'); void el.offsetWidth; el.firstChild.classList.add('pop');
+      if (i < 3) sfx.tick(); else sfx.turn();
+      i++;
+      setTimeout(tick, i === 4 ? 1000 : 650);
+    };
+    tick();
   },
 
   turnCard(ev) {
@@ -716,6 +883,15 @@ const game = {
 
   renderPlayers() {
     const g = this.g, graph = this.graph;
+    const meIdx = this.me;
+    const pactWithMe = (i) => {
+      if (meIdx < 0 || i === meIdx || !g.players[i].alive || g.players[i].neutral || !g.players[meIdx]?.alive) return '';
+      const pc = pactBetween(g, meIdx, i);
+      if (pc) return `<em class="pact-chip" title="Pacto de no agresión">🤝 hasta R${pc.until}</em>`;
+      if (sameTeam(g, meIdx, i) || g.phase === 'over') return '';
+      if ((g.pactOffers || []).some((o) => o.from === meIdx && o.to === i)) return '<em class="pact-chip wait">🤝 propuesto…</em>';
+      return `<button class="pact-btn" data-pact="${i}" title="Proponer un pacto de no agresión">🤝</button>`;
+    };
     const totalT = graph.n;
     const cnt = g.players.map(() => 0);
     for (const o of g.owners) if (o >= 0) cnt[o]++;
@@ -735,20 +911,21 @@ const game = {
       const medal = p.alive && !p.neutral && pos >= 0 && pos < 3 && g.phase !== 'claim' && g.phase !== 'setup' ? ['🥇', '🥈', '🥉'][pos] : '';
       const chip = (e, n, t, cls = '') => `<span class="pchip ${cls}" title="${t}"><i>${e}</i>${n}</span>`;
       return `<div class="pcard ${isCur ? 'current' : ''} ${p.alive ? '' : 'dead'} ${p.neutral ? 'neutral' : ''}" style="--pc:${p.color}">
-        ${em && em.until > Date.now() ? `<span class="bubble">${em.e}</span>` : ''}
+        ${em && em.until > Date.now() ? `<span class="bubble ${em.phrase ? 'phrase' : ''}">${em.e}</span>` : ''}
         ${isCur && !thinking && p.alive ? '<span class="pturn">Su turno</span>' : ''}
         <div class="ptop">
           <span class="av ${AVATARS[i] ? 'has-img' : ''}" style="background:${p.color}">${AVATARS[i] ? `<img src="${AVATARS[i]}" alt="">` : esc(initial(p.name))}${medal ? `<span class="medal">${medal}</span>` : ''}</span>
           <div class="pid">
             <div class="pn" ${slot?.prof ? `data-pprof="${i}" title="Ver perfil"` : ''}>${esc(p.name)}</div>
-            <div class="psub">${p.alive ? (tag ? `<em class="ptag">${esc(tag)}</em>` : '') : '<em class="ptag dead">💀 Eliminado</em>'}${slot?.prof ? Prof.levelBadge(slot.prof) : ''}</div>
+            <div class="psub">${p.alive ? (tag ? `<em class="ptag">${esc(tag)}</em>` : '') : '<em class="ptag dead">💀 Eliminado</em>'}${p.team != null ? `<em class="team-chip t${p.team}">Eq. ${TEAM_NAMES[p.team]}</em>` : ''}${slot?.prof ? Prof.levelBadge(slot.prof) : ''}${pactWithMe(i)}</div>
           </div>
           ${thinking ? '<span class="dots" title="Pensando"><i></i><i></i><i></i></span>' : p.alive && !p.neutral ? `<span class="share"><b>${share}%</b><small>del mapa</small></span>` : ''}
         </div>
         <div class="ps">${chip('🚩', terr.length, 'Territorios')}${chip('🛡️', armies, 'Ejércitos')}${p.neutral ? '' : chip('🃏', p.cardCount, 'Cartas', p.cardCount >= 5 ? 'hot' : '')}${rb && !p.neutral && g.phase !== 'claim' && g.phase !== 'setup' ? chip('⚡', `+${rb.total}`, 'Refuerzos por turno') : ''}${g.phase === 'setup' && !p.neutral && g.pool[i] > 0 ? chip('⏳', g.pool[i], 'Por desplegar') : ''}</div>
         <div class="bar"><i style="width:${(terr.length / totalT) * 100}%"></i></div></div>`;
     }).join('');
-    $('#players-panel').innerHTML = html;
+    $('#players-panel').innerHTML = this.objectiveHTML() + html;
+    $$('[data-pact]', $('#players-panel')).forEach((b) => (b.onclick = (e) => { e.stopPropagation(); this.proposePact(Number(b.dataset.pact)); }));
     $$('[data-pprof]', $('#players-panel')).forEach((b) => (b.onclick = () => { const i = Number(b.dataset.pprof); Prof.openPcard(S.room.slots[i]?.prof, AVATARS[i]); }));
   },
 
@@ -823,7 +1000,7 @@ const game = {
       if (!m.emote || m.ts <= this.ui.emoteSeen) continue;
       this.ui.emoteSeen = m.ts;
       if (Date.now() - m.ts > 6000) continue;
-      this.emotes[m.slot] = { e: m.text, until: Date.now() + 3200 };
+      this.emotes[m.slot] = { e: esc(m.text), until: Date.now() + (m.phrase ? 4200 : 3200), phrase: !!m.phrase };
       fresh = true;
       setTimeout(() => this.renderPlayers(), 3300);
     }
@@ -1176,14 +1353,21 @@ const game = {
     const rows = g.players.map((p, i) => {
       const terr = territoriesOf(g, i).length;
       const m = p.mission && !p.mission.hidden ? missionText(this.graph, g, p.mission, i) : '';
-      return `<tr><td><b style="color:${p.color}">${esc(p.name)}</b>${p.neutral ? ' (neutral)' : ''}${m ? `<br><small>${esc(m)}</small>` : ''}</td><td>${terr}</td><td>${p.stats.conquered}</td><td>${p.stats.kills}</td><td>${p.stats.battlesWon}/${p.stats.battlesLost}</td><td>${p.stats.trades}</td></tr>`;
+      const lk = p.neutral ? '' : luckOf(p);
+      return `<tr><td><b style="color:${p.color}">${esc(p.name)}</b>${p.neutral ? ' (neutral)' : ''}${p.team != null ? ` <small>Eq. ${TEAM_NAMES[p.team]}</small>` : ''}${m ? `<br><small>${esc(m)}</small>` : ''}</td><td>${terr}</td><td>${p.stats.conquered}</td><td>${p.stats.kills}</td><td>${p.stats.battlesWon}/${p.stats.battlesLost}</td><td>${p.stats.trades}</td><td class="${lk >= 0 ? 'up' : 'down'}">${lk === '' ? '' : `${lk > 0 ? '+' : ''}${lk}%`}</td></tr>`;
     }).join('');
-    const isWinner = g.winner === this.me;
+    // podio: el ganador (o su equipo) y después por territorios y conquistas
+    const score = (i) => (i === g.winner ? 1e6 : 0) + (g.winTeam != null && g.players[i].team === g.winTeam ? 5e5 : 0) + territoriesOf(g, i).length * 100 + g.players[i].stats.conquered;
+    const top = g.players.map((_, i) => i).filter((i) => !g.players[i].neutral).sort((a, b) => score(b) - score(a)).slice(0, 3);
+    const podium = `<div class="podium">${[1, 0, 2].map((k) => top[k] == null ? '<div class="pd-col empty"></div>' : `<div class="pd-col p${k + 1}" style="--pc:${g.players[top[k]].color}">
+        <span class="pd-av">${AVATARS[top[k]] ? `<img src="${AVATARS[top[k]]}" alt="">` : esc(initial(g.players[top[k]].name))}</span>
+        <b>${esc(g.players[top[k]].name)}</b><span class="pd-step">${['🥇', '🥈', '🥉'][k]}</span></div>`).join('')}</div>`;
+    const isWinner = g.winner === this.me || (g.winTeam != null && this.me >= 0 && g.players[this.me]?.team === g.winTeam);
     modalKind = 'over';
-    openModal(`<div class="winner"><h3>${isWinner ? 'Has ganado' : `Gana ${esc(w.name)}`}</h3><p>${esc(g.winReason || '')}</p></div>${this.me >= 0 ? Prof.gainHTML() : ''}${this.historyChart()}
-      <table class="stats"><tr><th>Jugador</th><th>Territorios</th><th>Conquistas</th><th>Eliminados</th><th>Bajas hechas / sufridas</th><th>Canjes</th></tr>${rows}</table>
+    openModal(`<div class="winner"><h3>${isWinner ? (g.winTeam != null ? '¡Tu equipo gana!' : '¡Has ganado!') : g.winTeam != null ? `Gana el equipo ${TEAM_NAMES[g.winTeam]}` : `Gana ${esc(w.name)}`}</h3><p>${esc(g.winReason || '')}</p></div>${podium}${this.me >= 0 ? Prof.gainHTML() : ''}${this.historyChart()}
+      <table class="stats"><tr><th>Jugador</th><th>Territorios</th><th>Conquistas</th><th>Eliminados</th><th>Bajas hechas / sufridas</th><th>Canjes</th><th>Suerte</th></tr>${rows}</table>
       <div class="modal-actions"><button class="btn" id="go-map">Ver el mapa</button><button class="btn" id="go-menu">Salir al menú</button>${S.you.isHost ? '<button class="btn btn-gold" id="go-again">Jugar la revancha</button>' : ''}</div>`);
-    confetti(w.color);
+    if (!Comfort.calm) confetti(w.color);
     $('#go-map').onclick = closeModal;
     $('#go-menu').onclick = async () => { await send({ type: 'leave' }).catch(() => {}); leaveToMenu(); };
     const again = $('#go-again'); if (again) again.onclick = () => send({ type: 'rematch' });
@@ -1209,7 +1393,10 @@ const game = {
 // ------------------------------------------------------------ controles de partida
 $('#btn-cards').onclick = () => { sfx.click(); game.openCards(); };
 const EMOTES = ['👍', '👎', '😂', '🤣', '😮', '😱', '😡', '🤬', '😭', '😎', '🤔', '😏', '🤝', '👏', '🙏', '💪', '🔥', '💀', '🎯', '⚔️', '🛡️', '👑', '🎲', '🏳️'];
-$('#emote-pop').innerHTML = EMOTES.map((e, i) => `<button data-emote="${i}" aria-label="Reacción ${e}">${e}</button>`).join('');
+const PHRASES = ['¡Alianza contra el líder!', '¡Buena jugada!', 'Te vas a enterar 😤', '¿Pacto?', '¡Ups!', 'Vaya dados…', 'Gracias 🙏', '¡Ya casi es mío!', 'No me ataques, por favor', 'Esto es la guerra ⚔️', 'GG 👏', '¡Venganza!'];
+$('#emote-pop').innerHTML = `<div class="ep-grid">${EMOTES.map((e, i) => `<button data-emote="${i}" aria-label="Reacción ${e}">${e}</button>`).join('')}</div>
+  <div class="ep-phrases">${PHRASES.map((t, i) => `<button data-phrase="${i}">${esc(t)}</button>`).join('')}</div>`;
+$$('[data-phrase]').forEach((b) => (b.onclick = () => { send({ type: 'phrase', i: Number(b.dataset.phrase) }).catch(() => {}); $('#emote-pop').classList.remove('open'); }));
 $('#btn-emote').onclick = (ev) => { ev.stopPropagation(); $('#emote-pop').classList.toggle('open'); };
 $$('[data-emote]').forEach((b) => (b.onclick = () => { send({ type: 'emote', e: Number(b.dataset.emote) }).catch(() => {}); $('#emote-pop').classList.remove('open'); }));
 document.addEventListener('click', (e) => { if (!e.target.closest('#emote-pop')) $('#emote-pop').classList.remove('open'); });
@@ -1303,6 +1490,38 @@ function confetti(color) {
   })(t0);
 }
 
+// ------------------------------------------------------------ ajustes de comodidad
+const Comfort = {
+  v: { ui: 100, badge: 1, patterns: false, calm: false },
+  load() { try { Object.assign(this.v, JSON.parse(store.get('dom.comfort', '{}'))); } catch { /* */ } this.apply(); },
+  save() { store.set('dom.comfort', JSON.stringify(this.v)); this.apply(); },
+  get calm() { return this.v.calm || matchMedia('(prefers-reduced-motion: reduce)').matches; },
+  apply() {
+    document.documentElement.style.setProperty('--ui-zoom', String(this.v.ui / 100));
+    document.body.classList.toggle('calm', !!this.v.calm);
+    document.body.classList.toggle('patterns', !!this.v.patterns);
+    if (game.view) { game.view.setBadgeScale(this.v.badge); game.view.setPatterns(this.v.patterns); }
+  },
+};
+function openComfort() {
+  const v = Comfort.v;
+  const seg = (k, opts) => `<div class="seg">${opts.map(([val, t]) => `<button data-k="${k}" data-v="${val}" class="${String(v[k]) === String(val) ? 'on' : ''}">${t}</button>`).join('')}</div>`;
+  openModal(`<div class="m-head"><h3>⚙️ Ajustes</h3><button class="btn small" data-x>Cerrar</button></div>
+    <div class="cf-row"><span><b>Tamaño de la interfaz</b><small>Paneles, botones y textos</small></span>${seg('ui', [[90, '90 %'], [100, '100 %'], [115, '115 %'], [130, '130 %']])}</div>
+    <div class="cf-row"><span><b>Tamaño de las fichas</b><small>Ejércitos sobre el mapa</small></span>${seg('badge', [[0.85, 'Pequeñas'], [1, 'Normales'], [1.2, 'Grandes']])}</div>
+    <div class="cf-row"><span><b>Modo daltónico</b><small>Cada jugador tiene además una trama propia en sus territorios</small></span>${seg('patterns', [[false, 'No'], [true, 'Sí']])}</div>
+    <div class="cf-row"><span><b>Menos animaciones</b><small>Sin cuenta atrás, ondas, flechas ni confeti</small></span>${seg('calm', [[false, 'No'], [true, 'Sí']])}</div>
+    <div class="cf-row"><span><b>Tutorial</b><small>Vuelve a mostrar las ayudas de la primera partida</small></span><button class="btn small" id="cf-tut">${tutorial.active ? 'Activado' : 'Activar de nuevo'}</button></div>`);
+  $('[data-x]').onclick = closeModal;
+  $$('[data-k]').forEach((b) => (b.onclick = () => {
+    const k = b.dataset.k, raw = b.dataset.v;
+    v[k] = raw === 'true' ? true : raw === 'false' ? false : Number(raw);
+    sfx.click(); Comfort.save(); openComfort();
+  }));
+  $('#cf-tut').onclick = () => { tutorial.start(); toast('Tutorial activado: aparecerá en tu próxima partida', true); openComfort(); };
+}
+$('#btn-comfort').onclick = () => openComfort();
+
 // ------------------------------------------------------------ fondo del menú
 async function renderMenuBg() {
   try {
@@ -1332,6 +1551,8 @@ async function renderMenuBg() {
 renderMenuBg();
 
 // ------------------------------------------------------------ arranque
+const tutorial = createTutorial({ store, sfx });
+Comfort.load();
 Prof.initProfile({
   $, esc, api, toast, openModal, closeModal, sfx, store, bigMsg, cid: CID,
   getName: myName, setName,
@@ -1346,6 +1567,7 @@ if (startCode) {
   api(`/api/roomcheck?code=${encodeURIComponent(startCode)}&cid=${encodeURIComponent(CID)}`).then((r) => {
     if (r.exists && r.member) joinRoom(startCode);
     else if (r.exists) { $('#invite-code').textContent = startCode; $('#invite').hidden = false; $('#btn-invite').hidden = false; }
+    else if (Saves.get(startCode)) restoreAndJoin(startCode);
     else { toast('Esa sala ya no existe'); history.replaceState(null, '', location.pathname); }
   }).catch(() => joinRoom(startCode));
 } else checkResume();

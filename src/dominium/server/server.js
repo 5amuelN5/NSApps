@@ -4,9 +4,10 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { buildGraph, Game, viewFor, PLAYER_COLORS, DEFAULT_SETTINGS, BOT_LEVELS, MAX_PLAYERS } from '../shared/engine.js';
-import { botStep } from '../shared/bots.js';
+import { botStep, botAnswerPact } from '../shared/bots.js';
 import * as Profile from '../shared/profile.js';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -63,6 +64,46 @@ function touchProfile(pr, avatar) {
 function cleanAvatar(x) {
   if (typeof x !== 'string' || x.length > 16000) return null;
   return /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(x) ? x : null;
+}
+
+// ---------------------------------------------------------------- partidas que sobreviven a reinicios
+// Cada poco se manda a los jugadores una copia cifrada de la partida (AES-256-GCM). Si el servidor se reinicia,
+// el primero que vuelve la reconstruye y los demás entran en su sitio.
+const SAVE_KEY = crypto.createHash('sha256').update('dominium:partida:v1:').update(process.env.DOM_SAVE_KEY || PROF_SECRET || crypto.randomBytes(32)).digest();
+function sealSave(room) {
+  const data = {
+    v: 1, code: room.code, name: room.name, public: room.public, hostCid: room.hostCid, mapId: room.mapId, settings: room.settings,
+    slots: room.slots.map((x) => ({ kind: x.kind, cid: x.cid, name: x.name, color: x.color, level: x.level, team: x.team, prof: x.prof || null, left: !!x.left })),
+    chat: room.chat.slice(-20), state: room.game.state, at: Date.now(),
+  };
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', SAVE_KEY, iv);
+  const body = Buffer.concat([c.update(zlib.deflateRawSync(JSON.stringify(data))), c.final()]);
+  return Buffer.concat([iv, c.getAuthTag(), body]).toString('base64url');
+}
+function openSave(blob) {
+  try {
+    if (typeof blob !== 'string' || blob.length > 400000) return null;
+    const buf = Buffer.from(blob, 'base64url');
+    const d = crypto.createDecipheriv('aes-256-gcm', SAVE_KEY, buf.subarray(0, 12));
+    d.setAuthTag(buf.subarray(12, 28));
+    const raw = zlib.inflateRawSync(Buffer.concat([d.update(buf.subarray(28)), d.final()]));
+    const data = JSON.parse(raw.toString('utf8'));
+    return data && data.v === 1 && data.state ? data : null;
+  } catch { return null; }
+}
+function shareSave(room) {
+  if (room.status !== 'playing' || !room.game) return;
+  const st = room.game.state, now = Date.now();
+  if (room.saveTurn === st.turn && (now - (room.saveAt || 0) < 20000 || room.saveSeq === st.seq)) return;
+  room.saveTurn = st.turn; room.saveAt = now; room.saveSeq = st.seq;
+  let blob;
+  try { blob = sealSave(room); } catch (e) { console.error('[guardado]', e.message); return; }
+  const msg = `data: ${JSON.stringify({ type: 'save', code: room.code, blob })}\n\n`;
+  for (const [cid, set] of room.clients) {
+    if (humanSlot(room, cid) < 0) continue;
+    for (const res of set) { try { res.write(msg); } catch { /* */ } }
+  }
 }
 
 // ---------------------------------------------------------------- salas
@@ -134,7 +175,7 @@ function joinRoom(room, cid, name, prof, avatar) {
     if (b < 0) return { spectator: true };
     room.slots.splice(b, 1);
   }
-  room.slots.push({ kind: 'human', cid, name, color: freeColor(room), ready: false, connected: true, afk: false, timeouts: 0, acts: 0, autoActs: 0 });
+  room.slots.push({ kind: 'human', cid, name, color: freeColor(room), ready: false, connected: true, afk: false, timeouts: 0, acts: 0, autoActs: 0, team: room.slots.length % 2 });
   setSlotProfile(room, room.slots[room.slots.length - 1], prof, avatar);
   sys(room, `${name} se ha unido.`);
   return { slot: room.slots.length - 1 };
@@ -162,7 +203,7 @@ function snapshot(room, cid) {
       code: room.code, name: room.name, public: room.public, status: room.status,
       mapId: room.mapId, settings: room.settings,
       slots: room.slots.map((s) => ({
-        kind: s.kind, name: slotLabel(s), color: s.color, level: s.level || null, ready: !!s.ready,
+        kind: s.kind, name: slotLabel(s), color: s.color, level: s.level || null, ready: !!s.ready, team: s.team ?? 0,
         connected: s.kind === 'bot' ? true : !!s.connected, afk: !!s.afk, left: !!s.left, isHost: s.kind === 'human' && s.cid === room.hostCid,
         prof: s.prof || null,
       })),
@@ -187,6 +228,43 @@ function broadcastNow(room) {
     const data = `data: ${JSON.stringify(snapshot(room, cid))}\n\n`;
     for (const res of set) { try { res.write(data); } catch { /* conexión cerrada */ } }
   }
+  shareSave(room);
+  answerPactsForBots(room);
+}
+
+// los bots (y quien está ausente) responden solos a las propuestas de pacto
+function answerPactsForBots(room) {
+  const g = room.game;
+  if (!g || room.status !== 'playing' || room.pactTimer) return;
+  const offers = (g.state.pactOffers || []).filter((o) => controlledByBot(room, o.to));
+  if (!offers.length) return;
+  room.pactTimer = setTimeout(() => {
+    room.pactTimer = null;
+    if (!room.game || room.status !== 'playing') return;
+    for (const o of (room.game.state.pactOffers || []).filter((x) => controlledByBot(room, x.to))) {
+      room.game.apply(o.to, { type: 'answerPact', from: o.from, accept: botAnswerPact(room.game, o.to, o.from, botLevelFor(room, o.to)) });
+    }
+    broadcast(room);
+  }, 1400);
+}
+
+function restoreRoom(data, cid) {
+  if (!data.slots.some((x) => x.kind === 'human' && x.cid === cid)) return { error: 'Esta partida guardada no es tuya' };
+  const existing = rooms.get(data.code);
+  if (existing) return { code: existing.code };
+  const entry = MAPS.get(data.mapId);
+  if (!entry) return { error: 'El mapa de esa partida ya no existe' };
+  if (data.state.phase === 'over') return { error: 'Esa partida ya terminó' };
+  const room = {
+    code: data.code, name: data.name, public: !!data.public, status: 'playing',
+    hostCid: data.hostCid, mapId: data.mapId, settings: { ...DEFAULT_SETTINGS, ...data.settings },
+    slots: data.slots.map((x) => ({ ...x, connected: false, ready: false, afk: x.kind === 'human' && x.cid !== cid, timeouts: 0, acts: 0, autoActs: 0, disconnectedAt: Date.now() })),
+    chat: data.chat || [], clients: new Map(), game: new Game(entry.graph, data.state), graph: entry.graph,
+    timer: null, deadline: 0, deadlineKey: '', lastActivity: Date.now(), createdAt: Date.now(),
+  };
+  room.chat.push({ sys: true, text: 'Partida recuperada después de un reinicio del servidor.', ts: Date.now() });
+  rooms.set(room.code, room);
+  return { code: room.code, restored: true };
 }
 
 // ---------------------------------------------------------------- motor de la sala (bots, temporizador)
@@ -308,7 +386,8 @@ function startGame(room) {
   const entry = MAPS.get(room.mapId);
   if (!entry) throw new Error('Mapa no disponible');
   if (room.slots.length < 2) throw new Error('Se necesitan al menos 2 jugadores');
-  const players = room.slots.map((s, i) => ({ name: s.name, color: s.color, bot: s.kind === 'bot' ? s.level : null, slot: i }));
+  if (room.settings.teams === 'si' && new Set(room.slots.map((x) => x.team ?? 0)).size < 2) throw new Error('Con equipos hacen falta al menos dos equipos distintos');
+  const players = room.slots.map((s, i) => ({ name: s.name, color: s.color, bot: s.kind === 'bot' ? s.level : null, slot: i, team: s.team ?? i % 2 }));
   room.graph = entry.graph;
   room.game = Game.create(entry.graph, players, room.settings);
   room.status = 'playing';
@@ -339,6 +418,26 @@ function handleAction(room, cid, msg) {
       if (me.prof) touchProfile(me.prof, me.avatar);
       return;
     }
+    case 'team': {
+      needLobby();
+      if (!validSlot(room, msg.slot)) throw new Error('Plaza no válida');
+      const target = room.slots[msg.slot];
+      if (!isHost && target !== me) throw new Error('Solo el anfitrión puede cambiar a otros de equipo');
+      const nTeams = Math.min(4, Math.max(2, Math.floor(room.slots.length / 2)));
+      target.team = ((target.team ?? 0) + 1) % nTeams;
+      return;
+    }
+    case 'phrase': {
+      const PHRASES = ['¡Alianza contra el líder!', '¡Buena jugada!', 'Te vas a enterar 😤', '¿Pacto?', '¡Ups!', 'Vaya dados…', 'Gracias 🙏', '¡Ya casi es mío!', 'No me ataques, por favor', 'Esto es la guerra ⚔️', 'GG 👏', '¡Venganza!'];
+      const t = PHRASES[msg.i];
+      if (!t || !me) return;
+      const now = Date.now();
+      if (now - (me.lastEmote || 0) < 1200) return;
+      me.lastEmote = now;
+      room.chat.push({ name: me.name, color: me.color, text: t, phrase: true, emote: true, slot: si, ts: now });
+      if (room.chat.length > 80) room.chat.splice(0, room.chat.length - 80);
+      return;
+    }
     case 'emote': {
       const EMOTES = ['👍', '👎', '😂', '🤣', '😮', '😱', '😡', '🤬', '😭', '😎', '🤔', '😏', '🤝', '👏', '🙏', '💪', '🔥', '💀', '🎯', '⚔️', '🛡️', '👑', '🎲', '🏳️'];
       const e = EMOTES[msg.e];
@@ -355,7 +454,7 @@ function handleAction(room, cid, msg) {
       needHost(); needLobby();
       const allowed = {
         setup: ['rapido', 'clasico'], cards: ['progresivo', 'fijo'], fortify: ['conectado', 'adyacente'],
-        objective: ['dominacion', 'misiones'], turnTime: [0, 45, 60, 90, 120, 180, 300], botSpeed: ['lenta', 'normal', 'rapida'],
+        objective: ['dominacion', 'misiones', 'capitales', 'porcentaje'], teams: ['no', 'si'], turnTime: [0, 45, 60, 90, 120, 180, 300], botSpeed: ['lenta', 'normal', 'rapida'],
       };
       for (const [k, v] of Object.entries(msg.settings || {})) if (allowed[k]?.includes(v)) room.settings[k] = v;
       if (typeof msg.public === 'boolean') room.public = msg.public;
@@ -369,7 +468,7 @@ function handleAction(room, cid, msg) {
       const used = new Set(room.slots.map((s) => s.name));
       const avail = BOT_NAMES.filter((n) => !used.has(n));
       const name = avail.length ? avail[crypto.randomInt(avail.length)] : `Bot ${room.slots.length + 1}`;
-      room.slots.push({ kind: 'bot', name, level, color: freeColor(room) });
+      room.slots.push({ kind: 'bot', name, level, color: freeColor(room), team: room.slots.length % 2 });
       return;
     }
     case 'botLevel': {
@@ -429,9 +528,12 @@ function handleAction(room, cid, msg) {
     case 'game': {
       if (room.status !== 'playing' || !room.game) throw new Error('No hay partida en curso');
       if (si < 0 || me.left) throw new Error('Eres espectador');
-      if (me.afk) { me.afk = false; }
-      me.timeouts = 0;
-      me.acts = (me.acts || 0) + 1;
+      const isPact = msg.action && (msg.action.type === 'pact' || msg.action.type === 'answerPact');
+      if (!isPact) {
+        if (me.afk) { me.afk = false; }
+        me.timeouts = 0;
+        me.acts = (me.acts || 0) + 1;
+      }
       const r = room.game.apply(si, msg.action);
       if (!r.ok) throw new Error(r.error);
       schedule(room);
@@ -518,6 +620,15 @@ const server = http.createServer(async (req, res) => {
       const ids = Array.isArray(b.ids) ? b.ids.slice(0, 60).map(String) : [];
       const list = ids.map((id) => { const x = profileCache.get(id); return { id, p: x ? x.p : null, at: x ? x.at : null, avatar: x ? x.avatar || null : null, online: onlineIds.has(id) }; });
       return sendJSON(res, 200, { list });
+    }
+    if (p === '/api/restore' && req.method === 'POST') {
+      const b = await readBody(req);
+      if (!validCid(b.cid)) throw new Error('Identificador no válido');
+      const data = openSave(b.blob);
+      if (!data) return sendJSON(res, 400, { error: 'No se pudo recuperar la partida guardada' });
+      const r = restoreRoom(data, b.cid);
+      if (r.error) return sendJSON(res, 400, { error: r.error });
+      return sendJSON(res, 200, r);
     }
     if (p === '/api/roomcheck' && req.method === 'GET') {
       const room = rooms.get(String(url.searchParams.get('code') || '').toUpperCase());

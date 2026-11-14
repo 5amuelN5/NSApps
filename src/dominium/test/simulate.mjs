@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildGraph, Game, territoriesOf, reinforcementBreakdown, isValidSet, tradeValue, fixedSetValue, winProbability } from '../shared/engine.js';
-import { botStep } from '../shared/bots.js';
+import { botStep, botAnswerPact } from '../shared/bots.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const N = Number(process.argv[2] || 6);
@@ -73,11 +73,15 @@ for (const map of maps) {
     const rng = mulberry(seed);
     const nPlayers = 2 + (k % 5);
     const players = Array.from({ length: nPlayers }, (_, i) => ({ name: `B${i}`, bot: levels[(i + k) % 4] }));
+    const objectives = ['dominacion', 'misiones', 'capitales', 'porcentaje'];
+    const teams = nPlayers >= 4 && k % 5 === 3 ? 'si' : 'no';
+    if (teams === 'si') players.forEach((pl, i) => (pl.team = i % 2));
     const settings = {
       setup: k % 3 === 0 ? 'clasico' : 'rapido',
       cards: k % 2 ? 'fijo' : 'progresivo',
       fortify: k % 4 === 1 ? 'adyacente' : 'conectado',
-      objective: k % 3 === 2 ? 'misiones' : 'dominacion',
+      objective: objectives[k % 4],
+      teams,
     };
     const game = Game.create(g, players, settings, rng);
     const s = game.state;
@@ -86,6 +90,12 @@ for (const map of maps) {
       const actors = game.actors();
       for (const p of actors) botStep(game, p, s.players[p].bot);
       steps++;
+      // pactos entre bots de vez en cuando (y los ataques deben respetarlos)
+      if (s.phase !== 'over' && steps % 37 === 0) {
+        const alive = s.players.map((_, i) => i).filter((i) => s.players[i].alive && !s.players[i].neutral);
+        const a = alive[Math.floor(rng() * alive.length)], b = alive[Math.floor(rng() * alive.length)];
+        if (a !== b && game.apply(a, { type: 'pact', to: b, rounds: 3 }).ok) game.apply(b, { type: 'answerPact', from: a, accept: botAnswerPact(game, b, a, s.players[b].bot) });
+      }
       // invariantes
       if (s.phase !== 'claim') {
         for (let t = 0; t < g.n; t++) {
@@ -93,6 +103,11 @@ for (const map of maps) {
           const pendingTo = s.pending && s.pending.to === t;
           if (s.armies[t] < 1 && !pendingTo) throw new Error(`${map.id}: territorio ${g.ids[t]} con ${s.armies[t]} ejércitos (fase ${s.phase})`);
         }
+      }
+      const lastBattle = s.events[s.events.length - 1];
+      if (lastBattle && lastBattle.type === 'battle' && lastBattle.seq === s.seq && lastBattle.def >= 0 && lastBattle.def !== undefined) {
+        const att = lastBattle.p, def = lastBattle.def;
+        if (s.players[att].team != null && s.players[att].team === s.players[def].team) throw new Error(`${map.id}: ataque entre compañeros de equipo`);
       }
       for (const [i, pl] of s.players.entries()) {
         if (pl.alive && s.phase !== 'claim' && !pl.neutral && territoriesOf(s, i).length === 0) throw new Error(`${map.id}: jugador ${i} vivo sin territorios`);

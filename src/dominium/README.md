@@ -61,7 +61,9 @@ Funciona igual que el de Hexópolis:
 |---|---|
 | Mundo Clásico | 42 territorios, 6 continentes (el tablero clásico) |
 | Europa, África, Las Américas, Asia y Oceanía | continentes por países |
-| España, Estados Unidos | países por provincias / estados |
+| Europa, África, Las Américas, Latinoamérica, Asia y Oceanía | continentes por países |
+| España, Estados Unidos, Italia, Alemania, Islas Británicas | países por provincias / regiones |
+| Tierras de Aeloria | mapa de fantasía original |
 
 Los mapas se generan desde datos geográficos reales (`tools/build-maps.mjs`, `npm run build-maps`) y se guardan ya procesados en `public/maps/`.
 

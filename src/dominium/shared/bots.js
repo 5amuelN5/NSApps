@@ -2,7 +2,7 @@
 // Cuatro niveles: recluta (fácil), soldado (normal), general (difícil), mariscal (experto).
 // botStep() ejecuta UNA acción del bot y devuelve true si actuó.
 
-import { territoriesOf, winProbability, validSets, bestSet, canFortify, reachable, regionsHeld } from './engine.js';
+import { territoriesOf, winProbability, validSets, bestSet, canFortify, reachable, regionsHeld, canAttackPlayer, sameTeam } from './engine.js';
 
 const LEVELS = {
   recluta: { name: 'recluta', random: 0.55, threshold: 0.75, maxAttacks: 3, tradeEarly: false, defend: 0, fortify: 0.35, focus: 0.3, cardHunt: false, hunt: 0, mission: 0 },
@@ -24,14 +24,16 @@ function mem(game, p) {
 
 const pickRandom = (arr, rng) => arr[Math.floor(rng() * arr.length)];
 
-function isBorder(g, s, t) { return g.adj[t].some((n) => s.owners[n] !== s.owners[t]); }
+// enemigo de verdad: ni yo, ni mi equipo, ni alguien con quien tengo pacto
+const foe = (s, p, o) => o !== p && o >= 0 && canAttackPlayer(s, p, o);
+function isBorder(g, s, t) { const p = s.owners[t]; return g.adj[t].some((n) => foe(s, p, s.owners[n])); }
 
 function threatOn(g, s, t) {
   const p = s.owners[t];
   let sum = 0;
   for (const n of g.adj[t]) {
     const o = s.owners[n];
-    if (o === p || o < 0) continue;
+    if (o === p || o < 0 || sameTeam(s, p, o)) continue;
     sum += s.players[o].neutral ? 0 : s.armies[n] - 1;
   }
   return sum;
@@ -68,6 +70,8 @@ function regionScores(g, s, p, L) {
 function targetScore(g, s, p, L, e, rs, mb) {
   const o = s.owners[e];
   let sc = rs[g.regionOf[e]] * 2 + mb[e];
+  if (s.capitals && s.capitals.includes(e)) sc += 6 * L.focus;            // capitales: el objetivo de la partida
+  if (s.settings.objective === 'porcentaje') sc += 1.2;                   // 60 %: cada territorio cuenta
   if (o >= 0) {
     const op = s.players[o];
     if (op.neutral) sc -= 1;
@@ -111,6 +115,11 @@ function planPlacement(game, p, L, amount) {
   }
   let left = amount;
   // defensa de regiones completas
+  if (s.capitals && s.capitals[p] >= 0 && s.owners[s.capitals[p]] === p && L.name !== 'recluta') {
+    const cap = s.capitals[p];
+    const deficit = threatOn(g, s, cap) - s.armies[cap] + 3;
+    if (deficit > 0) { const n = Math.min(left, deficit, Math.ceil(amount * 0.5)); if (n > 0) { add(cap, n); left -= n; } }
+  }
   if (L.defend > 0) {
     const held = regionsHeld(g, s, p);
     let budget = Math.floor(amount * L.defend);
@@ -123,7 +132,7 @@ function planPlacement(game, p, L, amount) {
     needs.sort((a, b) => b.deficit - a.deficit);
     for (const nd of needs) {
       if (budget <= 0) break;
-      const n = Math.min(budget, nd.deficit);
+      const n = Math.min(budget, nd.deficit, left);
       add(nd.t, n); budget -= n; left -= n;
     }
   }
@@ -134,7 +143,7 @@ function planPlacement(game, p, L, amount) {
     for (const c of cands) {
       let sc = -Infinity;
       for (const e of g.adj[c]) {
-        if (s.owners[e] === p) continue;
+        if (!foe(s, p, s.owners[e])) continue;
         const ts = targetScore(g, s, p, L, e, rs, mb);
         const wp = winProbability(s.armies[c] - 1 + left, s.armies[e]);
         sc = Math.max(sc, ts * (0.4 + wp) - s.armies[e] * 0.05);
@@ -174,7 +183,7 @@ function chooseAttack(game, p, L, m) {
   for (const c of own) {
     if (s.armies[c] < 2) continue;
     for (const e of g.adj[c]) {
-      if (s.owners[e] === p) continue;
+      if (!foe(s, p, s.owners[e])) continue;
       if (m.failed.has(`${c}>${e}`)) continue;
       const wp = winProbability(s.armies[c] - 1, s.armies[e]);
       const ts = targetScore(g, s, p, L, e, rs, mb);
@@ -206,7 +215,7 @@ function chooseMove(game, p, L) {
   if (L.name === 'recluta') return Math.max(min, Math.min(max, Math.round((min + max) / 2)));
   const fromThreat = threatOn(g, s, from);
   const toThreat = threatOn(g, s, to);
-  const fromHasTargets = g.adj[from].some((n) => n !== to && s.owners[n] !== p);
+  const fromHasTargets = g.adj[from].some((n) => n !== to && foe(s, p, s.owners[n]));
   if (!fromHasTargets) return max;
   // reparte según amenaza
   const total = max + 1;
@@ -327,4 +336,15 @@ export function botStep(game, p, level) {
     return true;
   }
   return false;
+}
+
+// ¿Acepta el bot un pacto de no agresión? Rechaza al líder si es listo; acepta si va por detrás.
+export function botAnswerPact(game, p, from, level) {
+  const s = game.state, L = levelParams(level);
+  const cnt = (i) => s.owners.filter((o) => o === i).length;
+  const leader = s.players.map((_, i) => i).filter((i) => s.players[i].alive && !s.players[i].neutral).sort((a, b) => cnt(b) - cnt(a))[0];
+  if (L.name === 'recluta') return game.rng() < 0.7;
+  if (from === leader && L.name !== 'soldado') return false;
+  if (cnt(p) < cnt(from)) return true;
+  return game.rng() < 0.45;
 }

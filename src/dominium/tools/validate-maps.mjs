@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dir = path.resolve(here, '..', 'public', 'maps');
-const ORDER = ['clasico', 'europa', 'africa', 'americas', 'asia', 'espana', 'eeuu'];
+const ORDER = ['clasico', 'europa', 'africa', 'americas', 'asia', 'espana', 'eeuu', 'latam', 'italia', 'alemania', 'britanicas', 'fantasia'];
 const MAX_BYTES = 450 * 1024;
 let errors = 0, warnings = 0;
 const err = (m, s) => { errors++; console.log(`  ERROR [${m}] ${s}`); };

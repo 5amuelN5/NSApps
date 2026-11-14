@@ -10,6 +10,9 @@ import { europaDef, africaDef, asiaDef } from './maps/continents.mjs';
 import { americasDef } from './maps/americas.mjs';
 import { espanaDef } from './maps/espana.mjs';
 import { eeuuDef } from './maps/eeuu.mjs';
+import { latamDef } from './maps/latam.mjs';
+import { italiaDef, alemaniaDef, britanicasDef } from './maps/europe2.mjs';
+import { fantasiaDef } from './maps/fantasia.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const outDir = path.resolve(here, '..', 'public', 'maps');
@@ -23,6 +26,11 @@ const DEFS = [
   ['asia', asiaDef],
   ['espana', espanaDef],
   ['eeuu', eeuuDef],
+  ['latam', latamDef],
+  ['italia', italiaDef],
+  ['alemania', alemaniaDef],
+  ['britanicas', britanicasDef],
+  ['fantasia', fantasiaDef],
 ];
 
 const only = process.argv.slice(2);

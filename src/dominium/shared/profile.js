@@ -56,7 +56,7 @@ export const ACH = [
   { key: 'big_table', icon: '🎪', name: 'Casa llena', desc: 'Juega una partida de 8 jugadores.' },
 ];
 
-export const MODE_KEYS = ['dominacion', 'misiones', 'bots'];
+export const MODE_KEYS = ['dominacion', 'misiones', 'capitales', 'porcentaje', 'equipos', 'bots'];
 const BOT_RANK = { recluta: 1, soldado: 2, general: 3, mariscal: 4 };
 
 export function newProfile(id, name) {
@@ -79,14 +79,14 @@ export function applyGame(prof, ctx) {
   p.modes = p.modes || {}; p.maps = p.maps || []; p.ach = p.ach || [];
   const lvlFrom = levelOf(p.xp);
   const st = (s.players[pid] && s.players[pid].stats) || {};
-  const won = !ctx.left && s.winner === pid;
+  const won = !ctx.left && (s.winner === pid || (s.winTeam != null && s.players[pid] && s.players[pid].team === s.winTeam));
   const T = s.owners.length;
   const mine = s.owners.filter((o) => o === pid).length;
   const from = [];
   let xp = 0;
   if (!ctx.left) {
     xp += 25; from.push(['Partida jugada', 25]);
-    const byShare = Math.round((won ? 1 : mine / T) * 40); xp += byShare; from.push([won ? 'Todo el mapa' : `${mine} de ${T} territorios`, byShare]);
+    const byShare = Math.round((won ? 1 : Math.min(1, mine / T)) * 40); xp += byShare; from.push([won ? 'Todo el mapa' : `${mine} de ${T} territorios`, byShare]);
     if (won) { xp += 60; from.push(['Victoria', 60]); }
     // premios de la partida (sin empates)
     const bestOf = (k) => { const v = s.players.map((x) => (x.neutral ? -1 : (x.stats && x.stats[k]) || 0)); const m = Math.max(...v); return m > 0 && v.filter((y) => y === m).length === 1 ? v.indexOf(m) : -1; };
@@ -104,8 +104,9 @@ export function applyGame(prof, ctx) {
   }
   p.xp += xp;
   addTo(p, won, st);
-  const objective = s.settings && s.settings.objective === 'misiones' ? 'misiones' : 'dominacion';
+  const objective = ['misiones', 'capitales', 'porcentaje'].includes(s.settings && s.settings.objective) ? s.settings.objective : 'dominacion';
   addTo(p.modes[objective] || (p.modes[objective] = emptyMode()), won, st);
+  if (s.settings && s.settings.teams === 'si') addTo(p.modes.equipos || (p.modes.equipos = emptyMode()), won, st);
   if (!ctx.humansOthers) addTo(p.modes.bots || (p.modes.bots = emptyMode()), won, st);
   if (!ctx.left && ctx.mapId && !p.maps.includes(ctx.mapId)) p.maps.push(ctx.mapId);
 

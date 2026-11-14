@@ -121,6 +121,7 @@
         <div class="timer" id="timer"><div class="timer-fill" id="timer-fill"></div><span id="timer-text">--</span></div>
         <div class="clock" id="game-clock" title="Duración de la partida"><span class="ck-ic">⏱️</span><span id="clock-text">00:00</span></div>
         <div class="top-btns">
+          <button class="btn tiny" id="btn-comfort" title="Ajustes" aria-label="Ajustes">⚙️</button>
           <button class="btn tiny" id="btn-regions" title="Ver regiones" aria-label="Ver regiones"><svg class="ic"><use href="#i-layers"/></svg></button>
           <button class="btn tiny" id="btn-sound" title="Sonido" aria-label="Sonido"><svg class="ic"><use href="#i-sound"/></svg></button>
           <button class="btn tiny" id="btn-side" title="Registro y chat" aria-label="Registro y chat"><svg class="ic"><use href="#i-chat"/></svg></button>
@@ -139,6 +140,8 @@
         </div>
         <div class="vignette" aria-hidden="true"></div>
         <div id="turn-card" class="turn-card" aria-live="polite"></div>
+        <div id="pact-offer" class="pact-offer" hidden></div>
+        <div id="countdown" class="countdown" hidden></div>
         <div id="tooltip" class="tooltip"></div>
         <div id="banner" class="banner"></div>
         <div id="dice-tray" class="dice-tray"></div>
@@ -150,6 +153,7 @@
           <button class="tab active" data-tab="log">Registro</button>
           <button class="tab" data-tab="chat">Chat <span id="chat-badge" class="badge-dot"></span></button>
           <button class="tab" data-tab="regions">Regiones</button>
+          <button class="tab" data-tab="luck">Suerte</button>
         </div>
         <div class="tab-body active" id="tab-log"><div id="game-log" class="log"></div></div>
         <div class="tab-body" id="tab-chat">
@@ -157,6 +161,7 @@
           <form id="game-chat-form" class="chat-form"><input maxlength="200" placeholder="Mensaje" aria-label="Mensaje"><button class="btn small">Enviar</button></form>
         </div>
         <div class="tab-body" id="tab-regions"><div id="region-list"></div></div>
+        <div class="tab-body" id="tab-luck"><div id="luck-list"></div></div>
       </aside>
 
       <footer class="actionbar" id="actionbar">

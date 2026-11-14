@@ -54,5 +54,45 @@
     "territories": 50,
     "regions": 9,
     "recommendedPlayers": "2-6"
+  },
+  {
+    "id": "latam",
+    "name": "Latinoamérica",
+    "description": "De México a la Patagonia: el mundo latinoamericano y el Caribe.",
+    "territories": 42,
+    "regions": 6,
+    "recommendedPlayers": "2-6"
+  },
+  {
+    "id": "italia",
+    "name": "Italia",
+    "description": "La península italiana y sus islas, de los Alpes a Sicilia.",
+    "territories": 34,
+    "regions": 5,
+    "recommendedPlayers": "2-6"
+  },
+  {
+    "id": "alemania",
+    "name": "Alemania",
+    "description": "Los estados federados alemanes, con los más grandes divididos en distritos.",
+    "territories": 38,
+    "regions": 6,
+    "recommendedPlayers": "2-6"
+  },
+  {
+    "id": "britanicas",
+    "name": "Islas Británicas",
+    "description": "Gran Bretaña e Irlanda, de las Tierras Altas a Cornualles.",
+    "territories": 43,
+    "regions": 8,
+    "recommendedPlayers": "2-6"
+  },
+  {
+    "id": "fantasia",
+    "name": "Tierras de Aeloria",
+    "description": "Un continente legendario de reinos, pantanos y desiertos, rodeado de islas misteriosas.",
+    "territories": 43,
+    "regions": 6,
+    "recommendedPlayers": "2-6"
   }
 ]

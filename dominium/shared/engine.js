@@ -33,7 +33,8 @@ export const DEFAULT_SETTINGS = {
   setup: 'rapido',        // 'rapido' (reparto aleatorio + colocación simultánea) | 'clasico' (elegir territorios por turnos)
   cards: 'progresivo',    // 'progresivo' (4,6,8,10,12,15,+5) | 'fijo' (4/6/8/10)
   fortify: 'conectado',   // 'conectado' (camino propio) | 'adyacente'
-  objective: 'dominacion',// 'dominacion' | 'misiones'
+  objective: 'dominacion',// 'dominacion' | 'misiones' | 'capitales' | 'porcentaje' (60 % del mapa)
+  teams: 'no',            // 'no' | 'si' (equipos fijados en la sala)
   turnTime: 120,          // segundos por turno (0 = sin límite) — lo gestiona el servidor
   botSpeed: 'normal',     // 'lenta' | 'normal' | 'rapida'
 };
@@ -169,6 +170,31 @@ export function canFortify(graph, state, from, to) {
   if (state.owners[from] !== state.owners[to] || from === to) return false;
   if (state.settings.fortify === 'adyacente') return graph.adj[from].includes(to);
   return reachable(graph, state, from).has(to);
+}
+
+// ¿Son aliados (mismo jugador, mismo equipo o pacto de no agresión vigente)?
+export function sameTeam(state, a, b) {
+  if (a === b) return true;
+  const A = state.players[a], B = state.players[b];
+  return !!(A && B && A.team != null && A.team === B.team);
+}
+export function pactBetween(state, a, b) {
+  return (state.pacts || []).find((x) => (x.a === a && x.b === b) || (x.a === b && x.b === a)) || null;
+}
+export function canAttackPlayer(state, p, q) {
+  if (q < 0) return true;
+  return !sameTeam(state, p, q) && !pactBetween(state, p, q);
+}
+export const PERCENT_GOAL = 0.6;
+export function goalTerritories(n) { return Math.ceil(n * PERCENT_GOAL); }
+export function teamMembers(state, p) {
+  const t = state.players[p]?.team;
+  return state.players.map((_, i) => i).filter((i) => (t == null ? i === p : state.players[i].team === t));
+}
+// suerte: diferencia entre las bajas reales y las esperadas por los dados, en % por enfrentamiento
+export function luckOf(pl) {
+  const st = pl.stats || {};
+  return st.luckN ? Math.round((st.luckDiff / st.luckN) * 100) : 0;
 }
 
 export function missionText(graph, state, m, p) {
@@ -316,11 +342,18 @@ export class Game {
     const plist = players.map((p, i) => ({
       name: p.name, color: p.color || PLAYER_COLORS[i % PLAYER_COLORS.length].hex, bot: p.bot || null,
       slot: p.slot ?? i, alive: true, neutral: false, cards: [], mission: null, killedBy: null,
-      stats: { conquered: 0, lost: 0, kills: 0, trades: 0, battlesWon: 0, battlesLost: 0 },
+      team: s.teams === 'si' && Number.isInteger(p.team) ? p.team : null,
+      stats: { conquered: 0, lost: 0, kills: 0, trades: 0, battlesWon: 0, battlesLost: 0, luckDiff: 0, luckN: 0 },
     }));
+    if (s.teams === 'si') {
+      // con equipos no hay misiones; y hacen falta al menos dos equipos distintos
+      if (s.objective === 'misiones') s.objective = 'dominacion';
+      const teams = new Set(plist.map((x) => x.team));
+      if (teams.size < 2 || teams.has(null)) plist.forEach((x, i) => (x.team = i % 2));
+    }
     if (plist.length === 2) {
       plist.push({ name: 'Neutral', color: NEUTRAL_COLOR, bot: null, slot: -1, alive: true, neutral: true, cards: [], mission: null, killedBy: null,
-        stats: { conquered: 0, lost: 0, kills: 0, trades: 0, battlesWon: 0, battlesLost: 0 } });
+        team: null, stats: { conquered: 0, lost: 0, kills: 0, trades: 0, battlesWon: 0, battlesLost: 0, luckDiff: 0, luckN: 0 } });
     }
     const n = graph.n;
     const deck = [];
@@ -338,7 +371,8 @@ export class Game {
       pool: plist.map(() => init), initial: init,
       reinforcements: 0, conquered: false, pending: null, fortified: false,
       deck, discard: [], tradeCount: 0,
-      log: [], events: [], seq: 0, winner: null, winReason: null, history: [],
+      log: [], events: [], seq: 0, winner: null, winReason: null, winTeam: null, history: [],
+      pacts: [], pactOffers: [], capitals: null,
       startedAt: Date.now(), turnStartedAt: Date.now(),
     };
     const g = new Game(graph, state, rng);
@@ -434,6 +468,7 @@ export class Game {
   // -------------------------------------------------------------- acciones
   apply(p, action) {
     try {
+      if (action && (action.type === 'pact' || action.type === 'answerPact')) return this.pactAction(p, action) || { ok: true };
       const r = this._apply(p, action || {});
       return r || { ok: true };
     } catch (e) {
@@ -458,6 +493,49 @@ export class Game {
       case 'endTurn': return this.endTurn(p);
       default: throw new Error('Acción desconocida');
     }
+  }
+
+  pactAction(p, a) {
+    const s = this.state;
+    if (s.phase === 'over') throw new Error('La partida ha terminado');
+    const me = s.players[p];
+    if (!me || !me.alive || me.neutral) throw new Error('No puedes hacer pactos');
+    s.pacts = s.pacts || []; s.pactOffers = s.pactOffers || [];
+    if (a.type === 'pact') {
+      const q = Number(a.to), rounds = [2, 3, 5].includes(Number(a.rounds)) ? Number(a.rounds) : 3;
+      const other = s.players[q];
+      if (!Number.isInteger(q) || q === p || !other || !other.alive || other.neutral) throw new Error('Jugador no válido');
+      if (sameTeam(s, p, q)) throw new Error('Ya sois del mismo equipo');
+      if (pactBetween(s, p, q)) throw new Error('Ya tenéis un pacto');
+      if (s.pactOffers.some((o) => (o.from === p && o.to === q) || (o.from === q && o.to === p))) throw new Error('Ya hay una propuesta pendiente entre vosotros');
+      s.pactOffers.push({ from: p, to: q, rounds, round: s.round });
+      this.pushEvent({ type: 'pactOffer', p, q, rounds });
+      this.log(p, `🤝 ${this.name(p)} propone a ${this.name(q)} un pacto de no agresión de ${rounds} rondas.`);
+      return { ok: true };
+    }
+    const from = Number(a.from);
+    const i = s.pactOffers.findIndex((o) => o.from === from && o.to === p);
+    if (i < 0) throw new Error('Esa propuesta ya no existe');
+    const offer = s.pactOffers.splice(i, 1)[0];
+    if (a.accept) {
+      s.pacts.push({ a: offer.from, b: p, until: s.round + offer.rounds });
+      this.pushEvent({ type: 'pact', p: offer.from, q: p, rounds: offer.rounds });
+      this.log(p, `🤝 ${this.name(p)} acepta el pacto con ${this.name(offer.from)} hasta la ronda ${s.round + offer.rounds}.`);
+    } else {
+      this.pushEvent({ type: 'pactNo', p: offer.from, q: p });
+      this.log(p, `${this.name(p)} rechaza el pacto de ${this.name(offer.from)}.`);
+    }
+    return { ok: true };
+  }
+
+  expirePacts() {
+    const s = this.state;
+    s.pacts = (s.pacts || []).filter((x) => {
+      const ok = x.until >= s.round && s.players[x.a].alive && s.players[x.b].alive;
+      if (!ok && s.players[x.a].alive && s.players[x.b].alive) this.log(null, `El pacto entre ${this.name(x.a)} y ${this.name(x.b)} ha terminado.`);
+      return ok;
+    });
+    s.pactOffers = (s.pactOffers || []).filter((o) => s.round <= o.round + 1 && s.players[o.from].alive && s.players[o.to].alive);
   }
 
   checkT(t) {
@@ -510,6 +588,16 @@ export class Game {
   startPlay() {
     const s = this.state;
     s.round = 1;
+    if (s.settings.objective === 'capitales') {
+      // la capital de cada jugador es su territorio con más ejércitos al empezar
+      s.capitals = s.players.map((pl, i) => {
+        if (pl.neutral) return -1;
+        const own = territoriesOf(s, i);
+        if (!own.length) return -1;
+        return own.reduce((b, t) => (s.armies[t] > s.armies[b] ? t : b), own[0]);
+      });
+      this.log(null, 'Cada jugador tiene una capital (⭐). Gana quien controle todas las capitales.');
+    }
     this.log(null, '¡Comienza la guerra!');
     this.beginTurn(s.first);
   }
@@ -518,6 +606,7 @@ export class Game {
     const s = this.state;
     s.current = p;
     s.turn++;
+    this.expirePacts();
     s.phase = 'reinforce';
     s.conquered = false;
     s.fortified = false;
@@ -597,6 +686,8 @@ export class Game {
     if (s.owners[to] === p) throw new Error('No puedes atacar tu propio territorio');
     if (!this.graph.adj[from].includes(to)) throw new Error('Los territorios no son vecinos');
     if (s.armies[from] < 2) throw new Error('Necesitas al menos 2 ejércitos para atacar');
+    if (sameTeam(s, p, s.owners[to])) throw new Error('Ese territorio es de tu equipo');
+    if (pactBetween(s, p, s.owners[to])) throw new Error(`Tienes un pacto de no agresión con ${this.name(s.owners[to])}`);
     const maxDice = Math.min(3, s.armies[from] - 1);
     dice = dice == null ? maxDice : Number(dice);
     if (!Number.isInteger(dice) || dice < 1 || dice > maxDice) throw new Error('Número de dados no válido');
@@ -613,6 +704,14 @@ export class Game {
       for (let i = 0; i < Math.min(ad, dd); i++) { if (A[i] > D[i]) dLoss++; else aLoss++; }
       s.armies[from] -= aLoss; s.armies[to] -= dLoss;
       totalA += aLoss; totalD += dLoss;
+      // suerte: comparado con lo esperado para esta combinación de dados
+      const odds = ODDS[`${ad},${dd}`];
+      let eD = 0, eA = 0;
+      for (const [dk, al, pr] of odds) { eD += dk * pr; eA += al * pr; }
+      const pairs = Math.min(ad, dd);
+      const sa = s.players[p].stats, sd = s.players[def].stats;
+      sa.luckDiff = (sa.luckDiff || 0) + ((dLoss - eD) - (aLoss - eA)) / 2; sa.luckN = (sa.luckN || 0) + pairs;
+      sd.luckDiff = (sd.luckDiff || 0) + ((aLoss - eA) - (dLoss - eD)) / 2; sd.luckN = (sd.luckN || 0) + pairs;
       rolls.push({ a: A, d: D, aLoss, dLoss });
     } while (blitz && s.armies[to] > 0 && s.armies[from] >= 2);
     s.players[p].stats.battlesWon += totalD;
@@ -631,11 +730,22 @@ export class Game {
     s.players[def].stats.lost++;
     this.pushEvent(ev);
     this.log(p, `¡${this.name(p)} conquista ${this.tname(to)}${s.players[def].neutral ? '' : ` a ${this.name(def)}`}!`);
+    const reg = this.graph.regions[this.graph.regionOf[to]];
+    if (reg.members.every((t) => s.owners[t] === p)) {
+      this.pushEvent({ type: 'region', p, r: this.graph.regionOf[to] });
+      this.log(p, `🏆 ${this.name(p)} domina ${reg.name} (+${reg.bonus} por turno).`);
+    }
+    if (s.capitals && s.capitals[def] === to) {
+      this.pushEvent({ type: 'capital', p, def, t: to });
+      this.log(p, `⭐ ¡${this.name(p)} toma la capital de ${this.name(def)}!`);
+    }
     let eliminated = false;
     if (territoriesOf(s, def).length === 0) {
       eliminated = true;
       const dp = s.players[def];
       dp.alive = false; dp.killedBy = p;
+      s.pacts = (s.pacts || []).filter((x) => x.a !== def && x.b !== def);
+      s.pactOffers = (s.pactOffers || []).filter((o) => o.from !== def && o.to !== def);
       s.players[p].stats.kills++;
       const got = dp.cards.length;
       s.players[p].cards.push(...dp.cards);
@@ -743,15 +853,38 @@ export class Game {
       this.declareWinner(alive[0], s.settings.objective === 'misiones' ? 'Último superviviente' : 'Dominación mundial');
       return true;
     }
+    // equipos: si solo queda un equipo con vida, gana
+    if (s.settings.teams === 'si' && alive.every((i) => sameTeam(s, i, alive[0]))) {
+      this.declareWinner(alive.includes(p) ? p : alive[0], 'Victoria por equipos: el otro equipo ha caído');
+      return true;
+    }
     return this.checkMission(p);
   }
 
+  // comprueba el objetivo de la partida (misión, capitales o porcentaje) para p y su equipo
   checkMission(p) {
     const s = this.state;
     if (s.phase === 'over') return true;
-    if (s.settings.objective === 'misiones' && missionComplete(this.graph, s, p)) {
+    const obj = s.settings.objective;
+    if (obj === 'misiones' && missionComplete(this.graph, s, p)) {
       this.declareWinner(p, `Misión cumplida: ${missionText(this.graph, s, s.players[p].mission, p)}`);
       return true;
+    }
+    if (!s.players[p] || !s.players[p].alive || s.players[p].neutral) return false;
+    const team = new Set(teamMembers(s, p));
+    if (obj === 'capitales' && s.capitals) {
+      const caps = s.capitals.filter((t) => t >= 0);
+      if (caps.length && caps.every((t) => team.has(s.owners[t]))) {
+        this.declareWinner(p, team.size > 1 ? 'Capitales conquistadas por el equipo' : 'Todas las capitales conquistadas');
+        return true;
+      }
+    }
+    if (obj === 'porcentaje') {
+      const mine = s.owners.filter((o) => team.has(o)).length;
+      if (mine >= goalTerritories(s.owners.length)) {
+        this.declareWinner(p, `${team.size > 1 ? 'El equipo controla' : 'Controla'} el ${Math.round(PERCENT_GOAL * 100)} % del mapa`);
+        return true;
+      }
     }
     return false;
   }
@@ -759,6 +892,7 @@ export class Game {
   declareWinner(p, reason) {
     const s = this.state;
     s.phase = 'over'; s.winner = p; s.winReason = reason; s.pending = s.pending || null; s.endedAt = Date.now();
+    s.winTeam = s.players[p]?.team ?? null;
     s.history = s.history || [];
     s.history.push(s.players.map((_, i) => territoriesOf(s, i).length));
     this.pushEvent({ type: 'win', p, reason });

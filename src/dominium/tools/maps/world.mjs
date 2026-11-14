@@ -284,11 +284,19 @@ export function mundoDef() {
 }
 
 // Decor atoms: every country (not Antarctica, not in `used`, not merged into a used one) whose bbox meets `bb`
-export function decorAtoms(bb, used, extra = []) {
+let WF10 = null;
+function world10() {
+  if (!WF10) {
+    const w = readJSON('world-atlas/countries-10m.json');
+    WF10 = new Map(feature(w, w.objects.countries).features.map((f) => [f.properties.name, geomToMP(f.geometry)]));
+  }
+  return WF10;
+}
+export function decorAtoms(bb, used, extra = [], { res = '50m' } = {}) {
   const usedAll = new Set(used);
   for (const [from, to] of Object.entries(MERGE)) if (usedAll.has(to)) usedAll.add(from);
   const out = [];
-  for (const [n, mp] of WF) {
+  for (const [n, mp] of res === '10m' ? world10() : WF) {
     if (n === 'Antarctica' || usedAll.has(n)) continue;
     const parts = mp.filter((p) => {
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;

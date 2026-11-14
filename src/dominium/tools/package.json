@@ -10,6 +10,7 @@
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
     "d3-composite-projections": "^2.0.0",
+    "d3-delaunay": "^6.0.6",
     "d3-geo": "^3.1.2",
     "d3-geo-projection": "^4.0.0",
     "es-atlas": "^0.6.0",

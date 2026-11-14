@@ -155,6 +155,9 @@ const STAT_MODES = [
   { k: 'all', name: 'Todas', sub: 'Todas tus partidas online terminadas' },
   { k: 'dominacion', name: 'Dominación mundial', sub: 'Partidas con objetivo de dominación' },
   { k: 'misiones', name: 'Misiones secretas', sub: 'Partidas con misiones secretas' },
+  { k: 'capitales', name: 'Capitales', sub: 'Partidas en las que gana quien toma todas las capitales' },
+  { k: 'porcentaje', name: '60 % del mapa', sub: 'Partidas en las que gana quien controla el 60 % del mapa' },
+  { k: 'equipos', name: 'Por equipos', sub: 'Partidas por equipos: ganas si gana tu equipo' },
   { k: 'bots', name: 'Solo contra bots', sub: 'Partidas sin otras personas: dan menos experiencia' },
 ];
 let stMode = 'all';

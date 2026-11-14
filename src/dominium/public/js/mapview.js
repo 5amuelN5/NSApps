@@ -41,6 +41,13 @@ export class MapView {
     svg.classList.add('noanim');
     this.freshLoad = true;
     const defs = el('defs', {}, svg);
+    const PAT = [
+      'M0 8 L8 0', 'M0 4 H8', 'M4 0 V8', 'M0 0 L8 8 M8 0 L0 8', 'M0 0 L8 8', 'M2 2 h1 M6 6 h1', 'M0 6 L4 2 L8 6', 'M0 4 H8 M4 0 V8',
+    ];
+    PAT.forEach((d, i) => {
+      const pt = el('pattern', { id: `pat-${i}`, width: 8, height: 8, patternUnits: 'userSpaceOnUse' }, defs);
+      el('path', { d, stroke: 'rgba(255,255,255,.55)', 'stroke-width': i === 5 ? 2.4 : 1.4, fill: 'none', 'stroke-linecap': 'round' }, pt);
+    });
     const SEA = '#1e3246';
     this.vp = el('g', {}, svg);
     const W = map.width, H = map.height;
@@ -77,6 +84,9 @@ export class MapView {
 
     const terrG = el('g', {}, this.vp);
     this.paths = map.territories.map((t, i) => el('path', { d: t.path, class: 'terr', 'data-t': i, fill: UNOWNED, 'fill-rule': 'evenodd' }, terrG));
+    // capa de tramas (modo daltónico): una forma por territorio, rellena con el patrón de su dueño
+    this.patG = el('g', { class: 'pat-layer' }, this.vp);
+    this.patPaths = map.territories.map((t) => el('path', { d: t.path, fill: 'none', 'fill-rule': 'evenodd' }, this.patG));
     this.fxG = el('g', { class: 'fx' }, this.vp);
     this.aim = null;
     this.wrapPairs = new Set((map.links || []).filter((l) => l.wrap).flatMap((l) => [`${l.a}|${l.b}`, `${l.b}|${l.a}`]));
@@ -93,7 +103,10 @@ export class MapView {
       const n = el('text', { class: 'n', y: 0.5 }, g);
       const lbl = el('text', { class: 'lbl', y: 26 }, g);
       lbl.textContent = t.name;
-      return { g, c, sh, n, lbl, x: t.cx, y: t.cy, last: null, vis: true, lvis: true };
+      const cap = el('text', { class: 'cap', x: 11, y: -9 }, g);
+      cap.textContent = '⭐';
+      cap.style.display = 'none';
+      return { g, c, sh, n, lbl, cap, x: t.cx, y: t.cy, last: null, vis: true, lvis: true };
     });
     // prioridad: territorios más grandes primero (su ficha se ve antes al alejar)
     this.area = this.paths.map((p) => { try { const b = p.getBBox(); return b.width * b.height; } catch { return 0; } });
@@ -110,7 +123,7 @@ export class MapView {
     const K = [];
     for (let k = 1; k <= 80; k *= 1.06) K.push(k);
     const f = (k) => Math.min(1, 0.85 + (0.15 * (k - 1)) / 1.2);   // tamaño relativo de la ficha según zoom
-    const R = 14.5, GAP = 3;
+    const R = 14.5 * (this.userBadge || 1), GAP = 3;
     const order = [...Array(n).keys()].sort((a, b) => (this.area[b] - this.area[a]) || a - b);
     const dx = (a, b) => T[a].cx - T[b].cx, dy = (a, b) => T[a].cy - T[b].cy;
     const kB = new Array(n).fill(Infinity);
@@ -168,6 +181,18 @@ export class MapView {
   update(state, players, { showLabels } = {}) {
     if (!this.map) return;
     this.state = state;
+    const caps = state && state.capitals ? new Set(state.capitals.filter((t) => t >= 0)) : null;
+    this.badges.forEach((b, i) => {
+      const on = !!(caps && caps.has(i));
+      if (b.capOn !== on) { b.capOn = on; b.cap.style.display = on ? '' : 'none'; }
+    });
+    if (this.patterns) {
+      this.patPaths.forEach((pp, i) => {
+        const o = state ? state.owners[i] : -1;
+        const f = o >= 0 ? `url(#pat-${o % 8})` : 'none';
+        if (pp.getAttribute('fill') !== f) pp.setAttribute('fill', f);
+      });
+    }
     const regions = this.map.regions;
     const regionColor = Object.fromEntries(regions.map((r) => [r.id, r.color]));
     this.map.territories.forEach((t, i) => {
@@ -216,6 +241,27 @@ export class MapView {
 
   highlightSet(set) {
     this.paths.forEach((p, i) => p.classList.toggle('dim', set ? !set.has(i) : false));
+  }
+
+  setBadgeScale(f) {
+    this.userBadge = f;
+    this.lodFitS = 0;
+    if (this.badges) this.applyBadgeScale();
+  }
+
+  setPatterns(on) {
+    this.patterns = !!on;
+    if (!this.patPaths) return;
+    if (!on) this.patPaths.forEach((pp) => pp.setAttribute('fill', 'none'));
+    else if (this.state) this.update(this.state, this._players || []);
+  }
+
+  // destello de varios territorios (región conquistada)
+  flashSet(list, color) {
+    if (!this.fxG) return;
+    const d = list.map((t) => this.map.territories[t].path).join(' ');
+    const pth = el('path', { d, fill: color, 'fill-rule': 'evenodd', class: 'region-flash', stroke: '#fff', 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke' }, this.fxG);
+    setTimeout(() => pth.remove(), 1700);
   }
 
   flash(t) {
@@ -424,7 +470,7 @@ export class MapView {
     if (!this.badges) return;
     if (Math.abs(this.lodFitS - this.fitS) > 1e-9) this.computeLOD();
     const k = this.s / this.fitS;
-    const base = this.sizeAt(k);
+    const base = this.sizeAt(k) * (this.userBadge || 1);
     this.badges.forEach((b, i) => {
       const kb = this.kB[i];
       const vis = k >= kb * 0.999;
