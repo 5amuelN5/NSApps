@@ -305,6 +305,16 @@ function onSnapshot(snap) {
     if (Prof.handleProfileUpdate(snap.you.profileUpdate, snap) && modalKind === 'over') setTimeout(() => game.showGameOver(true), 50);
   }
   serverOffset = snap.serverTime - Date.now();
+  if (renderQueued) return;
+  renderQueued = true;
+  // con la pestaña en segundo plano no hay fotogramas: se usa un temporizador para no perder avisos
+  if (document.hidden) setTimeout(renderSnapshot, 60); else requestAnimationFrame(renderSnapshot);
+}
+let renderQueued = false;
+function renderSnapshot() {
+  renderQueued = false;
+  const snap = S;
+  if (!snap) return;
   const you = snap.you;
   document.body.classList.toggle('is-host', !!you.isHost);
   document.body.classList.toggle('is-guest', !you.isHost && !you.spectator);
@@ -463,6 +473,7 @@ function pickColor(slot) {
 
 // ------------------------------------------------------------ PARTIDA
 const KIND_ICON = ['🪖', '🐎', '💣', '⭐'];
+const NARROW = matchMedia('(max-width: 1100px)');
 const IC = (name) => `<svg class="ic"><use href="#i-${name}"/></svg>`;
 const initial = (name) => (String(name || '?').trim()[0] || '?').toUpperCase();
 const BASE_TITLE = document.title;
@@ -483,7 +494,7 @@ const game = {
   ui: { sel: -1, target: -1, dice: 3, amount: '1', regions: false, chatSeen: 0, hoverT: -1, emoteSeen: Date.now() },
   emotes: {},
 
-  reset() { this.startedAt = null; this.lastSeq = 0; this.ui.sel = -1; this.ui.target = -1; },
+  reset() { this.startedAt = null; this.lastSeq = 0; this.ui.sel = -1; this.ui.target = -1; this.sig = {}; this.logLastKey = null; },
 
   get g() { return S?.game; },
   get me() { return S && !S.you.spectator ? S.you.slot : -1; },
@@ -535,14 +546,27 @@ const game = {
     this.validateSelection();
     this.view.update(g, g.players);
     this.processEvents(newEvents);
-    this.renderTop();
-    this.renderPlayers();
-    this.renderLog();
-    this.renderRegions();
-    this.renderChat();
-    this.renderActionBar();
-    this.applyHighlights();
+    const me = this.me, ui = this.ui, slots = S.room.slots;
+    const own = g.owners.join(',');
+    const army = g.armies.join(',');
+    if (this.changed('top', `${g.phase}|${g.turn}|${g.round}|${own}`)) this.renderTop();
+    if (this.changed('players', `${own}|${army}|${g.phase}|${g.current}|${(g.pool || []).join(',')}|${g.players.map((p) => `${p.alive}${p.cardCount}`).join(',')}|${slots.map((x) => `${x.afk}${x.left}${x.connected}${x.prof ? x.prof.xp : ''}`).join(',')}|${S.avatarVer}`)) this.renderPlayers();
+    const lg = g.log;
+    if (this.changed('log', `${lg.length}|${lg[lg.length - 1]?.text}|${lg[lg.length - 2]?.text}`)) this.renderLog();
+    if (this.changed('regions', own)) this.renderRegions();
+    const ch = S.room.chat;
+    if (this.changed('chat', `${ch.length}|${ch[ch.length - 1]?.ts}|${$('[data-tab="chat"]').classList.contains('active')}|${$('#side-right').classList.contains('open')}`)) this.renderChat();
+    const hand = me >= 0 ? g.players[me]?.cards || [] : [];
+    if (this.changed('bar', `${g.phase}|${g.current}|${g.reinforcements}|${g.pool?.[me]}|${ui.sel}|${ui.target}|${ui.dice}|${ui.amount}|${hand.length}|${g.players[me]?.alive}|${slots[me]?.afk}|${g.winner}|${g.pending ? 1 : 0}|${me}|${g.armies[ui.sel]}|${g.armies[ui.target]}|${g.tradeCount}`)) this.renderActionBar();
+    if (this.changed('hl', `${g.phase}|${g.current}|${ui.sel}|${ui.target}|${own}|${this.isMyTurn()}|${g.pending ? g.pending.to : -1}`)) this.applyHighlights();
     this.maybeModals();
+  },
+
+  sig: {},
+  changed(key, val) {
+    if (this.sig[key] === val) return false;
+    this.sig[key] = val;
+    return true;
   },
 
   validateSelection() {
@@ -607,6 +631,8 @@ const game = {
 
   floater(t, text, cls) {
     if (t == null || t < 0) return;
+    const fl = $('#floaters');
+    while (fl.childElementCount >= 14) fl.firstElementChild.remove();
     const p = this.view.screenPos(t);
     const d = document.createElement('div');
     d.className = `floater ${cls || ''}`;
@@ -714,18 +740,49 @@ const game = {
     $$('[data-pprof]', $('#players-panel')).forEach((b) => (b.onclick = () => { const i = Number(b.dataset.pprof); Prof.openPcard(S.room.slots[i]?.prof, AVATARS[i]); }));
   },
 
-  renderLog() {
+  // Registro incremental: solo añade las líneas nuevas y no se dibuja si no se ve
+  logVisible() {
+    if (!$('#tab-log').classList.contains('active')) return false;
+    // en pantallas estrechas el panel es un cajón: solo se ve si está abierto (sin forzar cálculos de estilo)
+    return $('#side-right').classList.contains('open') || !NARROW.matches;
+  },
+  renderLog(force) {
     const g = this.g;
+    if (!force && !this.logVisible()) { this.logDirty = true; return; }
+    this.logDirty = false;
     const box = $('#game-log');
-    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    if (!this.logScrollBound) {
+      this.logScrollBound = true;
+      this.logAtBottom = true;
+      box.addEventListener('scroll', () => { this.logAtBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40; }, { passive: true });
+    }
     const names = g.players.map((p) => [esc(p.name), p.color]).filter(([n]) => n).sort((a, b) => b[0].length - a[0].length);
     const paint = (txt) => {
       let out = esc(txt);
       for (const [n, c] of names) out = out.split(n).join(`<b style="color:${c}">${n}</b>`);
       return out;
     };
-    box.innerHTML = g.log.slice(-80).map((l) => `<div style="--lc:${l.p != null && l.p >= 0 ? g.players[l.p]?.color : 'var(--line)'}">${paint(l.text)}</div>`).join('');
-    if (atBottom) box.scrollTop = box.scrollHeight;
+    const keyOf = (l) => (l.id != null ? `#${l.id}` : `${l.turn}|${l.text}`);
+    const keys = g.log.map(keyOf);
+    let from = 0;
+    if (this.logLastKey && this.logGame === g.startedAt) {
+      const at = keys.lastIndexOf(this.logLastKey);
+      if (at >= 0) from = at + 1;
+      else box.textContent = '';
+    } else box.textContent = '';
+    if (from >= keys.length && box.childElementCount) return;
+    const frag = document.createDocumentFragment();
+    for (const l of g.log.slice(from)) {
+      const d = document.createElement('div');
+      d.style.setProperty('--lc', l.p != null && l.p >= 0 ? g.players[l.p]?.color : 'var(--line)');
+      d.innerHTML = paint(l.text);
+      frag.appendChild(d);
+    }
+    box.appendChild(frag);
+    while (box.childElementCount > 80) box.firstElementChild.remove();
+    this.logLastKey = keys[keys.length - 1];
+    this.logGame = g.startedAt;
+    if (this.logAtBottom) box.scrollTop = 1e9;
   },
 
   renderRegions() {
@@ -748,6 +805,7 @@ const game = {
 
   renderChat() {
     const chat = S.room.chat;
+    const sideVisible = $('#side-right').classList.contains('open') || !NARROW.matches;
     let fresh = false;
     for (const m of chat) {
       if (!m.emote || m.ts <= this.ui.emoteSeen) continue;
@@ -759,7 +817,7 @@ const game = {
     }
     if (fresh) this.renderPlayers();
     renderChat($('#game-chat'), chat);
-    const active = $('[data-tab="chat"]').classList.contains('active') && ($('#side-right').classList.contains('open') || getComputedStyle($('#side-right')).position !== 'fixed');
+    const active = $('[data-tab="chat"]').classList.contains('active') && sideVisible;
     const last = chat.length ? chat[chat.length - 1].ts : 0;
     if (active) this.ui.chatSeen = last;
     $('#chat-badge').classList.toggle('on', last > this.ui.chatSeen && !chat[chat.length - 1]?.sys);
@@ -954,13 +1012,23 @@ const game = {
   hover(t, x, y) {
     const tip = $('#tooltip');
     const g = this.g;
+    const key = `${t}|${g?.seq}|${this.ui.sel}|${this.ui.target}`;
+    if (key === this.hoverKey) {
+      if (t >= 0) {
+        tip.style.transform = `translate(${Math.min(x + 16, this.areaW - 230)}px, ${Math.min(y + 16, this.areaH - 90)}px)`;
+      }
+      return;
+    }
+    this.hoverKey = key;
+    const area = $('#map-area').getBoundingClientRect();
+    this.areaW = area.width; this.areaH = area.height;
     // vista previa de la flecha de ataque
     if (g && this.isMyTurn() && g.phase === 'attack' && this.ui.target < 0) {
       const sel = this.ui.sel;
       if (sel >= 0 && t >= 0 && g.owners[t] !== this.me && this.graph.adj[sel].includes(t)) this.view.setAim(sel, t, g.players[this.me].color);
       else this.view.setAim(-1, -1);
     }
-    if (t < 0 || !g) { tip.style.display = 'none'; return; }
+    if (t < 0 || !g) { tip.style.display = 'none'; this.hoverKey = null; return; }
     const o = g.owners[t];
     const reg = this.graph.regions[this.graph.regionOf[t]];
     let extra = '';
@@ -971,9 +1039,7 @@ const game = {
     }
     tip.innerHTML = `<b>${esc(this.graph.names[t])}</b>${esc(reg.name)} (+${reg.bonus})<br>${o >= 0 ? `<span style="color:${g.players[o].color};font-weight:800">${esc(g.players[o].name)}</span> · ⚔ ${g.armies[t]}` : 'Libre'}${extra}`;
     tip.style.display = 'block';
-    const area = $('#map-area').getBoundingClientRect();
-    tip.style.left = `${Math.min(x + 16, area.width - 230)}px`;
-    tip.style.top = `${Math.min(y + 16, area.height - 90)}px`;
+    tip.style.transform = `translate(${Math.min(x + 16, this.areaW - 230)}px, ${Math.min(y + 16, this.areaH - 90)}px)`;
   },
 
   // ---------------------------------------------------------- modales de juego
@@ -1145,11 +1211,11 @@ $('#btn-regions').onclick = () => {
   game.view?.setRegionMode(game.ui.regions);
   $('#btn-regions').classList.toggle('on', game.ui.regions);
 };
-$('#btn-side').onclick = () => { $('#side-right').classList.toggle('open'); game.renderChat?.(); };
+$('#btn-side').onclick = () => { $('#side-right').classList.toggle('open'); if (S?.game) { game.renderChat(); if (game.logDirty) game.renderLog(true); } };
 $$('.tab').forEach((t) => (t.onclick = () => {
   $$('.tab').forEach((x) => x.classList.toggle('active', x === t));
   $$('.tab-body').forEach((b) => b.classList.toggle('active', b.id === `tab-${t.dataset.tab}`));
-  if (S?.game) game.renderChat();
+  if (S?.game) { game.renderChat(); if (t.dataset.tab === 'log' && game.logDirty) game.renderLog(true); }
 }));
 $$('[data-zoom]').forEach((b) => (b.onclick = () => game.view?.zoomButton(b.dataset.zoom)));
 
@@ -1180,7 +1246,8 @@ setInterval(() => {
   const g = S.game;
   const span = g.phase === 'setup' && g.settings.setup === 'rapido' ? Math.max(60, total) : (g.phase === 'claim' || g.phase === 'setup') ? Math.max(15, Math.round(total / 4)) : total;
   $('#timer-fill').style.width = `${Math.min(100, (left / span) * 100)}%`;
-  $('#timer-text').textContent = `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}`;
+  const tt = `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}`;
+  if ($('#timer-text').textContent !== tt) $('#timer-text').textContent = tt;
   tm.classList.toggle('low', left < 10);
   if (left < 10 && left > 0 && game.isMyTurn() && Math.floor(left) !== game._lastTick) { game._lastTick = Math.floor(left); sfx.tick(); }
 }, 250);
@@ -1238,7 +1305,7 @@ async function renderMenuBg() {
       if (!$('#screen-menu').classList.contains('active') || document.hidden) return;
       const pth = paths[Math.floor(Math.random() * paths.length)];
       pth.setAttribute('fill', cols[Math.floor(Math.random() * cols.length)]);
-    }, 900);
+    }, 1400);
   } catch { /* sin fondo */ }
 }
 renderMenuBg();

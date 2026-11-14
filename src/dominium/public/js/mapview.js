@@ -179,10 +179,9 @@ export class MapView {
       const b = this.badges[i];
       const n = state ? state.armies[i] : 0;
       const showBadge = o >= 0;
-      b.g.style.display = showBadge ? '' : 'none';
+      if (b.shown !== showBadge) { b.shown = showBadge; b.g.style.display = showBadge ? '' : 'none'; }
       if (showBadge) {
-        const bc = shade(color, -0.32);
-        b.c.setAttribute('fill', bc);
+        if (b.color !== color) { b.color = color; b.c.setAttribute('fill', shade(color, -0.32)); }
         const txt = String(n);
         if (b.n.textContent !== txt) {
           if (b.last !== null) { b.g.classList.remove('pop'); requestAnimationFrame(() => b.g.classList.add('pop')); clearTimeout(b.to); b.to = setTimeout(() => b.g.classList.remove('pop'), 500); }
@@ -192,7 +191,6 @@ export class MapView {
         }
       }
     });
-    this.applyBadgeScale();
     if (this.freshLoad) {
       this.freshLoad = false;
       setTimeout(() => this.svg.classList.remove('noanim'), 100);
@@ -237,12 +235,12 @@ export class MapView {
     const r = this.box.getBoundingClientRect();
     const sx = tt.cx * this.s + this.tx, sy = tt.cy * this.s + this.ty;
     if (sx > 40 && sx < r.width - 40 && sy > 40 && sy < r.height - 40) return;
-    this.tx = r.width / 2 - tt.cx * this.s; this.ty = r.height / 2 - tt.cy * this.s;
-    this.apply();
+    const c = this.clampVals(this.s, r.width / 2 - tt.cx * this.s, r.height / 2 - tt.cy * this.s);
+    this.animateTo(this.s, c.tx, c.ty, 380);
   }
 
   // ------------------------------------------------ cámara
-  fit(keepZoom) {
+  fit(keepZoom, animate) {
     const r = this.box.getBoundingClientRect();
     if (!r.width || !this.map) return;
     const pad = 16;
@@ -253,33 +251,87 @@ export class MapView {
       if (k > 1.01) { this.s = fitS * k; this.clamp(); this.apply(); return; }
     }
     this.fitS = fitS;
-    this.s = fitS;
-    this.tx = (r.width - this.map.width * fitS) / 2;
-    this.ty = (r.height - this.map.height * fitS) / 2;
+    const ns = fitS, ntx = (r.width - this.map.width * fitS) / 2, nty = (r.height - this.map.height * fitS) / 2;
+    if (animate) return this.animateTo(ns, ntx, nty);
+    this.s = ns; this.tx = ntx; this.ty = nty;
     this.apply();
   }
 
-  zoomAt(factor, px, py) {
+  // destino de un zoom alrededor de un punto (sin aplicarlo)
+  zoomTarget(factor, px, py) {
     const k = Math.max(1, Math.min(this.maxK || 10, (this.s * factor) / this.fitS));
     const ns = this.fitS * k;
-    this.tx = px - ((px - this.tx) * ns) / this.s;
-    this.ty = py - ((py - this.ty) * ns) / this.s;
-    this.s = ns;
-    this.clamp(); this.apply();
+    const c = this.clampVals(ns, px - ((px - this.tx) * ns) / this.s, py - ((py - this.ty) * ns) / this.s);
+    return { s: ns, tx: c.tx, ty: c.ty };
+  }
+
+  zoomAt(factor, px, py, live) {
+    const z = this.zoomTarget(factor, px, py);
+    this.s = z.s; this.tx = z.tx; this.ty = z.ty;
+    if (live) this.preview(); else this.apply();
   }
 
   zoomButton(dir) {
     const r = this.box.getBoundingClientRect();
-    if (dir === 'fit') return this.fit();
-    this.zoomAt(dir === 'in' ? 1.4 : 1 / 1.4, r.width / 2, r.height / 2);
+    if (dir === 'fit') return this.fit(false, true);
+    const z = this.zoomTarget(dir === 'in' ? 1.5 : 1 / 1.5, r.width / 2, r.height / 2);
+    this.animateTo(z.s, z.tx, z.ty);
+  }
+
+  clampVals(s, tx, ty) {
+    const r = this.boxRect || this.box.getBoundingClientRect();
+    const w = this.map.width * s, h = this.map.height * s;
+    const m = 80;
+    if (w <= r.width) tx = (r.width - w) / 2; else tx = Math.min(m, Math.max(r.width - w - m, tx));
+    if (h <= r.height) ty = (r.height - h) / 2; else ty = Math.min(m, Math.max(r.height - h - m, ty));
+    return { tx, ty };
   }
 
   clamp() {
-    const r = this.box.getBoundingClientRect();
-    const w = this.map.width * this.s, h = this.map.height * this.s;
-    const m = 80;
-    if (w <= r.width) this.tx = (r.width - w) / 2; else this.tx = Math.min(m, Math.max(r.width - w - m, this.tx));
-    if (h <= r.height) this.ty = (r.height - h) / 2; else this.ty = Math.min(m, Math.max(r.height - h - m, this.ty));
+    const c = this.clampVals(this.s, this.tx, this.ty);
+    this.tx = c.tx; this.ty = c.ty;
+  }
+
+  // Durante un gesto (arrastrar, rueda, pellizco, animación) se transforma el <svg> entero con CSS:
+  // lo mueve la tarjeta gráfica sin redibujar el mapa. Al terminar se confirma la posición real.
+  preview(now) {
+    if (!this.base) {
+      this.base = { s: this.s, tx: this.tx, ty: this.ty };
+      this.svg.classList.add('moving');
+    }
+    const paint = () => {
+      this.pvRaf = 0;
+      if (!this.base) return;
+      const k = this.s / this.base.s;
+      this.svg.style.transform = `translate3d(${(this.tx - k * this.base.tx).toFixed(2)}px, ${(this.ty - k * this.base.ty).toFixed(2)}px, 0) scale(${k.toFixed(5)})`;
+    };
+    if (now) paint();
+    else if (!this.pvRaf) this.pvRaf = requestAnimationFrame(paint);
+  }
+
+  commit() {
+    if (this.pvRaf) { cancelAnimationFrame(this.pvRaf); this.pvRaf = 0; }
+    if (!this.base) return;
+    this.base = null;
+    this.apply();
+    this.svg.style.transform = '';
+    this.svg.classList.remove('moving');
+  }
+
+  animateTo(ns, ntx, nty, ms = 260) {
+    if (this.anim) cancelAnimationFrame(this.anim);
+    const s0 = this.s, x0 = this.tx, y0 = this.ty, t0 = performance.now();
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) ms = 1;
+    const ease = (u) => 1 - Math.pow(1 - u, 3);
+    const step = (t) => {
+      const u = Math.min(1, (t - t0) / ms), e = ease(u);
+      this.s = s0 * Math.pow(ns / s0, e);
+      this.tx = x0 + (ntx - x0) * e; this.ty = y0 + (nty - y0) * e;
+      this.preview(true);
+      if (u < 1) this.anim = requestAnimationFrame(step);
+      else { this.anim = 0; this.s = ns; this.tx = ntx; this.ty = nty; this.commit(); }
+    };
+    this.anim = requestAnimationFrame(step);
   }
 
   apply() {
@@ -395,6 +447,8 @@ export class MapView {
       if (!this.map) return;
       const p = local(e);
       this.pointers.set(e.pointerId, p);
+      if (this.anim) { cancelAnimationFrame(this.anim); this.anim = 0; this.commit(); }
+      this.boxRect = this.box.getBoundingClientRect();
       if (this.pointers.size === 1) {
         const t = e.target.dataset?.t;
         this.drag = { x: p.x, y: p.y, tx: this.tx, ty: this.ty, moved: false, t: t != null ? Number(t) : -1 };
@@ -413,13 +467,13 @@ export class MapView {
         const [a, b] = [...this.pointers.values()];
         const d = Math.hypot(a.x - b.x, a.y - b.y);
         const target = (this.pinch.s * d) / this.pinch.d;
-        this.zoomAt(target / this.s, (a.x + b.x) / 2, (a.y + b.y) / 2);
+        this.zoomAt(target / this.s, (a.x + b.x) / 2, (a.y + b.y) / 2, true);
         return;
       }
       if (this.drag && this.pointers.size === 1) {
         const dx = p.x - this.drag.x, dy = p.y - this.drag.y;
         if (!this.drag.moved && Math.hypot(dx, dy) > 7) { this.drag.moved = true; svg.classList.add('panning'); }
-        if (this.drag.moved) { this.tx = this.drag.tx + dx; this.ty = this.drag.ty + dy; this.clamp(); this.apply(); }
+        if (this.drag.moved) { this.tx = this.drag.tx + dx; this.ty = this.drag.ty + dy; this.clamp(); this.preview(); }
         return;
       }
       if (e.pointerType === 'mouse') {
@@ -440,6 +494,8 @@ export class MapView {
         if (this.drag && !this.drag.moved && this.drag.t >= 0 && e.type === 'pointerup') this.onClick(this.drag.t);
         this.drag = null;
         svg.classList.remove('panning');
+        this.boxRect = null;
+        this.commit();
       }
     };
     svg.addEventListener('pointerup', end);
@@ -448,8 +504,11 @@ export class MapView {
     svg.addEventListener('wheel', (e) => {
       if (!this.map) return;
       e.preventDefault();
+      if (this.anim) { cancelAnimationFrame(this.anim); this.anim = 0; }
       const p = local(e);
-      this.zoomAt(Math.exp(-e.deltaY * 0.0018), p.x, p.y);
+      this.zoomAt(Math.exp(-Math.max(-120, Math.min(120, e.deltaY)) * 0.0022), p.x, p.y, true);
+      clearTimeout(this.wheelT);
+      this.wheelT = setTimeout(() => this.commit(), 140);
     }, { passive: false });
   }
 }

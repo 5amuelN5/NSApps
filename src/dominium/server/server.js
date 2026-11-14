@@ -174,8 +174,15 @@ function snapshot(room, cid) {
   };
 }
 
+// Agrupa los cambios de una misma vuelta del bucle de eventos en un único envío por cliente
 function broadcast(room) {
   room.lastActivity = Date.now();
+  if (room.bcastPending) return;
+  room.bcastPending = true;
+  setImmediate(() => { room.bcastPending = false; broadcastNow(room); });
+}
+
+function broadcastNow(room) {
   for (const [cid, set] of room.clients) {
     const data = `data: ${JSON.stringify(snapshot(room, cid))}\n\n`;
     for (const res of set) { try { res.write(data); } catch { /* conexión cerrada */ } }

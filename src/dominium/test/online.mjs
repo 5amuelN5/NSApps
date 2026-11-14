@@ -52,9 +52,9 @@ let finished = null;
 
 async function play(cid, snap) {
   const g = snap.game;
+  if (g && g.phase === 'over') { finished = g; return; }
   if (!g || acting[cid] || snap.room.status !== 'playing') return;
   const me = snap.you.slot;
-  if (g.phase === 'over') { finished = g; return; }
   const myTurn = g.phase === 'setup' && g.settings.setup === 'rapido' ? g.pool[me] > 0 : g.current === me;
   if (!myTurn || !g.players[me].alive) return;
   acting[cid] = true;

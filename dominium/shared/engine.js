@@ -371,7 +371,8 @@ export class Game {
   // -------------------------------------------------------------- helpers
   get s() { return this.state; }
   log(p, text) {
-    this.state.log.push({ p, text, turn: this.state.turn });
+    this.state.logId = (this.state.logId || 0) + 1;
+    this.state.log.push({ p, text, turn: this.state.turn, id: this.state.logId });
     if (this.state.log.length > 120) this.state.log.splice(0, this.state.log.length - 120);
   }
   pushEvent(ev) {
@@ -798,6 +799,9 @@ export function viewFor(state, p) {
   const over = state.phase === 'over';
   return {
     ...state,
+    // la interfaz solo muestra lo último: se envía menos para que cada actualización pese poco
+    log: state.log.slice(-50),
+    events: state.events.slice(-12),
     deck: undefined,
     deckCount: state.deck.length,
     discard: undefined,
