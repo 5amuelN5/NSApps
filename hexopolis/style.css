@@ -1025,3 +1025,10 @@ body.spec .spec-qc { display: flex; margin-top: 8px; }
 .quit-box { display: flex; flex-direction: column; gap: 12px; text-align: center; }
 .quit-box h2 { font-size: 20px; }
 .quit-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+/* final de partida: dos botones grandes */
+.go-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.go-actions .btn.big { width: 100%; }
+.go-actions:not(:has(#g-vote)) { grid-template-columns: 1fr; }
+.go-links { display: flex; justify-content: center; }
+.rm-box .btn { align-self: flex-start; }
+@media (max-width: 480px) { .go-actions { grid-template-columns: 1fr; } }

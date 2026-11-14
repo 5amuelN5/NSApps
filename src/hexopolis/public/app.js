@@ -262,13 +262,14 @@ async function goOnline(joinCode) {
   App.mode = 'online';
   setLobbyMode(false);
   if (App.localRoom) { App.localRoom.destroy(); App.localRoom = null; }
-  show('lobby');
+  // ya no hay pantalla de salas: se queda en el menú hasta entrar en la sala
   if (joinCode) App.pendingJoin = joinCode;
   if (App.ws && App.ws.readyState <= 1) { if (App.ws.readyState === 1) { send({ t: 'listRooms' }); if (App.pendingJoin) { send({ t: 'joinRoom', code: App.pendingJoin }); App.pendingJoin = null; } } return; }
   connect();
 }
 function connect() {
   $('#net-status').textContent = 'Conectando…';
+  setTimeout(() => { if (App.ws && App.ws.readyState === 0 && App.screen === 'menu') toast('Conectando con el servidor… (si estaba dormido puede tardar hasta un minuto)', true); }, 1500);
   let ws;
   if (App.wsUrl) $('#net-status').textContent = 'Conectando con el servidor… (si estaba dormido puede tardar hasta un minuto)';
   try { ws = new WebSocket(App.wsUrl || ((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws')); }
@@ -413,12 +414,14 @@ $('#room-chat-send').onclick = () => sendFromInput('#room-chat-in');
 $('#btn-take-seat').onclick = () => { Sfx.click(); if (App.room) send({ t: 'joinRoom', code: App.room.code }); };
 
 function leaveRoom() {
+  // la partida local a medias se queda guardada para «Continuar»; solo se borra si ya había terminado
+  const localOver = App.mode === 'local' && (!App.localRoom || !App.localRoom.state || App.localRoom.state.phase === 'gameOver');
   send({ t: 'leaveRoom' });
-  if (App.mode === 'local') LocalSave.clear();
+  if (App.mode === 'local') { if (localOver) LocalSave.clear(); }
   else if (App.room) Saves.set(App.token, App.room.code, null);
   App.room = null; App.view = null; App.queue = []; App.busy = false; App.spectator = false;
-  if (App.mode === 'local') { App.mode = null; show('menu'); }
-  else show('lobby');
+  if (App.mode === 'local') App.mode = null;
+  show('menu'); // siempre al menú principal
   history.replaceState(null, '', location.pathname);
 }
 
@@ -501,10 +504,11 @@ function rematchHTML() {
   const voted = votes.has(me), all = humans.length && humans.every((x) => votes.has(x.i));
   const list = humans.length > 1 ? `<div class="rm-list">${humans.map((x) => `<span class="rchip ${votes.has(x.i) ? 'sp' : 'dim'}">${votes.has(x.i) ? '✔' : '…'} ${esc(x.s.name)}</span>`).join('')}</div>` : '';
   const note = humans.length > 1 ? 'La revancha empieza cuando todos la pidan: mismas personas y reglas, mapa nuevo.' : 'Mapa nuevo con las mismas reglas.';
-  const vote = me >= 0 ? `<button class="btn ${voted ? 'ghost' : 'pink'}" id="g-vote">${voted ? (all ? 'Empezando…' : '✔ Esperando a los demás · cancelar') : '▶ OTRA PARTIDA'}</button>` : '<span class="muted">Los jugadores pueden pedir la revancha</span>';
-  const force = isHost() && humans.length > 1 && votes.size && !all ? '<button class="btn small yellow" id="g-force" title="Empieza la revancha con quien esté conectado">Empezar ya</button>' : '';
-  return `<div class="rm-box"><b>¿Revancha?</b>${list}<small class="muted">${note}</small></div>
-    <div class="row gap between wrap"><button class="btn ghost" id="g-menu">SALIR</button><button class="btn small" data-close>VER TABLERO</button>${force}${vote}</div>`;
+  const vote = me >= 0 ? `<button class="btn big ${voted ? 'ghost' : 'pink'}" id="g-vote">${voted ? (all ? 'Empezando…' : '✔ Esperando a los demás') : '🔁 Revancha'}</button>` : '';
+  const force = isHost() && humans.length > 1 && votes.size && !all ? '<button class="btn small yellow" id="g-force" title="Empieza la revancha con quien esté conectado">▶ Empezar ya sin esperar</button>' : '';
+  return `${humans.length > 1 ? `<div class="rm-box"><b>Revancha</b>${list}<small class="muted">${note}</small>${force}</div>` : ''}
+    <div class="go-actions"><button class="btn big cyan" id="g-menu">🏠 Volver al menú</button>${vote}</div>
+    <div class="go-links"><button class="link-btn" data-close>🗺️ Ver el tablero</button></div>`;
 }
 
 // ----- resumen al final de la partida -----
@@ -688,7 +692,7 @@ function onMsg(m) {
     case 'restored': toast('Partida recuperada: seguimos donde lo dejasteis', true); break;
     case 'restoreFail': Saves.set(App.token, m.code, null); break;
     case 'error': toast(m.msg); Sfx.error(); break;
-    case 'joinFail': App.room = null; if (App.mode === 'p2p') P2P.close(); show('lobby'); $('#net-status').textContent = m.msg || 'No se pudo entrar en la sala'; break;
+    case 'joinFail': App.room = null; if (App.mode === 'p2p') P2P.close(); toast(m.msg || 'No se pudo entrar en la sala'); if (App.screen !== 'menu') show(App.mode === 'p2p' ? 'lobby' : 'menu'); break;
     case 'roomClosed': {
       if (m.fromList) { closeModal(); toast('🗑 Sala eliminada', true); break; } // eliminada desde la lista: te quedas en la lista
       // la sala ya no existe: todos vuelven al menú principal
@@ -702,7 +706,7 @@ function onMsg(m) {
       toast(m.byMe ? '🗑 Sala eliminada' : 'El anfitrión ha eliminado la sala', !!m.byMe);
       break;
     }
-    case 'kicked': toast('Te han expulsado de la sala'); App.room = null; if (App.mode === 'p2p') P2P.close(); show('lobby'); if (App.mode === 'online') send({ t: 'listRooms' }); break;
+    case 'kicked': toast('Te han expulsado de la sala'); App.room = null; if (App.mode === 'p2p') P2P.close(); show('menu'); break;
   }
 }
 
