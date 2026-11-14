@@ -39,7 +39,9 @@ function stream(code, cid, onSnap) {
 }
 
 const A = 'aaaaaaaa-1111', B = 'bbbbbbbb-2222', C = 'cccccccc-3333';
-const { code } = await post('/api/create', { cid: A, name: 'Ana', public: true });
+const profA = (await post('/api/profile', { cid: A, profile: null, name: 'Ana' })).profile;
+const profB = (await post('/api/profile', { cid: B, profile: null, name: 'Beto' })).profile;
+const { code } = await post('/api/create', { cid: A, name: 'Ana', public: true, profile: profA });
 console.log('Sala creada', code);
 const rooms = await (await fetch(BASE + '/api/rooms')).json();
 const listed = rooms.some((r) => r.code === code);
@@ -83,7 +85,7 @@ async function play(cid, snap) {
 
 latest.map = await (await fetch(`${BASE}/maps/${MAP}.json`)).json();
 ctrls.push(stream(code, A, (s) => { latest[A] = s; play(A, s); }));
-await post('/api/join', { cid: B, name: 'Beto', code: code.toLowerCase() });
+await post('/api/join', { cid: B, name: 'Beto', code: code.toLowerCase(), profile: profB });
 ctrls.push(stream(code, B, (s) => { latest[B] = s; play(B, s); }));
 await post('/api/action', { code, cid: A, msg: { type: 'setMap', mapId: MAP } });
 await post('/api/action', { code, cid: A, msg: { type: 'setSettings', settings: { botSpeed: 'rapida', turnTime: 0 } } });
@@ -115,6 +117,17 @@ console.log('  chat saneado:', JSON.stringify(snapA.room.chat.find((c) => !c.sys
 console.log('  cartas ajenas ocultas para A:', g.players.filter((_, i) => i !== snapA.you.slot && g.phase !== 'over').every((p) => p.cards === undefined));
 if (finished) console.log(`  ✔ partida terminada: gana ${finished.players[finished.winner].name} en ${finished.turn} turnos (${finished.winReason})`);
 else console.log(`  ✖ sin terminar tras 180 s (turno ${g.turn}, fase ${g.phase})`);
+// perfil: experiencia al terminar (la manda el servidor en la instantánea)
+await new Promise((r) => setTimeout(r, 500));
+for (const [who, cid] of [['Ana', A], ['Beto', B]]) {
+  const up = latest[cid]?.you?.profileUpdate;
+  if (!up) { console.log(`  ✖ ${who}: sin experiencia al terminar`); continue; }
+  const back = await post('/api/profile', { cid, profile: up.signed });
+  const pd = JSON.parse(back.profile.d);
+  console.log(`  perfil ${who}: +${up.gain.xp} XP (${up.gain.from.map((f) => f[0]).join(', ')}), partidas ${pd.games}, victorias ${pd.wins}, logros ${pd.ach.join(' ')} · firma válida: ${!back.bad}`);
+}
+const forged = await post('/api/profile', { cid: A, profile: { d: latest[A].you.profileUpdate.signed.d.replace('"xp":', '"xp":9'), s: latest[A].you.profileUpdate.signed.s } });
+console.log('  perfil manipulado rechazado:', !!forged.bad);
 // revancha
 await new Promise((r) => setTimeout(r, 300));
 if (finished) {

@@ -5,6 +5,7 @@ import {
 } from '../shared/engine.js';
 import { MapView, renderPreview } from './mapview.js';
 import { sfx } from './sound.js';
+import * as Prof from './profile.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -20,7 +21,8 @@ if (!CID || !/^[a-zA-Z0-9-]{8,64}$/.test(CID)) {
   CID = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36)).replace(/[^a-zA-Z0-9-]/g, '');
   store.set('dom.cid', CID);
 }
-const myName = () => ($('#inp-name').value.trim() || 'Comandante').slice(0, 16);
+const myName = () => (store.get('dom.name', '') || 'Comandante').slice(0, 16);
+const setName = (n) => store.set('dom.name', String(n || '').trim().slice(0, 16));
 
 // Servidor de salas: en GitHub Pages viene de config.json (Render); en local es el mismo origen.
 let CONFIG = {};
@@ -45,6 +47,9 @@ async function api(path, body) {
   return data;
 }
 
+let unloading = false;
+addEventListener('pagehide', () => { unloading = true; });
+addEventListener('beforeunload', () => { unloading = true; });
 let ROOM = null;   // código de sala
 let S = null;      // último snapshot
 let es = null;     // EventSource
@@ -68,6 +73,7 @@ function connect(code) {
     if (msg.type === 'room') onSnapshot(msg);
   };
   es.onerror = () => {
+    if (unloading) return; // al cerrar o recargar la página no se abandona la sala
     if (es && es.readyState === 2) leaveToMenu('Se perdió la conexión con la sala');
   };
 }
@@ -79,7 +85,7 @@ function leaveToMenu(msg) {
   history.replaceState(null, '', location.pathname);
   closeModal();
   showScreen('menu');
-  refreshRooms();
+  checkResume();
   if (msg) toast(msg);
 }
 
@@ -96,9 +102,10 @@ function toast(text, info) {
   clearTimeout(toastT);
   toastT = setTimeout(() => t.classList.remove('show'), 2600);
 }
-function openModal(html, { dismiss = true, onClose } = {}) {
+function openModal(html, { dismiss = true, onClose, wide = false } = {}) {
   const m = $('#modal');
   $('#modal-card').innerHTML = html;
+  $('#modal-card').classList.toggle('wide', !!wide);
   m.hidden = false;
   m.onclick = (e) => { if (dismiss && e.target === m) closeModal(); };
   m._dismiss = dismiss;
@@ -113,6 +120,14 @@ function closeModal() {
   const cb = m._onClose; m._onClose = null;
   cb && cb();
   modalKind = null;
+  clearInterval(joinListT);
+}
+let bigT;
+function bigMsg(text, sub) {
+  const b = $('#bigmsg');
+  b.innerHTML = `<b>${esc(text)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}`;
+  b.classList.remove('show'); void b.offsetWidth; b.classList.add('show');
+  clearTimeout(bigT); bigT = setTimeout(() => b.classList.remove('show'), 2400);
 }
 let modalKind = null;
 
@@ -126,17 +141,15 @@ async function getMap(id) {
   return p;
 }
 
-// ------------------------------------------------------------ MENÚ
-$('#inp-name').value = store.get('dom.name', '');
-$('#inp-name').addEventListener('change', () => store.set('dom.name', myName()));
-$('#inp-code').addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
-$('#inp-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#btn-join').click(); });
+// ------------------------------------------------------------ MENÚ (misma estructura que Hexópolis)
+const profilePayload = () => ({ profile: Prof.ProfStore.signed(), avatar: Prof.Avatar.get() });
+let joinListT = null;
 
-async function createRoom(isPublic, bots = 0) {
+async function createRoom({ isPublic, bots = 0, roomName = '' }) {
   sfx.unlock(); sfx.click();
-  store.set('dom.name', myName());
   try {
-    const { code } = await api('/api/create', { cid: CID, name: myName(), public: isPublic });
+    const { code } = await api('/api/create', { cid: CID, name: myName(), public: isPublic, roomName, ...profilePayload() });
+    closeModal();
     connect(code);
     if (bots) {
       ROOM = code;
@@ -144,40 +157,114 @@ async function createRoom(isPublic, bots = 0) {
     }
   } catch (e) { toast(e.message); }
 }
-$('#btn-create').onclick = () => createRoom(true);
-$('#btn-solo').onclick = () => createRoom(false, 3);
-$('#btn-join').onclick = () => joinRoom($('#inp-code').value);
-$('#btn-refresh').onclick = () => refreshRooms();
-$('#btn-rules').onclick = () => showRules();
 
 async function joinRoom(code) {
   sfx.unlock(); sfx.click();
   code = String(code || '').toUpperCase().trim();
-  if (code.length < 4) { toast('Introduce el código de la sala'); return; }
-  store.set('dom.name', myName());
+  if (code.length < 4) { toast('Escribe el código de la sala'); return; }
   try {
-    const r = await api('/api/join', { cid: CID, name: myName(), code });
+    const r = await api('/api/join', { cid: CID, name: myName(), code, ...profilePayload() });
+    closeModal();
+    $('#invite').hidden = true; $('#btn-invite').hidden = true;
     connect(r.code);
     if (r.spectator) toast('La partida ya empezó: entras como espectador', true);
   } catch (e) { toast(e.message); sfx.error(); }
 }
 
+const nameRowHTML = () => `<label class="field"><span>Tu nombre</span><input id="m-name" maxlength="16" autocomplete="off" value="${esc(store.get('dom.name', ''))}" placeholder="Comandante"></label>`;
+function readNameRow() {
+  const v = $('#m-name')?.value.trim();
+  if (v && v !== myName()) { setName(v); Prof.renderProfileChip(); }
+}
+
+function openCreate() {
+  sfx.unlock(); sfx.click();
+  openModal(`<div class="m-head"><h3>Crear partida</h3><button class="btn small" data-x>Cerrar</button></div>
+    ${nameRowHTML()}
+    <label class="field"><span>Nombre de la sala</span><input id="m-room" maxlength="32" placeholder="Sala de ${esc(myName())}"></label>
+    <label class="toggle"><input type="checkbox" id="m-public" checked> <span>Sala pública: aparece en la lista de Unirse a partida</span></label>
+    <div class="create-opts">
+      <button class="opt-card" id="m-online"><span class="oc-ic">🌍</span><b>Sala online</b><small>Invita a tus amigos con el código o el enlace. Puedes añadir bots.</small></button>
+      <button class="opt-card" id="m-bots"><span class="oc-ic">🤖</span><b>Contra bots</b><small>Sala privada con 3 bots de nivel Soldado listos para jugar.</small></button>
+    </div>`, { wide: false });
+  $('[data-x]').onclick = closeModal;
+  $('#m-online').onclick = () => { readNameRow(); createRoom({ isPublic: $('#m-public').checked, roomName: $('#m-room').value }); };
+  $('#m-bots').onclick = () => { readNameRow(); createRoom({ isPublic: false, bots: 3, roomName: $('#m-room').value }); };
+}
+
+function openJoin(prefill = '') {
+  sfx.unlock(); sfx.click();
+  openModal(`<div class="m-head"><h3>Unirse a partida</h3><button class="btn small" data-x>Cerrar</button></div>
+    ${nameRowHTML()}
+    <div class="join-row"><input id="m-code" maxlength="5" placeholder="Código" autocomplete="off" spellcheck="false" value="${esc(prefill)}" aria-label="Código de sala"><button class="btn btn-gold" id="m-join">Unirse</button></div>
+    <div class="m-head"><h4 class="tr-sub">Salas abiertas</h4><button class="btn small" id="m-refresh" aria-label="Actualizar">↻</button></div>
+    <div id="room-list" class="room-list"><div class="empty">Buscando salas…</div></div>`);
+  $('[data-x]').onclick = closeModal;
+  const code = $('#m-code');
+  code.addEventListener('input', () => { code.value = code.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
+  code.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#m-join').click(); });
+  $('#m-join').onclick = () => { readNameRow(); joinRoom(code.value); };
+  $('#m-refresh').onclick = () => refreshRooms();
+  refreshRooms();
+  clearInterval(joinListT);
+  joinListT = setInterval(() => { if ($('#room-list')) refreshRooms(); else clearInterval(joinListT); }, 5000);
+  if (!prefill) code.focus();
+}
+
 async function refreshRooms() {
-  if (ROOM) return;
+  const box = $('#room-list');
+  if (!box) return;
   try {
     const list = await api('/api/rooms');
-    const box = $('#room-list');
+    if (!$('#room-list')) return;
     if (!list.length) { box.innerHTML = '<div class="empty">No hay salas abiertas ahora mismo. Crea una y comparte el código con tus amigos.</div>'; return; }
     box.innerHTML = list.map((r) => `
-      <div class="room-item" data-code="${esc(r.code)}">
-        <b>${esc(r.name)}</b><span class="code">${esc(r.code)}</span>
-        <small>${esc(r.mapName || r.mapId)} · ${r.players}/${r.max} jugadores</small>
-        <small>${r.status === 'lobby' ? 'Esperando jugadores' : 'En partida, puedes mirar'}</small>
-      </div>`).join('');
-    $$('.room-item', box).forEach((d) => (d.onclick = () => joinRoom(d.dataset.code)));
-  } catch { $('#room-list').innerHTML = '<div class="empty">No se puede conectar con el servidor. Comprueba que está en marcha.</div>'; }
+      <button class="room-item" data-code="${esc(r.code)}">
+        <span class="ri-txt"><b>${esc(r.name)}</b><small>${esc(r.mapName || r.mapId)}, ${r.players}/${r.max} jugadores · ${r.status === 'lobby' ? 'esperando jugadores' : 'en partida, puedes mirar'}</small></span>
+        <span class="code">${esc(r.code)}</span>
+      </button>`).join('');
+    $$('.room-item', box).forEach((d) => (d.onclick = () => { readNameRow(); joinRoom(d.dataset.code); }));
+  } catch { if ($('#room-list')) box.innerHTML = '<div class="empty">No se puede conectar con el servidor. Inténtalo en unos segundos.</div>'; }
 }
-setInterval(() => { if (!ROOM && $('#screen-menu').classList.contains('active')) refreshRooms(); }, 5000);
+
+$('#btn-create-game').onclick = openCreate;
+$('#btn-join-game').onclick = () => openJoin();
+$('#btn-rules').onclick = () => showRules();
+$('#btn-invite').onclick = () => joinRoom($('#invite-code').textContent);
+$('#btn-resume').onclick = () => { const c = store.get('dom.room', ''); if (c) joinRoom(c); };
+
+// ¿hay una partida tuya a la que volver?
+async function checkResume() {
+  const code = store.get('dom.room', '');
+  $('#btn-resume').hidden = true;
+  if (!code) return;
+  try {
+    const r = await api(`/api/roomcheck?code=${encodeURIComponent(code)}&cid=${encodeURIComponent(CID)}`);
+    if (r.exists && r.member && r.status !== 'over' && !ROOM) {
+      $('#btn-resume').hidden = false;
+      $('#btn-resume').textContent = r.status === 'playing' ? '↻ Volver a tu partida online' : `↻ Volver a la sala ${r.name || code}`;
+    } else if (!r.exists) store.set('dom.room', '');
+  } catch { /* */ }
+}
+
+// estado del servidor (en Render gratis se duerme si nadie juega)
+async function wakeServer() {
+  const pill = $('#srv-pill');
+  const t0 = Date.now();
+  const slow = setTimeout(() => { pill.hidden = false; pill.className = 'srv-pill wait'; pill.innerHTML = '<span class="sp-dot"></span>Despertando el servidor, puede tardar hasta un minuto…'; }, 1200);
+  try {
+    await fetch(`${API}/api/ping`, { cache: 'no-store' }).then((r) => { if (!r.ok) throw new Error(); });
+    clearTimeout(slow);
+    if (Date.now() - t0 > 1200) {
+      pill.hidden = false; pill.className = 'srv-pill ok'; pill.innerHTML = '<span class="sp-dot"></span>Servidor listo';
+      setTimeout(() => { pill.hidden = true; }, 2500);
+    }
+  } catch {
+    clearTimeout(slow);
+    pill.hidden = false; pill.className = 'srv-pill bad'; pill.innerHTML = '<span class="sp-dot"></span>No se puede conectar con el servidor. Reintentando…';
+    setTimeout(wakeServer, 5000);
+  }
+}
 
 function showRules() {
   openModal(`<h3>Cómo se juega</h3><div class="rules">
@@ -210,8 +297,13 @@ function showRules() {
 // ------------------------------------------------------------ SNAPSHOTS
 let lobbyMapShown = null;
 let lobbySig = '';
+const AVATARS = [];
 function onSnapshot(snap) {
+  if (snap.avatars) { AVATARS.length = 0; snap.avatars.forEach((a, i) => (AVATARS[i] = a)); }
   S = snap;
+  if (snap.you.profileUpdate && snap.game?.phase === 'over') {
+    if (Prof.handleProfileUpdate(snap.you.profileUpdate, snap) && modalKind === 'over') setTimeout(() => game.showGameOver(true), 50);
+  }
   serverOffset = snap.serverTime - Date.now();
   const you = snap.you;
   document.body.classList.toggle('is-host', !!you.isHost);
@@ -301,7 +393,7 @@ async function renderLobby() {
   $('#slot-count').textContent = `${room.slots.length}/8`;
   $('#btn-add-bot').disabled = room.slots.length >= 8;
 
-  const sig = JSON.stringify([room.slots, room.settings, room.mapId, host, you.slot, MAP_INDEX.length]);
+  const sig = JSON.stringify([room.slots, room.settings, room.mapId, host, you.slot, MAP_INDEX.length, S.avatarVer]);
   const focusInLobby = document.activeElement && document.activeElement.matches('#slot-list select, #settings select');
   const rebuild = sig !== lobbySig && !focusInLobby;
   if (rebuild) lobbySig = sig;
@@ -315,11 +407,13 @@ async function renderLobby() {
       ? `${s.isHost ? '<span class="tag host">Anfitrión</span>' : s.ready ? '<span class="tag ready">Listo</span>' : '<span class="tag">Esperando</span>'}${!s.connected ? '<span class="tag off">Sin conexión</span>' : ''}`
       : '<span class="tag">Bot</span>';
     const kick = host && !mine ? `<button class="x" data-kick="${i}" title="Quitar de la sala" aria-label="Quitar">×</button>` : '';
-    return `<li class="slot ${mine ? 'me' : ''}"><span class="sw" style="background:${s.color}" data-color="${i}" title="Cambiar color">${esc(initial(s.name))}</span>
-      <span class="nm">${esc(s.name)}${mine ? ' (tú)' : ''}</span>${tags}${lvl}${kick}</li>`;
+    const face = AVATARS[i] ? `<img src="${AVATARS[i]}" alt="">` : esc(initial(s.name));
+    return `<li class="slot ${mine ? 'me' : ''}"><span class="sw ${AVATARS[i] ? 'has-img' : ''}" style="background:${s.color}" data-color="${i}" title="Cambiar color">${face}</span>
+      <span class="nm" ${s.prof ? `data-prof="${i}" title="Ver perfil"` : ''}>${esc(s.name)}${mine ? ' (tú)' : ''}</span>${s.prof ? Prof.levelBadge(s.prof) : ''}${tags}${lvl}${kick}</li>`;
   }).join('') + (room.slots.length < 2 ? '<li class="muted">Añade bots o invita amigos con el código.</li>' : '');
   $$('[data-lvl]').forEach((s) => (s.onchange = () => send({ type: 'botLevel', slot: Number(s.dataset.lvl), level: s.value })));
   $$('[data-kick]').forEach((b) => (b.onclick = () => send({ type: 'removeSlot', slot: Number(b.dataset.kick) })));
+  $$('[data-prof]', $('#slot-list')).forEach((b) => (b.onclick = () => { const i = Number(b.dataset.prof); Prof.openPcard(S.room.slots[i]?.prof, AVATARS[i]); }));
   $$('[data-color]').forEach((b) => (b.onclick = () => {
     const i = Number(b.dataset.color);
     if (i !== you.slot && !host) return;
@@ -610,13 +704,14 @@ const game = {
       const em = this.emotes[i];
       return `<div class="pcard ${isCur ? 'current' : ''} ${p.alive ? '' : 'dead'}" style="--pc:${p.color}" title="${esc(p.name)}">
         ${em && em.until > Date.now() ? `<span class="bubble">${em.e}</span>` : ''}
-        <div class="ptop"><span class="av" style="background:${p.color}">${esc(initial(p.name))}</span>
-        <div class="pn">${esc(p.name)}</div>
+        <div class="ptop"><span class="av ${AVATARS[i] ? 'has-img' : ''}" style="background:${p.color}">${AVATARS[i] ? `<img src="${AVATARS[i]}" alt="">` : esc(initial(p.name))}</span>
+        <div class="pn" ${slot?.prof ? `data-pprof="${i}" title="Ver perfil"` : ''}>${esc(p.name)} ${slot?.prof ? Prof.levelBadge(slot.prof) : ''}</div>
         ${thinking ? '<span class="dots"><i></i><i></i><i></i></span>' : p.alive && !p.neutral ? `<span class="share">${share}%</span>` : ''}</div>
         <div class="ps">${tag || !p.alive ? `<em class="ptag">${p.alive ? tag : 'Eliminado'}</em>` : ''}<span title="Territorios">${IC('flag')}${terr.length}</span><span title="Ejércitos">${IC('army')}${armies}</span>${p.neutral ? '' : `<span title="Cartas">${IC('card')}${p.cardCount}</span>`}${rb && !p.neutral && g.phase !== 'claim' && g.phase !== 'setup' ? `<span title="Refuerzos por turno">${IC('plusarmy')}${rb.total}</span>` : ''}${g.phase === 'setup' && !p.neutral && g.pool[i] > 0 ? `<span title="Por desplegar">${IC('hourglass')}${g.pool[i]}</span>` : ''}</div>
         <div class="bar"><i style="width:${(terr.length / totalT) * 100}%"></i></div></div>`;
     }).join('');
     $('#players-panel').innerHTML = html;
+    $$('[data-pprof]', $('#players-panel')).forEach((b) => (b.onclick = () => { const i = Number(b.dataset.pprof); Prof.openPcard(S.room.slots[i]?.prof, AVATARS[i]); }));
   },
 
   renderLog() {
@@ -1007,7 +1102,7 @@ const game = {
     }).join('');
     const isWinner = g.winner === this.me;
     modalKind = 'over';
-    openModal(`<div class="winner"><h3>${isWinner ? 'Has ganado' : `Gana ${esc(w.name)}`}</h3><p>${esc(g.winReason || '')}</p></div>${this.historyChart()}
+    openModal(`<div class="winner"><h3>${isWinner ? 'Has ganado' : `Gana ${esc(w.name)}`}</h3><p>${esc(g.winReason || '')}</p></div>${this.me >= 0 ? Prof.gainHTML() : ''}${this.historyChart()}
       <table class="stats"><tr><th>Jugador</th><th>Territorios</th><th>Conquistas</th><th>Eliminados</th><th>Bajas hechas / sufridas</th><th>Canjes</th></tr>${rows}</table>
       <div class="modal-actions"><button class="btn" id="go-map">Ver el mapa</button><button class="btn" id="go-menu">Salir al menú</button>${S.you.isHost ? '<button class="btn btn-gold" id="go-again">Jugar la revancha</button>' : ''}</div>`);
     confetti(w.color);
@@ -1149,14 +1244,23 @@ async function renderMenuBg() {
 renderMenuBg();
 
 // ------------------------------------------------------------ arranque
+Prof.initProfile({
+  $, esc, api, toast, openModal, closeModal, sfx, store, bigMsg, cid: CID,
+  getName: myName, setName,
+  sendAvatar: (img) => { if (ROOM) send({ type: 'avatar', img }).catch(() => {}); },
+});
 document.addEventListener('pointerdown', () => sfx.unlock(), { once: true });
 const params = new URLSearchParams(location.search);
-const startCode = params.get('sala');
+const startCode = (params.get('sala') || '').toUpperCase();
+wakeServer();
 if (startCode) {
-  joinRoom(startCode);
-} else {
-  refreshRooms();
-}
+  // si ya estabas en esa sala, vuelves directamente; si no, se muestra la invitación
+  api(`/api/roomcheck?code=${encodeURIComponent(startCode)}&cid=${encodeURIComponent(CID)}`).then((r) => {
+    if (r.exists && r.member) joinRoom(startCode);
+    else if (r.exists) { $('#invite-code').textContent = startCode; $('#invite').hidden = false; $('#btn-invite').hidden = false; }
+    else { toast('Esa sala ya no existe'); history.replaceState(null, '', location.pathname); }
+  }).catch(() => joinRoom(startCode));
+} else checkResume();
 api('/api/maps').then((m) => (MAP_INDEX = m)).catch(() => {});
 // mantiene despierto el servidor mientras hay una sala abierta
 setInterval(() => { if (ROOM) fetch(`${API}/api/ping`).catch(() => {}); }, 4 * 60 * 1000);

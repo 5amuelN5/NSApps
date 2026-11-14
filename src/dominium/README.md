@@ -32,6 +32,16 @@ rm -rf ../../dominium && cp -R dist ../../dominium
 5. Si alguien se desconecta o agota el tiempo dos veces, **un bot juega por él** hasta que vuelva. Quien entra con una partida ya empezada la ve como **espectador**.
 6. Al terminar, **Revancha** devuelve a todos a la sala.
 
+## Perfil de jugador
+
+Funciona igual que el de Hexópolis:
+
+- Cada navegador tiene un perfil con nivel (1 a 100), rango, emblema, foto, estadísticas por tipo de partida y 16 logros.
+- La experiencia se gana al terminar partidas online (menos contra bots; nada si te vas o si un bot juega por ti casi toda la partida).
+- El perfil lo firma el servidor y se guarda en el navegador, así nadie puede subirse el nivel a mano. Con el enlace de recuperación se recupera en otro navegador.
+- Ranking de amigos con las personas con las que has terminado partidas.
+- La firma usa la variable `DOM_PROFILE_KEY` del servidor (o, si no existe, el identificador fijo del servicio en Render).
+
 ## Reglas implementadas
 
 - Reparto aleatorio con despliegue simultáneo, o modo **clásico** (elegir territorios por turnos y colocar de 1 en 1).

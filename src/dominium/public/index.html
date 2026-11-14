@@ -34,39 +34,30 @@
     <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></symbol>
   </svg>
 
-  <!-- ============================== MENÚ PRINCIPAL -->
+  <!-- ============================== MENÚ PRINCIPAL (misma estructura que Hexópolis) -->
   <section id="screen-menu" class="screen active">
     <div class="menu-bg" id="menu-bg" aria-hidden="true"></div>
-    <div class="menu-wrap">
-      <header class="logo">
-        <h1 class="logo-title">Dominium<span class="dot">.</span></h1>
-        <p class="logo-tag">Conquista el mundo por turnos con tus amigos o contra bots. Crea una sala, comparte el código y empieza.</p>
-      </header>
-
-      <div class="menu-grid">
-        <div class="panel">
-          <label class="field">
-            <span>Tu nombre</span>
-            <input id="inp-name" maxlength="16" placeholder="Comandante" autocomplete="off">
-          </label>
-          <div class="btn-col">
-            <button class="btn btn-gold big" id="btn-create">Crear sala</button>
-            <div class="join-row">
-              <input id="inp-code" maxlength="5" placeholder="Código de sala" autocomplete="off" spellcheck="false" aria-label="Código de sala">
-              <button class="btn" id="btn-join">Unirse</button>
-            </div>
-            <div class="divider"></div>
-            <button class="btn" id="btn-solo">Jugar contra bots</button>
-            <button class="btn" id="btn-rules">Cómo se juega</button>
-          </div>
-        </div>
-
-        <div class="panel">
-          <h2 class="panel-title">Salas abiertas <button class="btn tiny" id="btn-refresh" title="Actualizar" aria-label="Actualizar"><svg class="ic"><use href="#i-refresh"/></svg></button></h2>
-          <div id="room-list" class="room-list"><div class="empty">Buscando salas…</div></div>
-        </div>
+    <div class="menu-glow" aria-hidden="true"></div>
+    <a class="hub-back" id="hub-back" href="https://5amueln5.github.io/nsgames/" title="Volver a NS Games">‹ NS Games</a>
+    <div class="menu-box">
+      <div class="logo-mark" aria-hidden="true">
+        <svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="26" fill="none" stroke="currentColor" stroke-width="3"/><path d="M6 32h52M32 6v52" stroke="currentColor" stroke-width="2" opacity=".55"/><ellipse cx="32" cy="32" rx="12" ry="26" fill="none" stroke="currentColor" stroke-width="2" opacity=".55"/><circle cx="32" cy="32" r="5" fill="currentColor"/></svg>
       </div>
-      <footer class="menu-foot">Hasta 8 jugadores por sala. Si alguien se desconecta, un bot sigue jugando por él.</footer>
+      <h1 class="logo-title">Dominium<span class="dot">.</span></h1>
+      <p class="logo-tag">Refuerza · Ataca · Conquista</p>
+      <div class="prof-row">
+        <button class="prof-chip" id="prof-chip" title="Tu perfil: nivel, estadísticas, logros y enlace de recuperación"></button>
+        <button class="cup-btn" id="btn-ranking" title="Ranking de amigos" aria-label="Ranking de amigos">🏆</button>
+      </div>
+      <div id="invite" class="invite" hidden>Te han invitado a la sala <b id="invite-code"></b></div>
+      <button class="btn big btn-green" id="btn-invite" hidden>▶ Unirse a la sala</button>
+      <div class="resume-col"><button class="resume" id="btn-resume" hidden>↻ Volver a tu partida online</button></div>
+      <div class="play-grid">
+        <button class="play-card amber" id="btn-create-game"><span class="pc-ic">＋</span><b>Crear partida</b><small>Ponle nombre y añade bots o amigos</small></button>
+        <button class="play-card teal" id="btn-join-game"><span class="pc-ic">🔑</span><b>Unirse a partida</b><small>Entra con el código de 5 letras</small></button>
+      </div>
+      <div id="srv-pill" class="srv-pill" hidden></div>
+      <div class="menu-foot"><button class="link-btn" id="btn-rules">📖 Cómo se juega</button></div>
     </div>
   </section>
 
@@ -187,6 +178,7 @@
     <div class="modal-card panel" id="modal-card"></div>
   </div>
   <div id="toast" class="toast" role="status"></div>
+  <div id="bigmsg" class="bigmsg" aria-live="polite"></div>
 
   <script type="module" src="js/app.js"></script>
 </body>
