@@ -420,14 +420,16 @@ function renderRoom() {
   for (let i = 0; i < Math.max(4, Math.min(maxP, r.seats.length + 1)); i++) {
     const s = r.seats[i];
     if (!s) {
-      seats.push(`<div class="seat empty"><span class="seat-av">＋</span><div class="seat-id"><span class="nm">Sitio libre</span><span class="kind">${host ? (r.local ? 'Añade un bot abajo' : 'Añade un bot o comparte el enlace') : 'Esperando jugador…'}</span></div></div>`);
+      seats.push(host && !(r.started && !r.over)
+        ? `<button class="seat empty add" data-addbot="2" title="Añadir un bot en este sitio"><span class="seat-av">＋</span><div class="seat-id"><span class="nm">Añadir bot</span><span class="kind">${r.local ? 'o deja el sitio libre' : 'o comparte el enlace con un amigo'}</span></div></button>`
+        : `<div class="seat empty"><span class="seat-av">＋</span><div class="seat-id"><span class="nm">Sitio libre</span><span class="kind">Esperando jugador…</span></div></div>`);
       continue;
     }
     const me = i === App.you;
     const tags = s.kind === 'bot' ? `<span class="sk bot">🤖 Bot ${stars(s.level)}</span>`
       : `${s.host ? '<span class="sk host">👑 Anfitrión</span>' : ''}${me ? '<span class="sk me">Tú</span>' : ''}${!s.host && !me ? '<span class="sk">🙂 Jugador</span>' : ''}${s.connected ? '' : '<span class="sk off">Desconectado</span>'}`;
     const av = s.kind === 'bot' ? '🤖' : s.prof ? s.prof.emblem : esc(s.name.trim()[0] || '?').toUpperCase();
-    const lvl = s.kind === 'bot' && host ? `<div class="lvl-pick">${[1, 2, 3, 4].map((l) => `<button data-lvl="${i}:${l}" class="${s.level === l ? 'on' : ''}" title="${lvlName(l)}"><span class="st">${'★'.repeat(l)}</span><span class="ln">${lvlName(l)}</span></button>`).join('')}</div>` : '';
+    const lvl = s.kind === 'bot' && host ? `<label class="lvl-sel"><span>Nivel</span><select data-lvlsel="${i}">${[1, 2, 3, 4].map((l) => `<option value="${l}" ${s.level === l ? 'selected' : ''}>${'★'.repeat(l)} ${lvlName(l)}</option>`).join('')}</select></label>` : '';
     const kick = host && !me ? `<button class="x" data-kick="${i}" title="Quitar">✕</button>` : '';
     const pb = s.prof ? `<button class="seat-prof" data-pcard="${i}" title="Ver el perfil de ${esc(s.name)}">${profBadge(s.prof)}<span>${Profile.rankOf(Profile.levelOf(s.prof.xp)).name} · ver perfil</span></button>` : '';
     const tOk = r.rules && r.rules.teams && !Engine.teamsError(r.rules, r.seats.length);
@@ -435,8 +437,9 @@ function renderRoom() {
     seats.push(`<div class="seat ${me ? 'me' : ''}" style="--c:${s.color}">${kick}<div class="seat-top"><span class="seat-av">${av}</span><div class="seat-id"><span class="nm">${esc(s.name)}</span><span class="seat-tags">${tags}</span></div></div>${tl}${pb}${lvl}</div>`);
   }
   $('#seat-count').textContent = `${r.seats.length} de ${maxP}`;
-  $('#seats').innerHTML = seats.join('');
-  $('#seats').querySelectorAll('[data-lvl]').forEach((b) => (b.onclick = () => { const [i, l] = b.dataset.lvl.split(':').map(Number); Sfx.click(); send({ t: 'botLevel', i, level: l }); }));
+  setHTML($('#seats'), seats.join('')); // sin cambios no se repinta (así no se cierra un desplegable abierto)
+  $('#seats').querySelectorAll('[data-lvlsel]').forEach((sel) => (sel.onchange = () => { Sfx.click(); send({ t: 'botLevel', i: +sel.dataset.lvlsel, level: +sel.value }); }));
+  $('#seats').querySelectorAll('[data-addbot]').forEach((b) => (b.onclick = () => { Sfx.click(); send({ t: 'addBot', level: +b.dataset.addbot }); }));
   $('#seats').querySelectorAll('[data-pcard]').forEach((b) => (b.onclick = () => { Sfx.click(); const s = App.room.seats[+b.dataset.pcard]; if (s && s.prof) openModal({ kind: 'pcard', prof: s.prof }); }));
   $('#seats').querySelectorAll('[data-kick]').forEach((b) => (b.onclick = () => { Sfx.click(); send({ t: 'removeSeat', i: +b.dataset.kick }); }));
   const watchers = r.spectators || [];
