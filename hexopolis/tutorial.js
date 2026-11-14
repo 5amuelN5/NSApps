@@ -8,7 +8,7 @@ const TUT_STEPS = [
   { t: '#players', h: 'Los jugadores', p: (v) => `Aquí ves a todos: puntos, cartas en la mano, caballeros y camino.${v.teams ? ' La letra de color es su equipo.' : ''} Toca a cualquiera para ver su ficha y su perfil.` },
   { t: '#hand', h: 'Tus cartas', p: () => 'Los recursos que vas consiguiendo. Debajo verás también tus cartas de desarrollo; tócalas para saber qué hacen.' },
   { t: '#build', h: 'Construir', p: () => '<b>Camino</b> para expandirte, <b>poblado</b> (1 punto), <b>ciudad</b> (2 puntos, produce el doble) y <b>carta de desarrollo</b> (caballeros, puntos ocultos y más). Se ilumina lo que puedes pagar.' },
-  { t: '#info', h: 'Tiradas y costes', p: () => 'La gráfica muestra qué números han salido y la tarjeta de costes te recuerda qué necesitas para cada cosa.' },
+  { t: '#info', h: 'Tiradas', p: () => 'La gráfica muestra cuántas veces ha salido cada número. La línea de puntos marca lo que debería salir por probabilidad. Lo que cuesta cada construcción lo ves en su botón (y en el botón ?).' },
   { t: '#actions', h: 'Tu turno', p: (v) => `1) Tira los dados. 2) Construye y <b>comercia</b> con el banco, los puertos o los demás${v.teams ? ' (o regala cartas a tu compañero)' : ''}. 3) Pulsa <b>Fin de turno</b>. Con la barra espaciadora también tiras y terminas.` },
   { t: null, h: 'Y cuidado con el 7', p: (v) => `Si sale un 7, quien tenga más de ${Engine.rulesOf(v).hand === 99 ? 'muchas' : Engine.rulesOf(v).hand} cartas descarta la mitad, y quien tiró mueve el <b>ladrón</b>: bloquea una casilla y roba una carta. El camino más largo y el ejército más grande dan 2 puntos extra. ¡A jugar!` },
 ];

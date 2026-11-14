@@ -18,16 +18,20 @@
     <h1 class="logo"><span>Hex</span>ópolis</h1>
     <p class="tag">Coloniza · Comercia · Conquista</p>
     <button class="prof-chip hidden" id="prof-chip" title="Tu perfil: nivel, logros y enlace de recuperación"></button>
-    <label class="field">TU NOMBRE
+    <label class="field name-field"><span>Tu nombre</span>
       <input id="in-name" maxlength="14" autocomplete="off" spellcheck="false">
     </label>
     <div id="invite" class="invite hidden">Te han invitado a la sala <b id="invite-code"></b></div>
     <button class="btn big green hidden" id="btn-invite">▶ UNIRSE A LA SALA</button>
-    <button class="btn big green hidden" id="btn-resume-online">↻ VOLVER A TU PARTIDA ONLINE</button>
-    <button class="btn big green hidden" id="btn-resume-local">↻ CONTINUAR PARTIDA CONTRA BOTS</button>
-    <button class="btn big pink" id="btn-local">▶ JUGAR CONTRA BOTS</button>
-    <button class="btn big cyan" id="btn-online">◆ SALAS ONLINE</button>
-    <div class="row gap center-row"><button class="btn small ghost" id="btn-ranking">🏆 RANKING DE AMIGOS</button><button class="btn small ghost" id="btn-rules">? REGLAS</button></div>
+    <div class="resume-col">
+      <button class="resume hidden" id="btn-resume-online">↻ Volver a tu partida online</button>
+      <button class="resume hidden" id="btn-resume-local">↻ Continuar tu partida contra bots</button>
+    </div>
+    <div class="play-grid">
+      <button class="play-card pink" id="btn-local"><span class="pc-ic">🤖</span><b>Contra bots</b><small>Partida rápida a tu ritmo</small></button>
+      <button class="play-card cyan" id="btn-online"><span class="pc-ic">👥</span><b>Con amigos</b><small>Crea una sala y pasa el enlace</small></button>
+    </div>
+    <div class="menu-foot"><button class="link-btn" id="btn-ranking">🏆 Ranking de amigos</button><span>·</span><button class="link-btn" id="btn-rules">📖 Cómo se juega</button></div>
   </div>
 </section>
 
@@ -154,7 +158,6 @@
     <div class="rightcol">
       <div id="info" class="info">
         <div class="info-card"><h4>Tiradas</h4><div id="roll-chart" class="roll-chart"></div></div>
-        <div class="info-card"><h4>Costes</h4><div id="cost-card" class="cost-card"></div></div>
       </div>
       <div id="actions" class="actions"></div>
     </div>

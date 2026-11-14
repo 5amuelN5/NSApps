@@ -174,7 +174,7 @@ function renderResume() {
   const on = Saves.latest();
   const b = $('#btn-resume-online');
   b.classList.toggle('hidden', !on || !!new URLSearchParams(location.search).get('sala'));
-  if (on) b.textContent = '↻ VOLVER A TU PARTIDA ONLINE (' + on[1].code + ')';
+  if (on) b.textContent = '↻ Volver a tu partida online (' + on[1].code + ')';
 }
 $('#btn-resume-local').onclick = () => { Sfx.unlock(); Sfx.click(); resumeLocal(); };
 $('#btn-resume-online').onclick = () => { Sfx.unlock(); Sfx.click(); const on = Saves.latest(); if (!on) return renderResume(); Saves.adopt(on[0]); goOnline(on[1].code); };
@@ -887,7 +887,7 @@ function renderInfo() {
   }
   $('#roll-chart').innerHTML = h;
   $('#roll-chart').previousElementSibling.innerHTML = `Tiradas <small title="La línea punteada marca lo esperado por probabilidad">${tot} en total</small>`;
-  if (!$('#cost-card').dataset.ready) {
+  if ($('#cost-card') && !$('#cost-card').dataset.ready) {
     const row = (n, c, pv) => `<div class="crow"><span class="cname">${n}${pv ? `<small>${pv}</small>` : ''}</span>${costHTML(c)}</div>`;
     $('#cost-card').innerHTML = row('Camino', COST.road) + row('Poblado', COST.settlement, '1 PV') + row('Ciudad', COST.city, '2 PV') + row('Carta', COST.dev, '?');
     $('#cost-card').dataset.ready = '1';
@@ -929,9 +929,7 @@ function renderActions() {
     <button class="btn pink" id="a-end" ${mine && v.phase === 'main' ? '' : 'disabled'}><span class="k">esp</span>Fin de turno<span class="cost">▶</span></button>`;
   $('#a-trade').onclick = () => {
     Sfx.click();
-    const ratios = Engine.tradeRatios(v, me);
-    const canBank = RES.some((r) => P.res[r] >= ratios[r]);
-    openModal({ kind: 'trade', tab: canBank ? 'bank' : 'players', offer: { give: {}, get: {} } });
+    openModal({ kind: 'trade', want: {}, give: {} });
   };
   $('#a-end').onclick = () => act({ type: 'endTurn' });
 }
@@ -1087,7 +1085,7 @@ function renderOffer() {
     if ($('#o-edit')) $('#o-edit').onclick = () => {
       const offer = { give: Object.assign({}, T.give), get: Object.assign({}, T.get) };
       act({ type: 'cancelTrade' });
-      setTimeout(() => openModal({ kind: 'trade', tab: 'players', offer }), 150);
+      setTimeout(() => openModal({ kind: 'trade', want: offer.get, give: offer.give }), 150);
     };
   } else if (me in T.responses) {
     const r = T.responses[me];
@@ -1172,8 +1170,9 @@ function specRegion() {
 // ================= MODALES =================
 function openModal(m) { App.ui.modal = m; renderModal(); }
 function closeModal() { App.ui.modal = null; $('#modal').classList.add('hidden'); }
-$('#modal').addEventListener('click', (e) => {
-  if (e.target.id === 'modal' && App.ui.modal && !['discard', 'victim'].includes(App.ui.modal.kind)) closeModal();
+// pulsar fuera del recuadro cierra la ventana y vuelve al tablero (salvo las que hay que contestar sí o sí)
+$('#modal').addEventListener('pointerdown', (e) => {
+  if (!e.target.closest('.modal-box') && App.ui.modal && !['discard', 'victim'].includes(App.ui.modal.kind)) { e.preventDefault(); closeModal(); }
 });
 
 function autoModals() {
@@ -1186,6 +1185,14 @@ function autoModals() {
   if (m && (m.kind === 'yop' || m.kind === 'monopoly') && (v.current !== me || v.devPlayed)) closeModal();
 }
 
+// cartas que ofrecer a cambio: lo que te sobra después de pagar 'cost' (sin tocar lo que pides)
+function suggestGive(res, want, cost) {
+  const nW = Engine.total(want); if (!nW) return {};
+  const spare = RES.filter((r) => !want[r]).map((r) => ({ r, n: res[r] - (cost[r] || 0) })).filter((x) => x.n > 0).sort((a, b) => b.n - a.n);
+  const give = {}; let left = nW;
+  for (const sp of spare) { if (!left) break; const k = Math.min(sp.n, left); give[sp.r] = k; left -= k; }
+  return give;
+}
 function fmtList(o) { return RES.filter((r) => o[r]).map((r) => `${o[r]} ${RN[r]}`).join(', '); }
 // qué cambios con el banco/puertos hacen falta para pagar un coste (sin gastar lo que el coste necesita)
 function bankPlan(res, cost, ratios, bank) {
@@ -1220,106 +1227,75 @@ function renderModal() {
   let h = '';
   switch (m.kind) {
     case 'trade': {
+      // una sola pantalla: 1) qué quieres  2) qué das  3) con quién (banco, jugadores o compañero)
       const ratios = Engine.tradeRatios(v, me);
       const BUILDS = [['road', 'Camino', COST.road], ['settlement', 'Poblado', COST.settlement], ['city', 'Ciudad', COST.city], ['dev', 'Carta', COST.dev]];
       const mates = v.teams ? v.players.filter((q) => q.id !== me && Engine.sameTeam(v, q.id, me)) : [];
-      const tabs = `<div class="tr-tabs ${mates.length ? 'three' : ''}"><button class="${m.tab === 'bank' ? 'on' : ''}" data-tab="bank">🏦 Banco y puertos</button><button class="${m.tab === 'players' ? 'on' : ''}" data-tab="players">🤝 Jugadores</button>${mates.length ? `<button class="${m.tab === 'gift' ? 'on' : ''}" data-tab="gift">🎁 Compañero</button>` : ''}</div>`;
-      const hand = `<div class="tr-hand"><span>Tienes:</span>${RES.map((r) => `<span class="chip ${P.res[r] ? '' : 'dim'}"><img src="${Sprites.url(r, 3)}">${P.res[r]}</span>`).join('')}</div>`;
-      if (m.tab === 'bank') {
-        // filas: un recurso que das → toca el que quieres
-        const rows = RES.filter((g) => P.res[g] >= ratios[g]).map((g) => {
-          const can = true;
-          const port = ratios[g] === 2 ? 'puerto 2:1' : ratios[g] === 3 ? 'puerto 3:1' : 'banco 4:1';
-          const targets = RES.filter((r) => r !== g).map((r) => `<button class="tr-get" data-bq="${g}:${r}" ${can && v.bank[r] > 0 ? '' : 'disabled'} title="Dar ${ratios[g]} ${RN[g]} por 1 ${RN[r]}"><img src="${Sprites.url(r, 4)}"><span>${RN[r]}</span></button>`).join('');
-          return `<div class="tr-row ${can ? '' : 'off'}">
-            <div class="tr-give"><img src="${Sprites.url(g, 4)}"><div><b>${ratios[g]} × ${RN[g]}</b><small>${can ? port : `tienes ${P.res[g]}, necesitas ${ratios[g]}`}</small></div></div>
-            <span class="tr-arrow">→</span><div class="tr-targets">${targets}</div></div>`;
-        }).join('');
-        // completar una construcción con el banco
-        const quick = BUILDS.map(([k, nm, cost]) => {
-          const plan = bankPlan(P.res, cost, ratios, v.bank);
-          const have = Engine.has(P.res, cost);
-          const txt = have ? 'ya lo tienes' : plan ? plan.map((t) => `${t.n * ratios[t.give]} ${RN[t.give]} → ${t.n} ${RN[t.get]}`).join(', ') : 'no te llega';
-          return `<button class="tr-quick" data-bplan="${k}" ${!have && plan ? '' : 'disabled'}><b>${nm}</b><small>${txt}</small></button>`;
-        }).join('');
-        const cant = RES.filter((g) => P.res[g] < ratios[g]).map((g) => `<span class="chip dim" title="Tienes ${P.res[g]}, necesitas ${ratios[g]}"><img src="${Sprites.url(g, 3)}">${P.res[g]}/${ratios[g]}</span>`).join('');
-        const rates = RES.map((g) => `<span class="chip ${ratios[g] < 4 ? 'port' : ''}" title="${ratios[g] < 4 ? 'Gracias a un puerto' : 'Cambio normal del banco'}"><img src="${Sprites.url(g, 3)}">${ratios[g]}:1</span>`).join('');
-        h = `<div class="row between"><h2>Comercio</h2><button class="btn small ghost" data-close>Cerrar</button></div>${tabs}${hand}
-          <h4 class="tr-sub">Completar con el banco</h4><div class="tr-quicks">${quick}</div>
-          <h4 class="tr-sub">Cambiar una carta</h4>
-          ${rows ? `<p class="tr-help">Toca lo que quieres recibir y el cambio se hace al momento.</p><div class="tr-rows">${rows}</div>` : '<p class="tr-help">Aún no tienes suficientes cartas iguales para cambiar con el banco.</p>'}
-          ${cant ? `<div class="tr-hand"><span>Te faltan para cambiar:</span>${cant}</div>` : ''}
-          <div class="tr-hand"><span>Tus tasas:</span>${rates}</div>`;
-        box.innerHTML = h;
-        box.querySelectorAll('[data-bq]').forEach((x) => (x.onclick = () => { const [g, r] = x.dataset.bq.split(':'); act({ type: 'bankTrade', give: g, get: r, n: 1 }); }));
-        box.querySelectorAll('[data-bplan]').forEach((x) => (x.onclick = () => {
-          const cost = BUILDS.find((b) => b[0] === x.dataset.bplan)[2];
-          const plan = bankPlan(P.res, cost, ratios, v.bank);
-          if (!plan) return;
-          plan.forEach((t, i) => setTimeout(() => act({ type: 'bankTrade', give: t.give, get: t.get, n: t.n }), i * 120));
-          toast('Cambios hechos: ya puedes construir ' + x.querySelector('b').textContent.toLowerCase(), true);
-        }));
-      } else if (m.tab === 'gift' && mates.length) {
-        // equipos: regalar cartas al compañero
-        m.gift = m.gift || { to: mates[0].id, cards: Engine.emptyRes() };
-        const gc = m.gift.cards, to = v.players[m.gift.to], n = Engine.total(gc);
-        const who = mates.length > 1 ? `<div class="row gap wrap">${mates.map((q) => `<button class="btn small ${q.id === m.gift.to ? 'on' : 'ghost'}" data-gto="${q.id}" style="color:${q.color}">${esc(q.name)}</button>`).join('')}</div>` : '';
-        const theirs = to.res ? `<div class="tr-hand"><span>${esc(to.name)} tiene:</span>${RES.map((r) => `<span class="chip ${to.res[r] ? '' : 'dim'}"><img src="${Sprites.url(r, 3)}">${to.res[r]}</span>`).join('')}</div>` : '';
-        h = `<div class="row between"><h2>Comercio</h2><button class="btn small ghost" data-close>Cerrar</button></div>${tabs}${hand}
-          <p class="tr-help">En equipos puedes regalar cartas a tu compañero durante tu turno, sin pedir nada a cambio.</p>${who}${theirs}
-          <div class="steppers">${RES.map((r) => `<div class="stp">${resCard(r, `<span class="n">${P.res[r] - gc[r]}</span>`)}<div class="ctl"><button data-g="${r}:-1">-</button><span class="val">${gc[r]}</span><button data-g="${r}:1">+</button></div></div>`).join('')}</div>
-          <button class="btn yellow" id="g-send" ${n ? '' : 'disabled'}>🎁 Regalar ${n || ''} ${n === 1 ? 'carta' : 'cartas'} a ${esc(to.name)}</button>`;
-        box.innerHTML = h;
-        box.querySelectorAll('[data-gto]').forEach((x) => (x.onclick = () => { m.gift.to = +x.dataset.gto; Sfx.click(); renderModal(); }));
-        box.querySelectorAll('[data-g]').forEach((x) => (x.onclick = () => { const [r, d] = x.dataset.g.split(':'); const nv = gc[r] + +d; if (nv < 0 || nv > P.res[r]) return; gc[r] = nv; Sfx.click(); renderModal(); }));
-        $('#g-send').onclick = () => { act({ type: 'gift', to: m.gift.to, cards: gc }); m.gift = null; closeModal(); };
-      } else {
-        const o = m.offer;
-        const valid = Engine.total(o.give) > 0 && Engine.total(o.get) > 0;
-        const side = (k) => RES.map((r) => {
-          const n = o[k][r] || 0;
-          const max = k === 'give' ? P.res[r] : 9;
-          return `<div class="tr-pick ${n ? 'sel' : ''} ${k === 'give' && !P.res[r] ? 'off' : ''}">
-            <button class="tr-card" data-add="${k}:${r}" ${n >= max ? 'disabled' : ''} title="Añadir 1 ${RN[r]}"><img src="${Sprites.url(r, 4)}"><span>${RN[r]}</span>${k === 'give' ? `<small>tienes ${P.res[r]}</small>` : ''}${n ? `<b class="cnt">${n}</b>` : ''}</button>
-            ${n ? `<button class="tr-minus" data-sub="${k}:${r}" title="Quitar 1">−</button>` : '<span class="tr-minus ph"></span>'}</div>`;
-        }).join('');
-        const need = BUILDS.map(([k, nm, cost]) => {
-          const miss = RES.reduce((a, r) => a + Math.max(0, (cost[r] || 0) - P.res[r]), 0);
-          return `<button class="tr-chip" data-need="${k}" ${miss > 0 && miss <= 4 ? '' : 'disabled'} title="${miss ? 'Te faltan ' + miss + ' cartas' : 'Ya lo tienes'}">${nm}${miss ? ` <small>−${miss}</small>` : ' ✓'}</button>`;
-        }).join('');
-        const sum = valid ? `Ofreces <b>${fmtList(o.give)}</b> a cambio de <b>${fmtList(o.get)}</b>.` : 'Elige qué das y qué pides tocando las cartas.';
-        h = `<div class="row between"><h2>Comercio</h2><button class="btn small ghost" data-close>Cerrar</button></div>${tabs}
-          <div class="tr-need"><span>Me falta para:</span>${need}</div>
-          <h4 class="tr-sub give">Das</h4><div class="tr-side">${side('give')}</div>
-          <h4 class="tr-sub get">Pides</h4><div class="tr-side">${side('get')}</div>
-          <div class="tr-sum">${sum}</div>
-          <div class="row gap between"><button class="btn ghost" id="t-clear">Limpiar</button><button class="btn yellow" id="t-offer" ${valid ? '' : 'disabled'}>🤝 Ofrecer a todos</button></div>
-          <p class="tr-help">Los demás aceptan o rechazan; tú eliges con quién cerrar el trato.</p>`;
-        box.innerHTML = h;
-        box.querySelectorAll('[data-add]').forEach((x) => (x.onclick = () => {
-          const [k, r] = x.dataset.add.split(':');
-          o[k][r] = (o[k][r] || 0) + 1;
-          o[k === 'give' ? 'get' : 'give'][r] = 0; // no se puede dar y pedir lo mismo
-          Sfx.click(); renderModal();
-        }));
-        box.querySelectorAll('[data-sub]').forEach((x) => (x.onclick = () => { const [k, r] = x.dataset.sub.split(':'); o[k][r] = Math.max(0, (o[k][r] || 0) - 1); Sfx.click(); renderModal(); }));
-        box.querySelectorAll('[data-need]').forEach((x) => (x.onclick = () => {
-          const cost = BUILDS.find((b) => b[0] === x.dataset.need)[2];
-          const get = {}, give = {};
-          let miss = 0;
-          RES.forEach((r) => { const d = Math.max(0, (cost[r] || 0) - P.res[r]); if (d) { get[r] = d; miss += d; } });
-          // ofrecer a cambio lo que te sobra (lo que no necesitas para esa construcción)
-          const spare = RES.filter((r) => !get[r]).map((r) => ({ r, n: P.res[r] - (cost[r] || 0) })).filter((x2) => x2.n > 0).sort((a2, b2) => b2.n - a2.n);
-          let left = miss;
-          for (const sp of spare) { if (!left) break; const k = Math.min(sp.n, left); give[sp.r] = k; left -= k; }
-          m.offer = { give, get };
-          if (left > 0) toast('No te sobran cartas suficientes para ofrecer lo mismo; ajusta la oferta', true);
-          Sfx.click(); renderModal();
-        }));
-        $('#t-clear').onclick = () => { m.offer = { give: {}, get: {} }; renderModal(); };
-        $('#t-offer').onclick = () => { act({ type: 'offerTrade', give: o.give, get: o.get }); closeModal(); };
-      }
-      box.querySelectorAll('[data-tab]').forEach((x) => (x.onclick = () => { m.tab = x.dataset.tab; Sfx.click(); renderModal(); }));
+      const W = m.want || (m.want = {}), G = m.give || (m.give = {});
+      const nW = Engine.total(W), nG = Engine.total(G);
+      // banco: el mejor cambio para conseguir lo que quieres (con tus puertos)
+      const bankCost = {}; RES.forEach((r) => { if (W[r]) bankCost[r] = P.res[r] + W[r]; });
+      const plan = nW ? bankPlan(P.res, bankCost, ratios, v.bank) : null;
+      const planTxt = plan ? plan.map((t) => `<b>${t.n * ratios[t.give]} ${RN[t.give]}</b>${ratios[t.give] < 4 ? ' <small>(puerto ' + ratios[t.give] + ':1)</small>' : ''}`).join(' + ') : '';
+      const wantTxt = fmtList(W), giveTxt = fmtList(G);
+      const card = (k, r) => {
+        const n = (k === 'want' ? W : G)[r] || 0;
+        const max = k === 'give' ? P.res[r] : 9;
+        const off = k === 'give' && !P.res[r];
+        return `<div class="tw-card ${n ? 'sel' : ''} ${off ? 'off' : ''}" style="--rc:${CARD_BG[r]}">
+          <button class="tw-add" data-tw="${k}:${r}:1" ${n >= max || off ? 'disabled' : ''} title="${k === 'want' ? 'Quiero' : 'Doy'} 1 ${RN[r]}"><img src="${Sprites.url(r, 5)}"><span>${RN[r]}</span>${k === 'give' ? `<small>tienes ${P.res[r]}</small>` : ''}${n ? `<b class="tw-n">${n}</b>` : ''}</button>
+          ${n ? `<button class="tw-sub" data-tw="${k}:${r}:-1" title="Quitar 1">−</button>` : ''}</div>`;
+      };
+      const quick = BUILDS.map(([k, nm, cost]) => {
+        const miss = RES.reduce((a, r) => a + Math.max(0, (cost[r] || 0) - P.res[r]), 0);
+        return `<button class="tw-quick" data-twneed="${k}" ${miss ? '' : 'disabled'} title="${miss ? 'Pide lo que te falta para ' + nm.toLowerCase() : 'Ya lo puedes pagar'}">${nm}${miss ? ` <small>falta ${miss}</small>` : ' ✓'}</button>`;
+      }).join('');
+      const rates = RES.filter((r) => ratios[r] < 4).map((r) => `<span class="chip port"><img src="${Sprites.url(r, 3)}">${ratios[r]}:1</span>`).join('');
+      // opciones
+      const bankOpt = !nW ? '<small>Elige arriba qué quieres</small>'
+        : plan ? `<small>Das ${planTxt}<br>y recibes <b>${wantTxt}</b></small>`
+        : '<small>No te llega: el banco pide 4 cartas iguales por 1 (menos con puerto)</small>';
+      const overlap = RES.some((r) => W[r] && G[r]);
+      const playersOk = nW && nG && !overlap;
+      const playersOpt = !nW ? '<small>Elige qué quieres</small>' : !nG ? '<small>Elige qué das a cambio <button class="link-btn" id="tw-suggest">(sugerir)</button></small>' : `<small>Ofreces <b>${giveTxt}</b><br>por <b>${wantTxt}</b></small>`;
+      const giftOk = mates.length && nG && !nW;
+      const giftOpt = mates.length ? (nW ? '<small>Para regalar, deja vacío «Qué quieres»</small>' : nG ? `<small>Le das <b>${giveTxt}</b> sin pedir nada</small>` : '<small>Elige qué le das</small>') : '';
+      h = `<div class="row between"><h2>⇄ Comerciar</h2><button class="btn small ghost" data-close>✕</button></div>
+        <div class="tr-hand"><span>Tienes:</span>${RES.map((r) => `<span class="chip ${P.res[r] ? '' : 'dim'}"><img src="${Sprites.url(r, 3)}">${P.res[r]}</span>`).join('')}${rates ? `<span class="tw-ports">Tus puertos:</span>${rates}` : ''}</div>
+        <div class="tw-step"><h4><span class="tw-num">1</span>¿Qué quieres?</h4><div class="tw-quicks"><span>Lo que me falta para:</span>${quick}</div><div class="tw-row">${RES.map((r) => card('want', r)).join('')}</div></div>
+        <div class="tw-step"><h4><span class="tw-num">2</span>¿Qué das a cambio? <small class="muted">(para el banco no hace falta)</small></h4><div class="tw-row">${RES.map((r) => card('give', r)).join('')}</div></div>
+        <div class="tw-step"><h4><span class="tw-num">3</span>¿Con quién?</h4>
+          <div class="tw-opts ${mates.length ? 'three' : ''}">
+            <button class="tw-opt o-bank" id="tw-bank" ${plan ? '' : 'disabled'}><b>🏦 Con el banco</b>${bankOpt}<span class="tw-go">Cambiar ya</span></button>
+            <button class="tw-opt o-players" id="tw-players" ${playersOk ? '' : 'disabled'}><b>🤝 Con los jugadores</b>${playersOpt}<span class="tw-go">Ofrecer a todos</span></button>
+            ${mates.length ? `<button class="tw-opt o-gift" id="tw-gift" ${giftOk ? '' : 'disabled'}><b>🎁 A tu compañero</b>${giftOpt}<span class="tw-go">Regalar a ${esc(mates[0].name)}</span></button>` : ''}
+          </div></div>
+        ${nW || nG ? '<div class="row" style="justify-content:flex-end"><button class="btn small ghost" id="tw-clear">Empezar de nuevo</button></div>' : ''}`;
+      box.innerHTML = h;
+      box.querySelectorAll('[data-tw]').forEach((x) => (x.onclick = () => {
+        const [k, r, d] = x.dataset.tw.split(':');
+        const T = k === 'want' ? W : G, O = k === 'want' ? G : W;
+        T[r] = Math.max(0, (T[r] || 0) + +d); if (!T[r]) delete T[r];
+        if (+d > 0) delete O[r]; // no se puede pedir y dar lo mismo
+        Sfx.click(); renderModal();
+      }));
+      box.querySelectorAll('[data-twneed]').forEach((x) => (x.onclick = () => {
+        const cost = BUILDS.find((b) => b[0] === x.dataset.twneed)[2];
+        m.want = {}; RES.forEach((r) => { const d = Math.max(0, (cost[r] || 0) - P.res[r]); if (d) m.want[r] = d; });
+        m.give = suggestGive(P.res, m.want, cost);
+        Sfx.click(); renderModal();
+      }));
+      if ($('#tw-suggest')) $('#tw-suggest').onclick = (e) => { e.stopPropagation(); m.give = suggestGive(P.res, W, {}); if (!Engine.total(m.give)) toast('No te sobran cartas para ofrecer'); Sfx.click(); renderModal(); };
+      $('#tw-bank').onclick = () => {
+        if (!plan) return;
+        plan.forEach((t, i) => setTimeout(() => act({ type: 'bankTrade', give: t.give, get: t.get, n: t.n }), i * 120));
+        toast(`Cambio hecho: recibes ${fmtList(W)}`, true);
+        m.want = {}; m.give = {};
+        setTimeout(() => { if (App.ui.modal === m) renderModal(); }, plan.length * 120 + 250);
+      };
+      $('#tw-players').onclick = () => { if (!playersOk) return; act({ type: 'offerTrade', give: G, get: W }); closeModal(); };
+      if ($('#tw-gift')) $('#tw-gift').onclick = () => { if (!giftOk) return; act({ type: 'gift', to: mates[0].id, cards: G }); closeModal(); };
+      if ($('#tw-clear')) $('#tw-clear').onclick = () => { m.want = {}; m.give = {}; Sfx.click(); renderModal(); };
       break;
     }
     case 'discard': {
