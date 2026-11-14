@@ -126,7 +126,7 @@
     addBot(token, level) {
       if (token !== this.host) return 'Solo el anfitrión puede añadir bots';
       if (this.state && this.state.phase !== 'gameOver') return 'La partida ya ha empezado';
-      if (this.seats.length >= E.maxSeats(this.rules)) return this.rules.mode === 'teams' ? `En ${this.rules.teams} contra ${this.rules.teams} caben ${this.rules.teams * 2} jugadores` : 'La sala está llena';
+      if (this.seats.length >= E.maxSeats(this.rules)) return this.rules.mode === 'teams' ? `En ${E.teamFormat(this.rules)} caben ${E.maxSeats(this.rules)} jugadores` : 'La sala está llena';
       level = Math.max(1, Math.min(4, level | 0 || 2));
       const used = new Set(this.seats.map((s) => s.name));
       const names = B.BOT_NAMES.filter((n) => !used.has(n));

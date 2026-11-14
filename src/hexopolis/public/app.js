@@ -555,7 +555,7 @@ function bindRoomRules() {
   const r = App.room; if (!r || !isHost() || (r.started && !r.over)) return;
   const put = (patch) => { Sfx.click(); send({ t: 'setRules', rules: Object.assign({}, r.rules, patch) }); };
   document.querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => put({ mode: b.dataset.mode, teams: b.dataset.mode === 'teams' ? (r.rules.teams || 2) : 0 })));
-  document.querySelectorAll('[data-tfmt]').forEach((b) => (b.onclick = () => put({ teams: +b.dataset.tfmt })));
+  document.querySelectorAll('[data-tfmt]').forEach((b) => (b.onclick = () => { const [t, c] = b.dataset.tfmt.split('x').map(Number); put({ teams: t, teamCount: c }); }));
   document.querySelectorAll('[data-trules]').forEach((b) => (b.onclick = () => put({ teamRules: b.dataset.trules })));
   if ($('#rr-adjust')) $('#rr-adjust').onclick = () => { Sfx.click(); openModal({ kind: 'roomRules' }); };
   if ($('#rr-rand')) $('#rr-rand').onclick = () => { put(randomRules(r.rules)); toast('🎲 ¡Reglas sorpresa!', true); };
@@ -565,13 +565,13 @@ function roomRulesHTML(R, n) {
   const r = App.room || {};
   const host = isHost() && !(r.started && !r.over);
   const dis = host ? '' : 'disabled';
-  const MODES = [['classic', '🏛️', 'Clásica', 'Las reglas de siempre'], ['teams', '👥', 'Por equipos', '2 contra 2 o 3 contra 3'], ['custom', '🎨', 'Personalizada', 'Tú eliges las reglas']];
+  const MODES = [['classic', '🏛️', 'Clásica', 'Las reglas de siempre'], ['teams', '👥', 'Por equipos', '2v2, 3v3 o 2v2v2'], ['custom', '🎨', 'Personalizada', 'Tú eliges las reglas']];
   const modes = `<div class="mode-pick">${MODES.map(([k, ic, t, d]) => `<button class="mode ${R.mode === k ? 'on' : ''}" data-mode="${k}" ${dis}><span class="mi">${ic}</span><b>${t}</b><small>${d}</small></button>`).join('')}</div>`;
   const seg = (attr, opts, cur) => `<div class="seg rr-seg mode-seg">${opts.map(([v, l]) => `<button data-${attr}="${v}" class="${String(cur) === String(v) ? 'on' : ''}" ${dis}>${l}</button>`).join('')}</div>`;
   let extra = '';
   if (R.mode === 'classic') extra = '<p class="rs-none">🔒 Reglas fijas: la partida de siempre, a 10 puntos. Para cambiar algo, elige «Personalizada».</p>';
   if (R.mode === 'teams') {
-    extra = `<div class="mode-row"><span>Formato</span>${seg('tfmt', [[2, '2 contra 2 · mapa normal'], [3, '3 contra 3 · mapa grande']], R.teams)}</div>
+    extra = `<div class="mode-row"><span>Formato</span>${seg('tfmt', [['2x2', '2 contra 2 · mapa normal'], ['3x2', '3 contra 3 · mapa grande'], ['2x3', '2 contra 2 contra 2 · mapa grande']], `${R.teams}x${R.teamCount || 2}`)}</div>
       <div class="mode-row"><span>Reglas</span>${seg('trules', [['classic', 'Clásicas'], ['custom', 'Personalizadas']], R.teamRules)}</div>`;
   }
   const editable = R.mode === 'custom' || (R.mode === 'teams' && R.teamRules === 'custom');
@@ -586,7 +586,7 @@ function rulesTilesHTML(R, n, showSpecials) {
     tile('🗺️', 'Mapa', big ? 'Grande' : 'Normal', `${big ? '30' : '19'} casillas${R.map === 'auto' ? ' · automático' : ''}`),
     tile('🏆', 'Para ganar', R.teams ? `${Engine.teamTarget(R.vp, R.teams)} por equipo` : `${Math.min(R.vp, Engine.vpCap(n))} puntos`, R.teams ? `sumando los ${R.teams} del equipo` : R.vp > Engine.vpCap(n) ? `máximo con ${n} jugadores` : R.vp > 10 ? `${pc.settlements} poblados · ${pc.cities} ciudades` : 'lo normal son 10'),
     tile('🃏', 'Con un 7', R.hand === 99 ? 'Sin límite' : `Más de ${R.hand} cartas`, R.hand === 99 ? 'nadie descarta' : 'descartas la mitad'),
-    tile('👥', 'Equipos', R.teams ? `${R.teams} contra ${R.teams}` : 'Cada uno', R.teams ? 'suman puntos juntos' : 'juego individual'),
+    tile('👥', 'Equipos', R.teams ? Engine.teamFormat(R) : 'Cada uno', R.teams ? 'suman puntos juntos' : 'juego individual'),
   ].join('');
   const sp = Engine.SPECIAL_RULES.filter((x) => R[x.key]);
   const spHTML = sp.length
@@ -907,7 +907,7 @@ function renderPlayers() {
     const pct = Math.min(100, (p.vp / Engine.winVP(v)) * 100);
     const many = p.resCount > handLimit(v);
     const isOpen = open.has(i);
-    const line = `<div class="pl-line ${cur ? 'cur' : ''} ${i === me ? 'me' : ''} ${isOpen ? 'open' : ''}" id="pl-${i}" data-pl="${i}" title="Pulsa para ${isOpen ? 'plegar' : 'desplegar'} los datos de ${esc(p.name)}">
+    const line = `<div class="pl-line ${cur ? 'cur' : ''} ${i === me ? 'me' : ''} ${isOpen ? 'open' : ''}" id="pl-${i}" data-pl="${i}">
         <span class="nm">${cur ? '<i class="turn">▶</i>' : ''}${esc(p.name)}</span>
         <span class="li vp" title="Puntos de victoria"><img src="${Sprites.url('trophy', 3)}" alt=""><b>${p.vp}</b></span>
         <span class="li ${lr ? 'gold' : ''}" title="Camino más largo propio${lr ? ' · tiene el Camino más largo' : ''}"><img src="${Sprites.url('road', 3, p.color)}" alt=""><b>${p.roadLen}</b></span>
@@ -917,7 +917,8 @@ function renderPlayers() {
         <span class="chev">${isOpen ? '▴' : '▾'}</span>
         ${tag}${off}
       </div>`;
-    const big = isOpen ? `<div class="pl-pop"><div class="pl ${cur ? 'cur' : ''} ${i === me ? 'me' : ''}" style="--c:${p.color}">
+    // la tarjeta ampliada sale al pasar el ratón por encima (o al pulsar en el móvil)
+    const big = `<div class="pl-pop"><div class="pl ${cur ? 'cur' : ''} ${i === me ? 'me' : ''}" style="--c:${p.color}">
         <div class="pl-head">
           <div class="pl-id"><span class="nm">${esc(p.name)}</span><span class="who">${who}${cur ? ' · <b>su turno</b>' : ''}</span></div>
           <div class="pl-vp" title="Puntos de victoria visibles (se gana con ${Engine.winVP(v)})"><b>${p.vp}</b><small>/${Engine.winVP(v)} PV</small></div>
@@ -930,11 +931,11 @@ function renderPlayers() {
           <div class="ps ${lr ? 'gold' : ''}" title="Camino continuo más largo"><img src="${Sprites.url('road', 3, p.color)}"><b>${p.roadLen}</b><small>Camino</small></div>
         </div>
         ${lr || la ? `<div class="pl-awards">${lr ? '<span class="aw">🛣️ Camino más largo</span>' : ''}${la ? '<span class="aw">⚔️ Ejército</span>' : ''}</div>` : ''}
-        ${many ? '<p class="pl-note">¡Tiene más de ${handLimit(v)} cartas! Si sale un 7 descarta la mitad.</p>' : ''}
+        ${many ? `<p class="pl-note">¡Tiene más de ${handLimit(v)} cartas! Si sale un 7 descarta la mitad.</p>` : ''}
         <button class="btn small ghost pl-more" data-plmore="${i}">Ver ficha completa</button>
-      </div></div>` : '';
+      </div></div>`;
     const tt = v.teams ? `<span class="tm-tag" style="--tc:${Engine.TEAM_COLORS[Engine.teamOf(v, i)]}" title="Equipo ${Engine.TEAM_NAMES[Engine.teamOf(v, i)]}">${Engine.TEAM_NAMES[Engine.teamOf(v, i)]}</span>` : '';
-    return `<div class="plw" style="--c:${p.color}">${line.replace('<span class="nm">', tt + '<span class="nm">')}${big}</div>`;
+    return `<div class="plw ${isOpen ? 'open' : ''}" style="--c:${p.color}">${line.replace('<span class="nm">', tt + '<span class="nm">')}${big}</div>`;
   }).join('') + teamBarHTML(v));
   $('#players').querySelectorAll('[data-pl]').forEach((el) => (el.onclick = () => {
     const i = +el.dataset.pl; Sfx.click();
@@ -1495,11 +1496,11 @@ function renderModal() {
       const specials = Engine.SPECIAL_RULES.map((x) => `<button class="rr-sp ${R[x.key] ? 'on' : ''}" data-rsp="${x.key}" ${dis}>
           <span class="ic">${x.icon}</span><span class="tx"><b>${x.name}</b><small>${x.desc}</small></span><span class="sw"><i></i></span></button>`).join('');
       const nOn = Engine.SPECIAL_RULES.filter((x) => R[x.key]).length;
-      const title = R.mode === 'classic' ? '🏛️ Reglas clásicas' : R.mode === 'teams' ? `👥 ${R.teams} contra ${R.teams} · reglas ${R.teamRules === 'custom' ? 'personalizadas' : 'clásicas'}` : '🎨 Reglas personalizadas';
+      const title = R.mode === 'classic' ? '🏛️ Reglas clásicas' : R.mode === 'teams' ? `👥 ${Engine.teamFormat(R)} · reglas ${R.teamRules === 'custom' ? 'personalizadas' : 'clásicas'}` : '🎨 Reglas personalizadas';
       h = `<div class="row between"><h2>${title}</h2><button class="btn small ghost" data-close>Cerrar</button></div>
         ${!editable ? '<p class="muted">🔒 En este modo las reglas son fijas.</p>' : host ? '' : '<p class="muted">Solo el anfitrión puede cambiarlas. Se aplican al empezar la partida.</p>'}
         <div class="rr">
-          ${R.mode === 'teams' ? `<p class="muted">🗺️ Mapa ${R.teams === 2 ? 'normal' : 'grande'} (lo fija el formato ${R.teams} contra ${R.teams}).</p>` : `<div class="rr-row"><div class="rr-lbl"><b>Mapa</b><small>El grande tiene 30 casillas, 11 puertos y más cartas.</small></div>`}
+          ${R.mode === 'teams' ? `<p class="muted">🗺️ Mapa ${R.map === 'normal' ? 'normal' : 'grande'} (lo fija el formato ${Engine.teamFormat(R)}).</p>` : `<div class="rr-row"><div class="rr-lbl"><b>Mapa</b><small>El grande tiene 30 casillas, 11 puertos y más cartas.</small></div>`}
             ${R.mode === 'teams' ? '' : seg('rmap', [['auto', autoTxt, 'Normal hasta 4 jugadores, grande con 5 o más'], ['normal', 'Normal (2-5)', forced ? 'Con 6 o más jugadores no se puede elegir' : ''], ['big', 'Grande (5-7)']], shownMap).replace('data-rmap="normal"', forced ? 'data-rmap="normal" disabled data-off="1"' : 'data-rmap="normal"') + '</div>'}
           ${R.mode === 'teams' ? '' : warn}
           <div class="rr-row"><div class="rr-lbl"><b>Puntos para ganar</b><small>Lo normal son 10 (de 5 a 20). ${piecesTxt(R.teams ? R.vp : Math.min(R.vp, Engine.vpCap(n)))}${!R.teams && R.vp > Engine.vpCap(n) ? ` <b class="rr-warn-in">Con ${n} jugadores el máximo es ${Engine.vpCap(n)}: se jugará a ${Engine.vpCap(n)}.</b>` : ''}</small></div>

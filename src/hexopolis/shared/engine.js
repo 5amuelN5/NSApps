@@ -23,7 +23,7 @@
 
   // ---------- reglas de la partida ----------
   const DEFAULT_RULES = {
-    mode: 'classic', teamRules: 'classic',
+    mode: 'classic', teamRules: 'classic', teamCount: 2,
     map: 'auto', vp: 10, hand: 7, teams: 0,
     doubleSteal: false, friendlyRobber: false, peaceStart: false, doublesBonus: false,
     goldRain: false, fastStart: false, chaosNumbers: false,
@@ -68,15 +68,18 @@
     const o = Object.assign({}, DEFAULT_RULES, { mode });
     if (mode === 'classic') return o;
     if (mode === 'custom') return Object.assign(o, custom(), { teams: 0 });
+    // formatos: 2 contra 2 (mapa normal), 3 contra 3 y 2 contra 2 contra 2 (mapa grande)
     o.teams = (r.teams | 0) === 3 ? 3 : 2;
+    o.teamCount = o.teams === 2 && (r.teamCount | 0) === 3 ? 3 : 2;
     o.teamRules = r.teamRules === 'custom' ? 'custom' : 'classic';
     if (o.teamRules === 'custom') Object.assign(o, custom());
-    o.map = o.teams === 2 ? 'normal' : 'big';
+    o.map = o.teams * o.teamCount <= 4 ? 'normal' : 'big';
     return o;
   }
+  function teamFormat(rules) { return rules.teamCount === 3 ? '2 contra 2 contra 2' : `${rules.teams} contra ${rules.teams}`; }
   // con mucha gente no hay sitio en la isla para metas muy altas
   function vpCap(n) { return n >= 7 ? 16 : n >= 6 ? 18 : 20; }
-  function maxSeats(rules) { return rules && rules.mode === 'teams' ? (rules.teams | 0) * 2 : MAX_PLAYERS; }
+  function maxSeats(rules) { return rules && rules.mode === 'teams' ? (rules.teams | 0) * (rules.teamCount || 2) : MAX_PLAYERS; }
   function R(s) { return s.rules || DEFAULT_RULES; }
 
   // ---------- equipos ----------
@@ -86,7 +89,8 @@
   function teamsError(rules, n) {
     const t = (rules && rules.teams) | 0;
     if (!t) return null;
-    if (n !== t * 2) return t === 2 ? `2 contra 2: hacen falta 4 jugadores` : `3 contra 3: hacen falta 6 jugadores`;
+    const need = t * ((rules.teamCount | 0) || 2);
+    if (n !== need) return `${teamFormat(rules)}: hacen falta ${need} jugadores`;
     return null;
   }
   function teamTarget(vpGoal, size) { return Math.round(vpGoal * size * 0.75); }
@@ -1007,7 +1011,7 @@
   return {
     RES, RES_NAMES, COST, PIPS, DEV_NAMES, COLORS, WIN_VP, MAX_PLAYERS, DEFAULT_RULES, SPECIAL_RULES, HAND_OPTS,
     TEAM_NAMES, TEAM_COLORS, teamsError, teamTarget, teamOf, sameTeam, teamVP, teamGoal,
-    BIG_ONLY, MODES, maxSeats, vpCap, normRules, winVP, rulesOf: R, piecesFor, piecesOf, robberHexOk, mapKind,
+    BIG_ONLY, MODES, maxSeats, teamFormat, vpCap, normRules, winVP, rulesOf: R, piecesFor, piecesOf, robberHexOk, mapKind,
     createGame, apply, viewFor, filterEvents,
     canSettle, canRoad, legalSettlements, legalRoads, legalCities, tradeRatios, robberVictims,
     vp, total, has, emptyRes, longestRoadFor, fmtRes,
