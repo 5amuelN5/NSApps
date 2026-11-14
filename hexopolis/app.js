@@ -211,7 +211,7 @@ function resumeLocal() {
   const me = snap.seats.findIndex((x) => x.kind === 'human');
   if (me >= 0) { if (snap.host === snap.seats[me].token) snap.host = App.token; snap.seats[me].token = App.token; snap.seats[me].left = false; }
   let r = null;
-  r = Room.fromSnapshot(snap, { onState: () => LocalSave.save(r) });
+  r = Room.fromSnapshot(snap, { onState: () => { LocalSave.save(r); recordLocalGame(r); } });
   App.localRoom = r;
   r.join(localClient(), App.token, App.name);
 }
@@ -232,7 +232,7 @@ function startLocal(name) {
   App.mode = 'local';
   if (App.localRoom) App.localRoom.destroy();
   LocalSave.clear();
-  const r = new Room({ code: 'LOCAL', name: typeof name === 'string' && name ? name : 'Partida contra bots', isPublic: false, local: true, onState: () => LocalSave.save(r) });
+  const r = new Room({ code: 'LOCAL', name: typeof name === 'string' && name ? name : 'Partida contra bots', isPublic: false, local: true, onState: () => { LocalSave.save(r); recordLocalGame(r); } });
   App.localRoom = r;
   r.join(localClient(), App.token, App.name);
   r.addBot(App.token, 2); r.addBot(App.token, 3); r.addBot(App.token, 4);

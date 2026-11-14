@@ -44,6 +44,41 @@ function applyAvatar(img) {
   renderProfileChip();
 }
 
+// estadísticas de las partidas locales (contra bots, sin conexión): se guardan aparte en este navegador
+const LocalStats = {
+  empty() { return { games: 0, wins: 0, streak: 0, best: 0, prod: 0, stole: 0, vpTotal: 0, byLevel: {} }; },
+  get() { try { return Object.assign(this.empty(), JSON.parse(store.get('hx_lstats', 'null')) || {}); } catch (e) { return this.empty(); } },
+  set(o) { store.set('hx_lstats', JSON.stringify(o)); },
+};
+function recordLocalGame(r) {
+  const s = r && r.state;
+  if (!s || s.phase !== 'gameOver' || r._recAt === (r.startedAt || 1)) return;
+  r._recAt = r.startedAt || 1;
+  const me = r.seatOf(App.token); if (me < 0) return;
+  const won = s.winTeam != null ? Engine.teamOf(s, me) === s.winTeam : s.winner === me;
+  const st = (s.stats && s.stats.pl && s.stats.pl[me]) || {};
+  const L = LocalStats.get();
+  L.games++; if (won) { L.wins++; L.streak++; L.best = Math.max(L.best, L.streak); } else L.streak = 0;
+  L.prod += st.prod || 0; L.stole += st.stole || 0; L.vpTotal += Engine.vp(s, me, true);
+  // victorias según el nivel más alto de bot que había en la mesa
+  const top = Math.max(0, ...r.seats.filter((x) => x.kind === 'bot').map((x) => x.level));
+  if (top) { const b = L.byLevel[top] || { g: 0, w: 0 }; b.g++; if (won) b.w++; L.byLevel[top] = b; }
+  LocalStats.set(L);
+}
+function statsGrid(p, extra) {
+  const pct = p.games ? Math.round((p.wins / p.games) * 100) : 0;
+  const stat = (n, l) => `<div class="pf-st"><b>${n}</b><small>${l}</small></div>`;
+  return `<div class="pf-stats">${stat(p.games, 'Partidas')}${stat(p.wins, 'Victorias')}${stat(pct + '%', 'Ganadas')}${stat(p.best, 'Mejor racha')}${stat(p.prod, 'Producidas')}${stat(p.stole, 'Robadas')}${stat(p.games ? (p.vpTotal / p.games).toFixed(1) : '0', 'Puntos/partida')}${extra || ''}</div>`;
+}
+function localStatsHTML() {
+  const L = LocalStats.get();
+  const won = [1, 2, 3, 4].filter((l) => L.byLevel[l] && L.byLevel[l].w);
+  const bestWon = won.length ? Math.max(...won) : 0;
+  const lv = [1, 2, 3, 4].filter((l) => L.byLevel[l]).map((l) => `<span class="rchip">${'★'.repeat(l)} ${L.byLevel[l].w}/${L.byLevel[l].g}</span>`).join('');
+  return `<div class="pf-sec local"><h4 class="pf-sec-t">🤖 Partidas locales <small class="muted">contra bots, sin conexión · no dan experiencia</small></h4>
+    ${L.games ? statsGrid(L, `<div class="pf-st"><b>${bestWon ? '★'.repeat(bestWon) : '—'}</b><small>Mejor bot ganado</small></div>`) + (lv ? `<div class="rr-mini"><small class="muted">Victorias según el nivel de bot más alto:</small>${lv}</div>` : '') : '<p class="muted">Todavía no has terminado ninguna partida local.</p>'}</div>`;
+}
+
 // jugadores con los que has coincidido (ficha guardada tal como estaba y resultados entre vosotros)
 const Recents = {
   all() { try { return JSON.parse(store.get('hx_recent', '{}')) || {}; } catch (e) { return {}; } },
@@ -198,7 +233,8 @@ function profCardHTML(p, av) {
   return `<div class="pf-card" style="--rk:${rk.color}">
       <div class="pf-head">${emblemHTML(p, 'big', av)}<div class="pf-id"><b>${esc(p.name)}</b><span class="pf-rank">${rk.name} · Nivel ${pr.lvl}</span>
         <div class="pf-xp"><i style="width:${pr.pct}%"></i></div><small class="muted">${pr.into} / ${pr.need} de experiencia para el nivel ${pr.lvl + 1}</small></div></div>
-      <div class="pf-stats">${stat(p.games, 'Partidas')}${stat(p.wins, 'Victorias')}${stat(pct + '%', 'Ganadas')}${stat(p.best, 'Mejor racha')}${stat(p.prod, 'Producidas')}${stat(p.stole, 'Robadas')}${stat(p.games ? (p.vpTotal / p.games).toFixed(1) : '0', 'Puntos/partida')}${stat(p.ach.length + '/' + Profile.ACH.length, 'Logros')}</div>
+      <h4 class="pf-sec-t">🌐 Partidas online <small class="muted">dan experiencia y logros</small></h4>
+      ${statsGrid(p, stat(p.ach.length + '/' + Profile.ACH.length, 'Logros'))}
     </div>`;
 }
 function achHTML(p) {
@@ -242,6 +278,7 @@ function renderProfileModal(m, box) {
     box.innerHTML = `<div class="row between"><h2>Tu perfil</h2><button class="btn small ghost" data-close>Cerrar</button></div>
       ${App.profileBad ? '<p class="rr-warn">El servidor no ha podido comprobar este perfil. Si tienes un enlace de recuperación, ábrelo.</p>' : ''}
       ${profCardHTML(Object.assign({}, p, { name: App.name }), Avatar.get())}
+      ${localStatsHTML()}
       <h4 class="tr-sub">Foto de perfil</h4>
       <div class="av-row">${Avatar.get() ? `<img class="av-prev" src="${Avatar.get()}" alt="Tu foto">` : '<span class="av-prev none">📷</span>'}
         <div class="av-txt"><small class="muted">Se verá en la sala, en la partida y en tu ficha. Se recorta en cuadrado y se guarda en este navegador.</small>
