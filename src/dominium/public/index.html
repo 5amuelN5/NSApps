@@ -30,6 +30,7 @@
     <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></symbol>
     <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5 8 12l7 7"/></symbol>
     <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></symbol>
+    <symbol id="i-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01"/></symbol>
     <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></symbol>
   </svg>
 
@@ -97,6 +98,7 @@
           <h2 class="panel-title">Mapa</h2>
           <div id="map-pick" class="map-pick"></div>
           <div id="map-preview" class="map-preview"></div>
+          <div id="map-legend" class="map-legend"></div>
         </div>
 
         <div class="panel">
@@ -131,6 +133,7 @@
           <button class="btn tiny" id="btn-sound" title="Sonido" aria-label="Sonido"><svg class="ic"><use href="#i-sound"/></svg></button>
           <button class="btn tiny" id="btn-side" title="Registro y chat" aria-label="Registro y chat"><svg class="ic"><use href="#i-chat"/></svg></button>
         </div>
+        <div class="power" id="power" aria-label="Reparto del mapa"></div>
       </header>
 
       <aside class="side side-left" id="players-panel"></aside>
@@ -142,6 +145,8 @@
           <button class="btn tiny" data-zoom="out" aria-label="Alejar"><svg class="ic"><use href="#i-minus"/></svg></button>
           <button class="btn tiny" data-zoom="fit" aria-label="Ver todo el mapa"><svg class="ic"><use href="#i-fit"/></svg></button>
         </div>
+        <div class="vignette" aria-hidden="true"></div>
+        <div id="turn-card" class="turn-card" aria-live="polite"></div>
         <div id="tooltip" class="tooltip"></div>
         <div id="banner" class="banner"></div>
         <div id="dice-tray" class="dice-tray"></div>
@@ -166,6 +171,10 @@
         <div class="ab-left">
           <button class="btn cards-btn" id="btn-cards"><svg class="ic"><use href="#i-card"/></svg>Cartas <span id="cards-count" class="pill">0</span></button>
           <button class="btn" id="btn-mission" hidden><svg class="ic"><use href="#i-target"/></svg>Misión</button>
+          <div class="emote-wrap">
+            <button class="btn" id="btn-emote" title="Reacciones" aria-label="Reacciones"><svg class="ic"><use href="#i-smile"/></svg></button>
+            <div class="emote-pop" id="emote-pop" role="menu"></div>
+          </div>
         </div>
         <div class="ab-center" id="ab-center"></div>
         <div class="ab-right" id="ab-right"></div>

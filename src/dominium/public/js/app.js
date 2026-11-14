@@ -315,7 +315,7 @@ async function renderLobby() {
       ? `${s.isHost ? '<span class="tag host">Anfitrión</span>' : s.ready ? '<span class="tag ready">Listo</span>' : '<span class="tag">Esperando</span>'}${!s.connected ? '<span class="tag off">Sin conexión</span>' : ''}`
       : '<span class="tag">Bot</span>';
     const kick = host && !mine ? `<button class="x" data-kick="${i}" title="Quitar de la sala" aria-label="Quitar">×</button>` : '';
-    return `<li class="slot ${mine ? 'me' : ''}"><span class="sw" style="background:${s.color}" data-color="${i}" title="Cambiar color"></span>
+    return `<li class="slot ${mine ? 'me' : ''}"><span class="sw" style="background:${s.color}" data-color="${i}" title="Cambiar color">${esc(initial(s.name))}</span>
       <span class="nm">${esc(s.name)}${mine ? ' (tú)' : ''}</span>${tags}${lvl}${kick}</li>`;
   }).join('') + (room.slots.length < 2 ? '<li class="muted">Añade bots o invita amigos con el código.</li>' : '');
   $$('[data-lvl]').forEach((s) => (s.onchange = () => send({ type: 'botLevel', slot: Number(s.dataset.lvl), level: s.value })));
@@ -337,7 +337,11 @@ async function renderLobby() {
   if (lobbyMapShown !== room.mapId) {
     lobbyMapShown = room.mapId;
     const id = room.mapId;
-    getMap(id).then(({ map }) => { if (lobbyMapShown === id) renderPreview($('#map-preview'), map); });
+    getMap(id).then(({ map }) => {
+      if (lobbyMapShown !== id) return;
+      renderPreview($('#map-preview'), map);
+      $('#map-legend').innerHTML = map.regions.map((r) => `<span><i style="background:${r.color}"></i>${esc(r.name)} <b>+${r.bonus}</b></span>`).join('');
+    });
   }
 
   if (rebuild) $('#settings').innerHTML = SETTING_DEFS.map(([k, label, opts]) => `<label for="set-${k}">${label}</label>
@@ -366,12 +370,24 @@ function pickColor(slot) {
 // ------------------------------------------------------------ PARTIDA
 const KIND_ICON = ['🪖', '🐎', '💣', '⭐'];
 const IC = (name) => `<svg class="ic"><use href="#i-${name}"/></svg>`;
+const initial = (name) => (String(name || '?').trim()[0] || '?').toUpperCase();
+const BASE_TITLE = document.title;
+let titleT = null;
+function notifyTurn() {
+  if (!document.hidden || titleT) return;
+  let on = false;
+  titleT = setInterval(() => { on = !on; document.title = on ? 'Tu turno · Dominium' : BASE_TITLE; }, 1000);
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && titleT) { clearInterval(titleT); titleT = null; document.title = BASE_TITLE; }
+});
 const PHASE_TXT = { claim: 'Reclamar', setup: 'Despliegue', reinforce: 'Refuerzo', attack: 'Ataque', conquer: 'Conquista', fortify: 'Fortificar', over: 'Fin' };
 
 const game = {
   view: null, map: null, graph: null, mapId: null, loading: null,
   lastSeq: 0, startedAt: null,
-  ui: { sel: -1, target: -1, dice: 3, amount: '1', regions: false, chatSeen: 0, hoverT: -1 },
+  ui: { sel: -1, target: -1, dice: 3, amount: '1', regions: false, chatSeen: 0, hoverT: -1, emoteSeen: Date.now() },
+  emotes: {},
 
   reset() { this.startedAt = null; this.lastSeq = 0; this.ui.sel = -1; this.ui.target = -1; },
 
@@ -455,12 +471,14 @@ const game = {
         case 'battle': {
           this.showDice(ev);
           sfx.dice();
+          this.view.flashArrow(ev.from, ev.to, g.players[ev.p].color);
           setTimeout(() => {
             if (ev.aLoss) this.floater(ev.from, `-${ev.aLoss}`, 'neg');
             if (ev.dLoss) this.floater(ev.to, `-${ev.dLoss}`, 'neg');
             sfx.hit();
             if (ev.conquered) {
               this.view.flash(ev.to);
+              this.view.ripple(ev.to, g.players[ev.p].color);
               this.floater(ev.to, 'Conquistado', 'big');
               if (ev.def === me) { sfx.lose(); $('#map-area').classList.remove('shake'); void $('#map-area').offsetWidth; $('#map-area').classList.add('shake'); }
               else sfx.conquer();
@@ -471,13 +489,13 @@ const game = {
         case 'place': if (ev.n) { this.floater(ev.t, `+${ev.n}`, 'pos'); if (ev.p === me) sfx.place(); } break;
         case 'claim': this.view.flash(ev.t); if (ev.p === me) sfx.place(); break;
         case 'move': if (ev.p === me) { this.ui.sel = g.armies[ev.to] >= 2 && this.graph.adj[ev.to].some((n) => g.owners[n] !== me) ? ev.to : (g.armies[ev.from] >= 2 ? ev.from : -1); this.ui.target = -1; } break;
-        case 'fortify': this.floater(ev.to, `+${ev.n}`, 'pos'); this.floater(ev.from, `-${ev.n}`, 'neg'); if (ev.p === me) sfx.place(); break;
+        case 'fortify': this.view.flashArrow(ev.from, ev.to, g.players[ev.p].color); this.floater(ev.to, `+${ev.n}`, 'pos'); this.floater(ev.from, `-${ev.n}`, 'neg'); if (ev.p === me) sfx.place(); break;
         case 'trade': this.banner(`${g.players[ev.p].name} canjea cartas: +${ev.value} ejércitos`, false); sfx.trade(); if (ev.bonusT >= 0) this.floater(ev.bonusT, '+2', 'pos'); break;
         case 'card': if (ev.p === me) { toast('Has ganado una carta', true); sfx.card(); } break;
         case 'turn': {
           const mine = ev.p === me;
-          this.banner(mine ? `Tu turno: recibes ${ev.reinforcements} refuerzos` : `Turno de ${g.players[ev.p].name}`, true);
-          if (mine) { sfx.turn(); this.focusMine(); }
+          this.turnCard(ev);
+          if (mine) { sfx.turn(); this.focusMine(); notifyTurn(); }
           break;
         }
         case 'eliminated': this.banner(`${g.players[ev.p].name} ha sido eliminado`, true); sfx.eliminated(); break;
@@ -513,6 +531,25 @@ const game = {
     this.bannerT = setTimeout(() => { b.textContent = ''; this.renderBannerHint(); }, 2300);
   },
 
+  turnCard(ev) {
+    const g = this.g, p = g.players[ev.p], mine = ev.p === this.me;
+    const card = $('#turn-card');
+    let sub;
+    if (mine) {
+      const parts = [`${ev.base} por ${ev.territories} territorios`];
+      for (const ri of ev.regions || []) parts.push(`${this.graph.regions[ri].bonus} por ${this.graph.regions[ri].name}`);
+      sub = `Recibes ${ev.reinforcements} refuerzos: ${parts.join(', ')}`;
+    } else sub = `Recibe ${ev.reinforcements} refuerzos`;
+    card.innerHTML = `<div class="tc-av" style="background:${p.color}">${esc(initial(p.name))}</div>
+      <div class="tc-txt"><b>${mine ? 'Tu turno' : `Turno de ${esc(p.name)}`}</b><span>${esc(sub)}</span></div>`;
+    card.style.setProperty('--pc', p.color);
+    card.className = 'turn-card';
+    void card.offsetWidth;
+    card.className = `turn-card show${mine ? ' mine' : ''}`;
+    clearTimeout(this.turnCardT);
+    this.turnCardT = setTimeout(() => { card.className = 'turn-card'; }, mine ? 2600 : 1600);
+  },
+
   renderBannerHint() {
     // banner persistente para fases de preparación
     const b = $('#banner');
@@ -525,16 +562,19 @@ const game = {
     const pips = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
     const die = (v, cls, res) => `<div class="die ${cls} ${res}">${Array.from({ length: 9 }, (_, i) => (pips[v].includes(i) ? '<i></i>' : '<span></span>')).join('')}</div>`;
     const pairs = Math.min(last.a.length, last.d.length);
+    const att = g.players[ev.p], def = g.players[ev.def] || { name: '', color: '#7d8899' };
     const aDice = last.a.map((v, i) => die(v, 'att', i < pairs ? (v > last.d[i] ? 'win' : 'lose') : '')).join('');
     const dDice = last.d.map((v, i) => die(v, 'def', i < pairs ? (v >= last.a[i] ? 'win' : 'lose') : '')).join('');
-    const defName = g.players[ev.def]?.name || '';
     const tray = $('#dice-tray');
-    tray.innerHTML = `<div class="dice-side"><div class="who" style="color:${g.players[ev.p].color}">${esc(g.players[ev.p].name)}</div><div class="dice-row">${aDice}</div></div>
-      <div class="dice-res"><div class="dice-vs">VS</div>${ev.nRolls > 1 ? `${ev.nRolls} tiradas<br>` : ''}-${ev.aLoss} / -${ev.dLoss}</div>
-      <div class="dice-side"><div class="who" style="color:${g.players[ev.def]?.color}">${esc(defName)}</div><div class="dice-row">${dDice}</div></div>`;
+    tray.style.setProperty('--ac', att.color);
+    tray.style.setProperty('--dc', def.color);
+    const verdict = ev.conquered ? `<b class="ok">${esc(this.graph.names[ev.to])} conquistado</b>` : `<span>Atacante −${ev.aLoss}</span><span>Defensor −${ev.dLoss}</span>`;
+    tray.innerHTML = `<div class="dice-side"><div class="who" style="color:${att.color}">${esc(att.name)}</div><div class="where">${esc(this.graph.names[ev.from])}</div><div class="dice-row">${aDice}</div></div>
+      <div class="dice-res"><div class="dice-vs">vs</div>${ev.nRolls > 1 ? `<small>${ev.nRolls} tiradas</small>` : ''}${verdict}</div>
+      <div class="dice-side"><div class="who" style="color:${def.color}">${esc(def.name)}</div><div class="where">${esc(this.graph.names[ev.to])}</div><div class="dice-row">${dDice}</div></div>`;
     tray.classList.add('show');
     clearTimeout(this.diceT);
-    this.diceT = setTimeout(() => tray.classList.remove('show'), 1900);
+    this.diceT = setTimeout(() => tray.classList.remove('show'), 2200);
   },
 
   // ---------------------------------------------------------- paneles
@@ -548,6 +588,10 @@ const game = {
       li.classList.toggle('on', i === idx);
       li.classList.toggle('done', idx >= 0 && i < idx);
     });
+    const counts = g.players.map(() => 0);
+    for (const o of g.owners) if (o >= 0) counts[o]++;
+    const total = this.graph.n;
+    $('#power').innerHTML = g.players.map((p, i) => (counts[i] ? `<i style="width:${(counts[i] / total) * 100}%;background:${p.color}" title="${esc(p.name)}: ${Math.round((counts[i] / total) * 100)}% del mapa"></i>` : '')).join('');
   },
 
   renderPlayers() {
@@ -561,9 +605,15 @@ const game = {
       const tag = p.neutral ? 'Neutral' : p.bot ? (BOT_LEVELS.find((l) => l.id === p.bot)?.name || 'Bot')
         : slot?.left ? 'Se fue' : slot?.afk ? 'Ausente' : !slot?.connected ? 'Sin conexión' : i === this.me ? 'Tú' : '';
       const rb = p.alive ? reinforcementBreakdown(graph, g, i) : null;
+      const share = Math.round((terr.length / totalT) * 100);
+      const thinking = isCur && (p.bot || slot?.afk || slot?.left) && g.phase !== 'setup';
+      const em = this.emotes[i];
       return `<div class="pcard ${isCur ? 'current' : ''} ${p.alive ? '' : 'dead'}" style="--pc:${p.color}" title="${esc(p.name)}">
-        <div class="pn">${esc(p.name)} ${tag ? `<small>${tag}</small>` : ''}${p.alive ? '' : '<small>Eliminado</small>'}</div>
-        <div class="ps"><span title="Territorios">${IC('flag')}${terr.length}</span><span title="Ejércitos">${IC('army')}${armies}</span>${p.neutral ? '' : `<span title="Cartas">${IC('card')}${p.cardCount}</span>`}${rb && !p.neutral && g.phase !== 'claim' && g.phase !== 'setup' ? `<span title="Refuerzos por turno">${IC('plusarmy')}${rb.total}</span>` : ''}${g.phase === 'setup' && !p.neutral && g.pool[i] > 0 ? `<span title="Por desplegar">${IC('hourglass')}${g.pool[i]}</span>` : ''}</div>
+        ${em && em.until > Date.now() ? `<span class="bubble">${em.e}</span>` : ''}
+        <div class="ptop"><span class="av" style="background:${p.color}">${esc(initial(p.name))}</span>
+        <div class="pn">${esc(p.name)}</div>
+        ${thinking ? '<span class="dots"><i></i><i></i><i></i></span>' : p.alive && !p.neutral ? `<span class="share">${share}%</span>` : ''}</div>
+        <div class="ps">${tag || !p.alive ? `<em class="ptag">${p.alive ? tag : 'Eliminado'}</em>` : ''}<span title="Territorios">${IC('flag')}${terr.length}</span><span title="Ejércitos">${IC('army')}${armies}</span>${p.neutral ? '' : `<span title="Cartas">${IC('card')}${p.cardCount}</span>`}${rb && !p.neutral && g.phase !== 'claim' && g.phase !== 'setup' ? `<span title="Refuerzos por turno">${IC('plusarmy')}${rb.total}</span>` : ''}${g.phase === 'setup' && !p.neutral && g.pool[i] > 0 ? `<span title="Por desplegar">${IC('hourglass')}${g.pool[i]}</span>` : ''}</div>
         <div class="bar"><i style="width:${(terr.length / totalT) * 100}%"></i></div></div>`;
     }).join('');
     $('#players-panel').innerHTML = html;
@@ -573,7 +623,13 @@ const game = {
     const g = this.g;
     const box = $('#game-log');
     const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-    box.innerHTML = g.log.slice(-80).map((l) => `<div style="--lc:${l.p != null && l.p >= 0 ? g.players[l.p]?.color : 'var(--parch-3)'}">${esc(l.text)}</div>`).join('');
+    const names = g.players.map((p) => [esc(p.name), p.color]).filter(([n]) => n).sort((a, b) => b[0].length - a[0].length);
+    const paint = (txt) => {
+      let out = esc(txt);
+      for (const [n, c] of names) out = out.split(n).join(`<b style="color:${c}">${n}</b>`);
+      return out;
+    };
+    box.innerHTML = g.log.slice(-80).map((l) => `<div style="--lc:${l.p != null && l.p >= 0 ? g.players[l.p]?.color : 'var(--line)'}">${paint(l.text)}</div>`).join('');
     if (atBottom) box.scrollTop = box.scrollHeight;
   },
 
@@ -597,6 +653,16 @@ const game = {
 
   renderChat() {
     const chat = S.room.chat;
+    let fresh = false;
+    for (const m of chat) {
+      if (!m.emote || m.ts <= this.ui.emoteSeen) continue;
+      this.ui.emoteSeen = m.ts;
+      if (Date.now() - m.ts > 6000) continue;
+      this.emotes[m.slot] = { e: m.text, until: Date.now() + 3200 };
+      fresh = true;
+      setTimeout(() => this.renderPlayers(), 3300);
+    }
+    if (fresh) this.renderPlayers();
     renderChat($('#game-chat'), chat);
     const active = $('[data-tab="chat"]').classList.contains('active') && ($('#side-right').classList.contains('open') || getComputedStyle($('#side-right')).position !== 'fixed');
     const last = chat.length ? chat[chat.length - 1].ts : 0;
@@ -612,6 +678,7 @@ const game = {
     const hand = myP?.cards || [];
     $('#cards-count').textContent = hand.length;
     $('#btn-cards').style.display = me >= 0 ? '' : 'none';
+    $('#btn-emote').style.display = me >= 0 ? '' : 'none';
     const canTrade = this.isMyTurn() && g.phase === 'reinforce' && validSets(hand).length > 0;
     $('#btn-cards').classList.toggle('alert', canTrade);
     $('#btn-mission').hidden = !(myP?.mission && !myP.mission.hidden);
@@ -764,6 +831,11 @@ const game = {
   applyHighlights() {
     const g = this.g, ui = this.ui, me = this.me;
     if (!g || !this.view) return;
+    this.view.setAim(g.phase === 'attack' && ui.sel >= 0 && ui.target >= 0 && this.isMyTurn() ? ui.sel : -1, ui.target, g.players[me]?.color);
+    if (this.isMyTurn() && (g.phase === 'reinforce' || g.phase === 'setup')) {
+      this.view.highlight({ keep: territoriesOf(g, me) });
+      return;
+    }
     if (!this.isMyTurn()) {
       const pend = g.phase === 'conquer' && g.pending ? g.pending : null;
       this.view.highlight({ sel: pend ? pend.from : -1, targets: pend ? [pend.to] : [] });
@@ -787,6 +859,12 @@ const game = {
   hover(t, x, y) {
     const tip = $('#tooltip');
     const g = this.g;
+    // vista previa de la flecha de ataque
+    if (g && this.isMyTurn() && g.phase === 'attack' && this.ui.target < 0) {
+      const sel = this.ui.sel;
+      if (sel >= 0 && t >= 0 && g.owners[t] !== this.me && this.graph.adj[sel].includes(t)) this.view.setAim(sel, t, g.players[this.me].color);
+      else this.view.setAim(-1, -1);
+    }
     if (t < 0 || !g) { tip.style.display = 'none'; return; }
     const o = g.owners[t];
     const reg = this.graph.regions[this.graph.regionOf[t]];
@@ -806,7 +884,13 @@ const game = {
   // ---------------------------------------------------------- modales de juego
   maybeModals() {
     const g = this.g;
-    if (g.phase === 'conquer' && this.isMyTurn() && g.pending && modalKind !== 'move') this.openMove();
+    if (g.phase === 'conquer' && this.isMyTurn() && g.pending && modalKind !== 'move' && !this.moveT) {
+      // deja ver los dados y la onda de conquista antes de pedir el movimiento
+      this.moveT = setTimeout(() => {
+        this.moveT = null;
+        if (this.g?.phase === 'conquer' && this.isMyTurn() && this.g.pending && modalKind !== 'move') this.openMove();
+      }, 950);
+    }
     if (g.phase !== 'conquer' && modalKind === 'move') closeModal();
     if (modalKind === 'fortify' && (!this.isMyTurn() || !['attack', 'fortify'].includes(g.phase))) closeModal();
     if (modalKind === 'cards' && g.phase === 'over') closeModal();
@@ -885,6 +969,22 @@ const game = {
     };
   },
 
+  historyChart() {
+    const g = this.g, H = g.history || [];
+    if (H.length < 2) return '';
+    const W = 520, HT = 170, pad = 26, max = Math.max(...H.flat(), 1);
+    const x = (i) => pad + (i / (H.length - 1)) * (W - pad - 8);
+    const y = (v) => HT - 20 - (v / max) * (HT - 34);
+    const lines = g.players.map((p, pi) => {
+      const pts = H.map((row, i) => `${x(i).toFixed(1)},${y(row[pi] || 0).toFixed(1)}`).join(' ');
+      return `<polyline points="${pts}" fill="none" stroke="${p.color}" stroke-width="${pi === g.winner ? 3 : 2}" stroke-linejoin="round" stroke-linecap="round" opacity="${pi === g.winner ? 1 : 0.75}"/>`;
+    }).join('');
+    const grid = [0.25, 0.5, 0.75, 1].map((f) => `<line x1="${pad}" x2="${W - 8}" y1="${y(max * f)}" y2="${y(max * f)}" stroke="rgba(150,180,210,.12)"/><text x="${pad - 6}" y="${y(max * f) + 4}" text-anchor="end">${Math.round(max * f)}</text>`).join('');
+    return `<figure class="chart"><figcaption>Territorios de cada jugador a lo largo de la partida</figcaption>
+      <svg viewBox="0 0 ${W} ${HT}" role="img" aria-label="Evolución de territorios por turno">${grid}${lines}
+      <text x="${pad}" y="${HT - 4}">Turno 1</text><text x="${W - 8}" y="${HT - 4}" text-anchor="end">Turno ${H.length}</text></svg></figure>`;
+  },
+
   showMission() {
     const g = this.g, me = this.me;
     const m = g.players[me]?.mission;
@@ -907,9 +1007,10 @@ const game = {
     }).join('');
     const isWinner = g.winner === this.me;
     modalKind = 'over';
-    openModal(`<div class="winner"><h3>${isWinner ? 'Has ganado' : `Gana ${esc(w.name)}`}</h3><p>${esc(g.winReason || '')}</p></div>
+    openModal(`<div class="winner"><h3>${isWinner ? 'Has ganado' : `Gana ${esc(w.name)}`}</h3><p>${esc(g.winReason || '')}</p></div>${this.historyChart()}
       <table class="stats"><tr><th>Jugador</th><th>Territorios</th><th>Conquistas</th><th>Eliminados</th><th>Bajas hechas / sufridas</th><th>Canjes</th></tr>${rows}</table>
       <div class="modal-actions"><button class="btn" id="go-map">Ver el mapa</button><button class="btn" id="go-menu">Salir al menú</button>${S.you.isHost ? '<button class="btn btn-gold" id="go-again">Jugar la revancha</button>' : ''}</div>`);
+    confetti(w.color);
     $('#go-map').onclick = closeModal;
     $('#go-menu').onclick = async () => { await send({ type: 'leave' }).catch(() => {}); leaveToMenu(); };
     const again = $('#go-again'); if (again) again.onclick = () => send({ type: 'rematch' });
@@ -934,6 +1035,11 @@ const game = {
 
 // ------------------------------------------------------------ controles de partida
 $('#btn-cards').onclick = () => { sfx.click(); game.openCards(); };
+const EMOTES = ['👍', '😂', '😮', '😡', '🤝', '👏', '😭', '🔥'];
+$('#emote-pop').innerHTML = EMOTES.map((e, i) => `<button data-emote="${i}" aria-label="Reacción ${e}">${e}</button>`).join('');
+$('#btn-emote').onclick = (ev) => { ev.stopPropagation(); $('#emote-pop').classList.toggle('open'); };
+$$('[data-emote]').forEach((b) => (b.onclick = () => { send({ type: 'emote', e: Number(b.dataset.emote) }).catch(() => {}); $('#emote-pop').classList.remove('open'); }));
+document.addEventListener('click', (e) => { if (!e.target.closest('#emote-pop')) $('#emote-pop').classList.remove('open'); });
 $('#btn-mission').onclick = () => game.showMission();
 $('#btn-menu').onclick = () => game.showMenu();
 const setSoundIcon = () => { $('#btn-sound').innerHTML = IC(sfx.muted ? 'mute' : 'sound'); };
@@ -957,6 +1063,7 @@ document.addEventListener('keydown', (e) => {
   if (e.target.matches('input, select, textarea')) return;
   const g = S?.game; if (!g) return;
   const k = e.key.toLowerCase();
+  if (k === '?') { showRules(); return; }
   if (k === 'escape') { if (!$('#modal').hidden && $('#modal')._dismiss) closeModal(); game.ui.sel = -1; game.ui.target = -1; game.renderActionBar(); game.applyHighlights(); }
   if (!$('#modal').hidden) { if (k === 'enter' && modalKind === 'move') $('#mv-ok')?.click(); return; }
   if (!game.isMyTurn()) return;
@@ -983,6 +1090,36 @@ setInterval(() => {
   if (left < 10 && left > 0 && game.isMyTurn() && Math.floor(left) !== game._lastTick) { game._lastTick = Math.floor(left); sfx.tick(); }
 }, 250);
 
+// ------------------------------------------------------------ confeti de victoria
+function confetti(color) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const cv = document.createElement('canvas');
+  cv.className = 'confetti';
+  cv.width = innerWidth; cv.height = innerHeight;
+  document.body.appendChild(cv);
+  const ctx = cv.getContext('2d');
+  const cols = [color, '#f2b33d', '#e7edf4', color];
+  const parts = Array.from({ length: 160 }, () => ({
+    x: innerWidth / 2 + (Math.random() - 0.5) * 200, y: innerHeight * 0.35,
+    vx: (Math.random() - 0.5) * 14, vy: -Math.random() * 14 - 4,
+    w: 6 + Math.random() * 6, h: 3 + Math.random() * 4, r: Math.random() * 6, vr: (Math.random() - 0.5) * 0.3,
+    c: cols[Math.floor(Math.random() * cols.length)],
+  }));
+  const t0 = performance.now();
+  (function frame(t) {
+    const el = t - t0;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    for (const q of parts) {
+      q.vy += 0.32; q.vx *= 0.99; q.x += q.vx; q.y += q.vy; q.r += q.vr;
+      ctx.save(); ctx.translate(q.x, q.y); ctx.rotate(q.r);
+      ctx.globalAlpha = Math.max(0, 1 - el / 3800);
+      ctx.fillStyle = q.c; ctx.fillRect(-q.w / 2, -q.h / 2, q.w, q.h);
+      ctx.restore();
+    }
+    if (el < 3800) requestAnimationFrame(frame); else cv.remove();
+  })(t0);
+}
+
 // ------------------------------------------------------------ fondo del menú
 async function renderMenuBg() {
   try {
@@ -996,8 +1133,17 @@ async function renderMenuBg() {
     const regIdx = Object.fromEntries(map.regions.map((r, i) => [r.id, i]));
     svg.innerHTML = `<rect x="-40" y="-40" width="${map.width + 80}" height="${map.height + 80}" fill="#16233a"/>
       ${[30, 18, 8].map((w, i) => `<path d="${all}" fill="none" stroke="rgba(140,180,215,${0.05 + i * 0.03})" stroke-width="${w}" stroke-linejoin="round"/>`).join('')}
-      ${map.territories.map((t) => `<path d="${t.path}" fill="${tones[regIdx[t.region] % tones.length]}" stroke="#16233a" stroke-width="1.2"/>`).join('')}`;
+      ${map.territories.map((t, i) => `<path data-t="${i}" d="${t.path}" fill="${tones[regIdx[t.region] % tones.length]}" stroke="#16233a" stroke-width="1.2"/>`).join('')}`;
     $('#menu-bg').appendChild(svg);
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const paths = [...svg.querySelectorAll('path[data-t]')];
+    const cols = PLAYER_COLORS.slice(0, 5).map((c) => c.hex);
+    paths.forEach((pth) => { if (Math.random() < 0.55) pth.setAttribute('fill', cols[Math.floor(Math.random() * cols.length)]); });
+    setInterval(() => {
+      if (!$('#screen-menu').classList.contains('active') || document.hidden) return;
+      const pth = paths[Math.floor(Math.random() * paths.length)];
+      pth.setAttribute('fill', cols[Math.floor(Math.random() * cols.length)]);
+    }, 900);
   } catch { /* sin fondo */ }
 }
 renderMenuBg();

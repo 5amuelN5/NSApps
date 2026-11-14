@@ -251,6 +251,17 @@ function handleAction(room, cid, msg) {
       if (room.chat.length > 80) room.chat.splice(0, room.chat.length - 80);
       return;
     }
+    case 'emote': {
+      const EMOTES = ['👍', '😂', '😮', '😡', '🤝', '👏', '😭', '🔥'];
+      const e = EMOTES[msg.e];
+      if (!e || !me) return;
+      const now = Date.now();
+      if (now - (me.lastEmote || 0) < 1200) return;
+      me.lastEmote = now;
+      room.chat.push({ name: me.name, color: me.color, text: e, emote: true, slot: si, ts: now });
+      if (room.chat.length > 80) room.chat.splice(0, room.chat.length - 80);
+      return;
+    }
     case 'setMap': needHost(); needLobby(); if (!MAPS.has(msg.mapId)) throw new Error('Mapa desconocido'); room.mapId = msg.mapId; return;
     case 'setSettings': {
       needHost(); needLobby();

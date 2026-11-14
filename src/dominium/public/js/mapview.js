@@ -47,6 +47,12 @@ export class MapView {
     el('rect', { x: -W * 2, y: -H * 2, width: W * 5, height: H * 5, fill: SEA }, this.vp);
     const allPaths = map.territories.map((t) => t.path).join(' ');
     const coast = allPaths + ' ' + (map.decor || '');
+    // meridianos y paralelos decorativos
+    const grid = [];
+    for (let i = 1; i < 12; i++) grid.push(`M${(W * i) / 12} ${-H} V${H * 2}`);
+    for (let i = 1; i < 8; i++) grid.push(`M${-W} ${(H * i) / 8} H${W * 2}`);
+    el('path', { d: grid.join(' '), stroke: 'rgba(150,190,225,.055)', 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke', fill: 'none' }, this.vp);
+    this.drawCompass(map);
     // líneas de profundidad alrededor de las costas, como en una carta náutica
     [34, 22, 12].forEach((w, i) => el('path', { d: coast, fill: 'none', stroke: `rgba(150,190,225,${0.045 + i * 0.03})`, 'stroke-width': w, 'stroke-linejoin': 'round' }, this.vp));
     el('path', { d: coast, fill: 'rgba(4,9,18,.35)', transform: 'translate(0,2.5)' }, this.vp);
@@ -71,8 +77,14 @@ export class MapView {
 
     const terrG = el('g', {}, this.vp);
     this.paths = map.territories.map((t, i) => el('path', { d: t.path, class: 'terr', 'data-t': i, fill: UNOWNED, 'fill-rule': 'evenodd' }, terrG));
+    this.fxG = el('g', { class: 'fx' }, this.vp);
+    this.aim = null;
+    this.wrapPairs = new Set((map.links || []).filter((l) => l.wrap).flatMap((l) => [`${l.a}|${l.b}`, `${l.b}|${l.a}`]));
 
     this.badgeG = el('g', {}, this.vp);
+    // las flechas van por encima de las fichas (son indicadores momentáneos)
+    this.arrowG = el('g', { class: 'arrows' }, this.vp);
+    this.aimG = el('g', { class: 'arrows aim' }, this.vp);
     this.badges = map.territories.map((t) => {
       const g = el('g', { class: 'badge' }, this.badgeG);
       el('circle', { class: 'ring', r: 18 }, g);
@@ -190,10 +202,12 @@ export class MapView {
   setRegionMode(on) { this.regionMode = on; if (this.state) this.update(this.state, this._players || []); }
   setPlayers(players) { this._players = players; }
 
-  highlight({ sel = -1, targets = [], own = [], dim = false } = {}) {
+  highlight({ sel = -1, targets = [], own = [], dim = false, keep = null } = {}) {
     if (!this.map) return;
     const tset = new Set(targets), oset = new Set(own);
+    const kset = keep ? new Set(keep) : null;
     this.paths.forEach((p, i) => {
+      p.classList.toggle('soft', !!kset && !kset.has(i));
       p.classList.toggle('sel', i === sel);
       p.classList.toggle('target', tset.has(i));
       p.classList.toggle('target-own', oset.has(i));
@@ -271,6 +285,87 @@ export class MapView {
   apply() {
     this.vp.setAttribute('transform', `translate(${this.tx.toFixed(2)},${this.ty.toFixed(2)}) scale(${this.s.toFixed(5)})`);
     this.applyBadgeScale();
+    this.renderAim();
+  }
+
+  // ------------------------------------------------ efectos: rosa de los vientos, flechas y ondas
+  drawCompass(map) {
+    const W = map.width, H = map.height, m = 70;
+    const corners = [[m, m], [W - m, m], [m, H - m], [W - m, H - m]];
+    let best = corners[0], bestD = -1;
+    for (const [x, y] of corners) {
+      const d = Math.min(...map.territories.map((t) => Math.hypot(t.cx - x, t.cy - y)));
+      if (d > bestD) { bestD = d; best = [x, y]; }
+    }
+    const g = el('g', { transform: `translate(${best[0]},${best[1]})`, opacity: 0.38, class: 'compass' }, this.vp);
+    el('circle', { r: 40, fill: 'none', stroke: 'rgba(170,200,230,.5)', 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }, g);
+    el('circle', { r: 30, fill: 'none', stroke: 'rgba(170,200,230,.3)', 'stroke-width': 1, 'stroke-dasharray': '2 4', 'vector-effect': 'non-scaling-stroke' }, g);
+    el('path', { d: 'M0 -48 L7 -7 L48 0 L7 7 L0 48 L-7 7 L-48 0 L-7 -7 Z', fill: 'rgba(170,200,230,.25)' }, g);
+    el('path', { d: 'M0 -48 L7 -7 L0 0 Z M48 0 L7 7 L0 0 Z M0 48 L-7 7 L0 0 Z M-48 0 L-7 -7 L0 0 Z', fill: 'rgba(225,235,245,.55)' }, g);
+    const n = el('text', { y: -54, 'text-anchor': 'middle', class: 'compass-n' }, g);
+    n.textContent = 'N';
+  }
+
+  drawArrow(g, a, b, color) {
+    const T = this.map.territories, s = this.s;
+    const A = { x: T[a].cx, y: T[a].cy }, B = { x: T[b].cx, y: T[b].cy };
+    const r = 15 / s;
+    const segs = [];
+    if (this.wrapPairs.has(`${T[a].id}|${T[b].id}`)) {
+      const W = this.map.width, left = A.x < B.x, my = (A.y + B.y) / 2;
+      segs.push([A, { x: left ? -40 : W + 40, y: my }, false]);
+      segs.push([{ x: left ? W + 40 : -40, y: my }, B, true]);
+    } else segs.push([A, B, true]);
+    for (const [P, Q, head] of segs) {
+      const dx = Q.x - P.x, dy = Q.y - P.y, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
+      const short = len * s < 70;
+      const so = short ? len * 0.12 : Math.min(r, len * 0.28), eo = short ? len * 0.12 : Math.min(r * 1.1, len * 0.28);
+      const st = head || segs.length === 1 ? { x: P.x + ux * so, y: P.y + uy * so } : P;
+      const st2 = segs.length === 2 && head ? P : st;
+      const en = head ? { x: Q.x - ux * eo, y: Q.y - uy * eo } : Q;
+      const bend = Math.max(len * 0.3, (short ? 46 : 22) / s);
+      const cx = (st2.x + en.x) / 2 - uy * bend, cy = (st2.y + en.y) / 2 + ux * bend;
+      const d = `M${st2.x} ${st2.y} Q${cx} ${cy} ${en.x} ${en.y}`;
+      el('path', { d, class: 'arrow-bg' }, g);
+      el('path', { d, class: 'arrow-fg', stroke: color }, g);
+      if (head) {
+        const hx = en.x - cx, hy = en.y - cy, hl = Math.hypot(hx, hy) || 1, vx = hx / hl, vy = hy / hl;
+        const L = 15 / s, Wd = 9 / s;
+        const tip = { x: en.x + vx * L * 0.35, y: en.y + vy * L * 0.35 };
+        const base = { x: tip.x - vx * L, y: tip.y - vy * L };
+        el('path', { d: `M${tip.x} ${tip.y} L${base.x - vy * Wd} ${base.y + vx * Wd} L${base.x + vy * Wd} ${base.y - vx * Wd} Z`, class: 'arrow-head', fill: color }, g);
+      }
+    }
+  }
+
+  setAim(from, to, color) {
+    this.aim = from >= 0 && to >= 0 ? { from, to, color } : null;
+    this.renderAim();
+  }
+
+  renderAim() {
+    if (!this.aimG) return;
+    this.aimG.innerHTML = '';
+    if (this.aim) this.drawArrow(this.aimG, this.aim.from, this.aim.to, this.aim.color);
+  }
+
+  flashArrow(from, to, color) {
+    if (!this.arrowG) return;
+    const g = el('g', { class: 'arrow-flash' }, this.arrowG);
+    this.drawArrow(g, from, to, color);
+    setTimeout(() => g.remove(), 1400);
+  }
+
+  ripple(t, color) {
+    if (!this.fxG || !this.map.territories[t]) return;
+    const { cx, cy } = this.map.territories[t], s = this.s;
+    [0, 0.25].forEach((delay) => {
+      const c = el('circle', { cx, cy, r: 12 / s, fill: 'none', stroke: color, 'stroke-width': 3, 'vector-effect': 'non-scaling-stroke', opacity: 0 }, this.fxG);
+      const a1 = el('animate', { attributeName: 'r', from: 12 / s, to: 80 / s, dur: '1s', begin: 'indefinite', fill: 'freeze' }, c);
+      const a2 = el('animate', { attributeName: 'opacity', values: '0;0.95;0', keyTimes: '0;0.15;1', dur: '1s', begin: 'indefinite', fill: 'freeze' }, c);
+      setTimeout(() => { try { a1.beginElement(); a2.beginElement(); } catch { /* */ } }, delay * 1000);
+      setTimeout(() => c.remove(), 1400);
+    });
   }
 
   applyBadgeScale() {

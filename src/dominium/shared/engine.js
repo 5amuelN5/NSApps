@@ -338,7 +338,7 @@ export class Game {
       pool: plist.map(() => init), initial: init,
       reinforcements: 0, conquered: false, pending: null, fortified: false,
       deck, discard: [], tradeCount: 0,
-      log: [], events: [], seq: 0, winner: null, winReason: null,
+      log: [], events: [], seq: 0, winner: null, winReason: null, history: [],
       startedAt: Date.now(), turnStartedAt: Date.now(),
     };
     const g = new Game(graph, state, rng);
@@ -525,8 +525,12 @@ export class Game {
     s.midTurnTrade = false;
     const rb = reinforcementBreakdown(this.graph, s, p);
     s.reinforcements = rb.total;
+    // historial de territorios por jugador (para la gráfica final)
+    s.history = s.history || [];
+    s.history.push(s.players.map((_, i) => territoriesOf(s, i).length));
+    if (s.history.length > 600) s.history.splice(0, s.history.length - 600);
     s.turnStartedAt = Date.now();
-    this.pushEvent({ type: 'turn', p, reinforcements: rb.total });
+    this.pushEvent({ type: 'turn', p, reinforcements: rb.total, base: rb.base, territories: rb.territories, regions: rb.regions });
     this.log(p, `Turno de ${this.name(p)}: recibe ${rb.total} refuerzos${rb.bonus ? ` (+${rb.bonus} por regiones)` : ''}.`);
   }
 
@@ -754,6 +758,8 @@ export class Game {
   declareWinner(p, reason) {
     const s = this.state;
     s.phase = 'over'; s.winner = p; s.winReason = reason; s.pending = s.pending || null;
+    s.history = s.history || [];
+    s.history.push(s.players.map((_, i) => territoriesOf(s, i).length));
     this.pushEvent({ type: 'win', p, reason });
     this.log(p, `🏆 ¡${this.name(p)} gana la partida! ${reason}`);
   }
@@ -795,6 +801,7 @@ export function viewFor(state, p) {
     deck: undefined,
     deckCount: state.deck.length,
     discard: undefined,
+    history: over ? state.history : undefined,
     players: state.players.map((pl, i) => ({
       ...pl,
       cards: i === p || over ? pl.cards : undefined,
