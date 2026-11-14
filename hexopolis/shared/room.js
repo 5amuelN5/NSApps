@@ -36,7 +36,7 @@
       return {
         code: this.code, name: this.name, isPublic: this.isPublic, creatorSeat: this.seats.findIndex((x) => x.kind === 'human' && x.token === this.creator), hostSeat: this.seats.findIndex((x) => x.kind === 'human' && x.token === this.host), local: this.local, speed: this.speed,
         started: !!this.state, over: !!(this.state && this.state.phase === 'gameOver'), rules: this.rules, max: E.maxSeats(this.rules),
-        seats: this.seats.map((s, i) => ({ i, kind: s.kind, name: s.name, level: s.level, connected: s.kind === 'bot' || s.connected, host: s.token === this.host, color: E.COLORS[i], prof: s.kind === 'human' && s.prof ? s.prof : null })),
+        seats: this.seats.map((s, i) => ({ i, kind: s.kind, name: s.name, level: s.level, connected: s.kind === 'bot' || s.connected, host: s.token === this.host, color: E.COLORS[i], prof: s.kind === 'human' && s.prof ? s.prof : null, avatar: s.kind === 'human' ? s.avatar || null : null })),
         spectators: [...this.spectators.values()].map((x) => x.name),
         rematch: this.seats.map((x, i) => (x.kind === 'human' && this.rematch && this.rematch.has(x.token) ? i : -1)).filter((i) => i >= 0),
         startedAt: this.startedAt, endedAt: this.endedAt,
@@ -57,13 +57,14 @@
         if (!this.host || this.creator === token && !this.seats.some((x) => x.kind === 'human' && x.token === this.host && x.connected)) this.host = token;
         seat.client = client; seat.connected = true; seat.discAt = null; seat.left = false; seat.name = name || seat.name;
         if (client && client.profile) seat.prof = client.profile;
+        if (client && client.avatar !== undefined) seat.avatar = client.avatar;
         this.sendRoom(); this.sendStateTo(i, []); this.schedule();
         return { ok: true };
       }
       // partida empezada, sala llena o quiere mirar: entra como espectador
       if (opts.watch || this.state || this.seats.length >= E.maxSeats(this.rules)) return this.watch(client, token, name);
       if (this.spectators.has(token)) this.spectators.delete(token); // un espectador ocupa un sitio libre
-      this.seats.push({ kind: 'human', token, name: name || 'Jugador', client, connected: true, prof: (client && client.profile) || null });
+      this.seats.push({ kind: 'human', token, name: name || 'Jugador', client, connected: true, prof: (client && client.profile) || null, avatar: (client && client.avatar) || null });
       if (!this.host) this.host = token;
       if (!this.creator) this.creator = token; // quien creó la sala (puede eliminarla aunque haya salido)
       this.sysChat(`${name} entra en la sala`);
@@ -330,7 +331,7 @@
       return {
         v: 1, code: this.code, name: this.name, isPublic: this.isPublic, local: this.local, speed: this.speed,
         host: this.host, creator: this.creator, rules: this.rules, startedAt: this.startedAt, lastTurn: this.lastTurn, chat: this.chat.slice(-30), state: this.state, savedAt: Date.now(),
-        seats: this.seats.map((x) => ({ kind: x.kind, token: x.token, name: x.name, level: x.level, left: !!x.left, prof: x.prof || null, acts: x.acts || 0, autoActs: x.autoActs || 0 })),
+        seats: this.seats.map((x) => ({ kind: x.kind, token: x.token, name: x.name, level: x.level, left: !!x.left, prof: x.prof || null, avatar: x.avatar || null, acts: x.acts || 0, autoActs: x.autoActs || 0 })),
       };
     }
     static fromSnapshot(snap, opts = {}) {
@@ -340,7 +341,7 @@
       r.speed = snap.speed || 1; r.rules = E.normRules(snap.rules || (snap.state && snap.state.rules)); r.host = snap.host; r.lastTurn = snap.lastTurn; r.chat = snap.chat || []; r.state = snap.state;
       // los humanos vuelven como desconectados: si alguien no regresa, un bot juega por él pasado el tiempo de gracia
       r.seats = snap.seats.map((x) => (x.kind === 'bot' ? { kind: 'bot', name: x.name, level: x.level, connected: true }
-        : { kind: 'human', token: x.token, name: x.name, connected: false, client: null, left: x.left, discAt: x.left ? now - AUTO_GRACE : now, prof: x.prof || null, acts: x.acts || 0, autoActs: x.autoActs || 0 }));
+        : { kind: 'human', token: x.token, name: x.name, connected: false, client: null, left: x.left, discAt: x.left ? now - AUTO_GRACE : now, prof: x.prof || null, avatar: x.avatar || null, acts: x.acts || 0, autoActs: x.autoActs || 0 }));
       r.restoredSeq = snap.state && snap.state.seq;
       if (!r.local) setTimeout(() => r.schedule(), AUTO_GRACE + 50);
       return r;

@@ -201,7 +201,7 @@ const LocalSave = {
   },
   clear() { clearTimeout(this.t); try { localStorage.removeItem('hx_local'); } catch (e) { /* */ } },
 };
-function localClient() { return { send: (m) => setTimeout(() => onMsg(JSON.parse(JSON.stringify(m))), 0) }; }
+function localClient() { return { send: (m) => setTimeout(() => onMsg(JSON.parse(JSON.stringify(m))), 0), avatar: typeof Avatar !== 'undefined' ? Avatar.get() : null }; }
 function resumeLocal() {
   const sv = LocalSave.get(); if (!sv) return startLocal();
   if (App.ws) { try { App.ws.close(); } catch (e) { /* */ } App.ws = null; }
@@ -277,7 +277,7 @@ function connect() {
   App.ws = ws;
   ws.onopen = () => {
     $('#net-status').textContent = 'Conectado ✔';
-    ws.send(JSON.stringify({ t: 'hello', token: App.token, name: App.name, profile: ProfStore.signed() }));
+    ws.send(JSON.stringify({ t: 'hello', token: App.token, name: App.name, profile: ProfStore.signed(), avatar: Avatar.get() }));
     const sv = Saves.mine();
     if (sv) ws.send(JSON.stringify({ t: 'restore', code: sv.code, blob: sv.blob }));
     if (App.pendingJoin) { send({ t: 'joinRoom', code: App.pendingJoin }); App.pendingJoin = null; }
@@ -425,6 +425,9 @@ function leaveRoom() {
   history.replaceState(null, '', location.pathname);
 }
 
+// foto de perfil del jugador del asiento i (si la tiene)
+function seatAvatar(i) { const s = App.room && App.room.seats && App.room.seats[i]; return s && s.kind === 'human' ? s.avatar || null : null; }
+function avImg(i, cls = 'pl-av') { const a = seatAvatar(i); return a ? `<img class="${cls}" src="${a}" alt="">` : ''; }
 function isHost() { return App.room && App.room.hostSeat === App.you; }
 // quien creó la sala (o el anfitrión actual) puede eliminarla
 function canDeleteRoom() { return App.mode === 'online' && App.room && App.you >= 0 && (App.room.hostSeat === App.you || App.room.creatorSeat === App.you); }
@@ -461,7 +464,7 @@ function renderRoom() {
     const me = i === App.you;
     const tags = s.kind === 'bot' ? `<span class="sk bot">🤖 Bot ${stars(s.level)}</span>`
       : `${s.host ? '<span class="sk host">👑 Anfitrión</span>' : ''}${me ? '<span class="sk me">Tú</span>' : ''}${!s.host && !me ? '<span class="sk">🙂 Jugador</span>' : ''}${s.connected ? '' : '<span class="sk off">Desconectado</span>'}`;
-    const av = s.kind === 'bot' ? '🤖' : s.prof ? s.prof.emblem : esc(s.name.trim()[0] || '?').toUpperCase();
+    const av = s.kind === 'bot' ? '🤖' : s.avatar ? `<img src="${s.avatar}" alt="">` : s.prof ? s.prof.emblem : esc(s.name.trim()[0] || '?').toUpperCase();
     const lvl = s.kind === 'bot' && host ? `<label class="lvl-sel"><span>Nivel</span><select data-lvlsel="${i}">${[1, 2, 3, 4].map((l) => `<option value="${l}" ${s.level === l ? 'selected' : ''}>${'★'.repeat(l)} ${lvlName(l)}</option>`).join('')}</select></label>` : '';
     const kick = host && !me ? `<button class="x" data-kick="${i}" title="Quitar">✕</button>` : '';
     const pb = s.prof ? `<button class="seat-prof" data-pcard="${i}" title="Ver el perfil de ${esc(s.name)}">${profBadge(s.prof)}<span>${Profile.rankOf(Profile.levelOf(s.prof.xp)).name} · ver perfil</span></button>` : '';
@@ -473,7 +476,7 @@ function renderRoom() {
   setHTML($('#seats'), seats.join('')); // sin cambios no se repinta (así no se cierra un desplegable abierto)
   $('#seats').querySelectorAll('[data-lvlsel]').forEach((sel) => (sel.onchange = () => { Sfx.click(); send({ t: 'botLevel', i: +sel.dataset.lvlsel, level: +sel.value }); }));
   $('#seats').querySelectorAll('[data-addbot]').forEach((b) => (b.onclick = () => { Sfx.click(); send({ t: 'addBot', level: +b.dataset.addbot }); }));
-  $('#seats').querySelectorAll('[data-pcard]').forEach((b) => (b.onclick = () => { Sfx.click(); const s = App.room.seats[+b.dataset.pcard]; if (s && s.prof) openModal({ kind: 'pcard', prof: s.prof }); }));
+  $('#seats').querySelectorAll('[data-pcard]').forEach((b) => (b.onclick = () => { Sfx.click(); const s = App.room.seats[+b.dataset.pcard]; if (s && s.prof) openModal({ kind: 'pcard', prof: s.prof, avatar: s.avatar }); }));
   $('#seats').querySelectorAll('[data-kick]').forEach((b) => (b.onclick = () => { Sfx.click(); send({ t: 'removeSeat', i: +b.dataset.kick }); }));
   const watchers = r.spectators || [];
   $('#room-watchers').classList.toggle('hidden', !watchers.length);
@@ -516,7 +519,7 @@ function gameSummaryHTML(v) {
   const order = v.players.slice().sort((a, b) => b.vp - a.vp || (a.id === v.winner ? -1 : b.id === v.winner ? 1 : 0));
   const S = (v.stats && v.stats.pl) || v.players.map(() => ({}));
   const g = (i, k) => (S[i] && S[i][k]) || 0;
-  let rank = `<div class="gameover-list">${order.map((p, k) => `<div class="go-row ${p.id === v.winner ? 'win' : ''}" style="--c:${p.color}"><span>${k + 1}º</span><span class="grow" style="color:${p.color}">${esc(p.name)}${p.bot ? ' ' + stars(p.bot) : ''}</span><span>${p.vp} PV</span></div>`).join('')}</div>`;
+  let rank = `<div class="gameover-list">${order.map((p, k) => `<div class="go-row ${p.id === v.winner ? 'win' : ''}" style="--c:${p.color}"><span>${k + 1}º</span><span class="grow" style="color:${p.color}">${avImg(p.id, 'go-av')}${esc(p.name)}${p.bot ? ' ' + stars(p.bot) : ''}</span><span>${p.vp} PV</span></div>`).join('')}</div>`;
   if (v.teams) {
     const teams = []; for (let t = 0; t < v.teams.count; t++) teams.push({ t, vp: v.players.filter((p) => Engine.teamOf(v, p.id) === t).reduce((a, p) => a + p.vp, 0) });
     teams.sort((a, b) => (b.t === v.winTeam) - (a.t === v.winTeam) || b.vp - a.vp);
@@ -943,7 +946,7 @@ function renderPlayers() {
     const many = p.resCount > handLimit(v);
     const isOpen = open.has(i);
     const line = `<div class="pl-line ${cur ? 'cur' : ''} ${i === me ? 'me' : ''} ${isOpen ? 'open' : ''}" id="pl-${i}" data-pl="${i}">
-        <span class="nm">${cur ? '<i class="turn">▶</i>' : ''}${esc(p.name)}</span>
+        ${avImg(i)}<span class="nm">${cur ? '<i class="turn">▶</i>' : ''}${esc(p.name)}</span>
         <span class="li vp" title="Puntos de victoria"><img src="${Sprites.url('trophy', 3)}" alt=""><b>${p.vp}</b></span>
         <span class="li ${lr ? 'gold' : ''}" title="Camino más largo propio${lr ? ' · tiene el Camino más largo' : ''}"><img src="${Sprites.url('road', 3, p.color)}" alt=""><b>${p.roadLen}</b></span>
         <span class="li ${la ? 'gold' : ''}" title="Caballeros jugados${la ? ' · tiene el Ejército más grande' : ''}"><img src="${Sprites.url('knight', 3)}" alt=""><b>${p.knights}</b></span>
@@ -955,7 +958,7 @@ function renderPlayers() {
     // la tarjeta ampliada sale al pasar el ratón por encima (o al pulsar en el móvil)
     const big = `<div class="pl-pop"><div class="pl ${cur ? 'cur' : ''} ${i === me ? 'me' : ''}" style="--c:${p.color}">
         <div class="pl-head">
-          <div class="pl-id"><span class="nm">${esc(p.name)}</span><span class="who">${who}${cur ? ' · <b>su turno</b>' : ''}</span></div>
+          ${avImg(i, 'pop-av')}<div class="pl-id"><span class="nm">${esc(p.name)}</span><span class="who">${who}${cur ? ' · <b>su turno</b>' : ''}</span></div>
           <div class="pl-vp" title="Puntos de victoria visibles (se gana con ${Engine.winVP(v)})"><b>${p.vp}</b><small>/${Engine.winVP(v)} PV</small></div>
         </div>
         <div class="vpbar"><i style="width:${pct}%"></i></div>
@@ -1275,7 +1278,7 @@ function renderSpecCards() {
     const off = seat.kind === 'human' && !seat.connected ? ' <span class="pl-off">Desconectado</span>' : '';
     const st = (img, n, t, cls = '') => `<span class="spc-s ${cls}" title="${t}"><img src="${img}" alt=""><b>${n}</b></span>`;
     return `<div class="spc ${cur ? 'cur' : ''}" id="spc-${i}" data-spc="${i}" style="--c:${p.color}">
-      <div class="spc-head"><span class="nm">${v.teams ? `<span class="tm-tag" style="--tc:${Engine.TEAM_COLORS[Engine.teamOf(v, i)]}">${Engine.TEAM_NAMES[Engine.teamOf(v, i)]}</span>` : ''}${cur ? '<i class="turn">▶</i>' : ''}${esc(p.name)}</span><span class="spc-vp"><b>${p.vp}</b><small>/${goal}</small></span></div>
+      <div class="spc-head">${avImg(i, 'spc-av')}<span class="nm">${v.teams ? `<span class="tm-tag" style="--tc:${Engine.TEAM_COLORS[Engine.teamOf(v, i)]}">${Engine.TEAM_NAMES[Engine.teamOf(v, i)]}</span>` : ''}${cur ? '<i class="turn">▶</i>' : ''}${esc(p.name)}</span><span class="spc-vp"><b>${p.vp}</b><small>/${goal}</small></span></div>
       <div class="spc-who">${who}${off}</div>
       <div class="vpbar"><i style="width:${Math.min(100, (p.vp / goal) * 100)}%"></i></div>
       <div class="spc-stats">${st(Sprites.url('card', 3), p.resCount, 'Cartas de recurso en la mano', p.resCount > handLimit(v) ? 'warn' : '')}${st(Sprites.url('devcard', 3), p.devCount, 'Cartas de desarrollo sin jugar')}${st(Sprites.url('knight', 3), p.knights, 'Caballeros jugados', la ? 'gold' : '')}${st(Sprites.url('road', 3, p.color), p.roadLen, 'Camino más largo propio', lr ? 'gold' : '')}</div>
@@ -1634,8 +1637,8 @@ function renderModal() {
         return `<div class="pd-prod ${x.pips ? '' : 'none'}"><img src="${Sprites.url(r, 3)}"><span class="pn">${RN[r]}</span><span class="nums">${x.nums.length ? x.nums.join(', ') : '—'}</span><span class="pb"><i style="width:${Math.min(100, x.pips * 5)}%"></i></span><span class="pp" title="Probabilidad de recibirlo en cada tirada">${x.pips ? pct + '%' : ''}</span></div>`;
       }).join('');
       const portTxt = d.ports.length ? d.ports.map((t) => t === 'any' ? '<span class="chip">3:1 cualquiera</span>' : `<span class="chip"><img src="${Sprites.url(t, 3)}">2:1 ${RN[t]}</span>`).join(' ') : '<span class="muted">Ninguno</span>';
-      h = `<div class="pd-head" style="--c:${p.color}"><div><h2 style="color:${p.color}">${esc(p.name)}</h2><span class="muted">${mine ? 'Tú' : p.bot ? 'Bot ' + LVL_NAME[p.bot].toLowerCase() + ' ' + stars(p.bot) : 'Jugador'}${v.current === m.pid && v.phase !== 'gameOver' ? ' · está jugando su turno' : ''}</span></div><div class="pd-vp"><b>${p.vp}</b><small>PV visibles</small></div></div>
-        ${(() => { const seat = App.room && App.room.seats[m.pid]; const q = seat && seat.prof; return q ? `<button class="pd-prof" id="pd-prof">${emblemHTML(q)}<span><b>${Profile.rankOf(Profile.levelOf(q.xp)).name} · Nivel ${Profile.levelOf(q.xp)}</b><small>${q.games} partidas · ${q.wins} victorias · ${q.ach.length} logros</small></span><span class="pc-go">Ver perfil ›</span></button>` : ''; })()}
+      h = `<div class="pd-head" style="--c:${p.color}">${avImg(m.pid, 'pd-av')}<div style="flex:1"><h2 style="color:${p.color}">${esc(p.name)}</h2><span class="muted">${mine ? 'Tú' : p.bot ? 'Bot ' + LVL_NAME[p.bot].toLowerCase() + ' ' + stars(p.bot) : 'Jugador'}${v.current === m.pid && v.phase !== 'gameOver' ? ' · está jugando su turno' : ''}</span></div><div class="pd-vp"><b>${p.vp}</b><small>PV visibles</small></div></div>
+        ${(() => { const seat = App.room && App.room.seats[m.pid]; const q = seat && seat.prof; return q ? `<button class="pd-prof" id="pd-prof">${emblemHTML(q, '', seat.avatar)}<span><b>${Profile.rankOf(Profile.levelOf(q.xp)).name} · Nivel ${Profile.levelOf(q.xp)}</b><small>${q.games} partidas · ${q.wins} victorias · ${q.ach.length} logros</small></span><span class="pc-go">Ver perfil ›</span></button>` : ''; })()}
         <div class="pd-grid">
           <div class="pd-box"><h4>Puntos</h4>
             ${row('Poblados', d.settlements, ' <small>×1</small>')}${row('Ciudades', d.cities, ' <small>×2</small>')}
@@ -1655,7 +1658,7 @@ function renderModal() {
         <div class="pd-box"><h4>Qué produce <small>(números de sus casillas)</small></h4>${prodRows}${d.blocked ? '<p class="muted small">El ladrón le está bloqueando parte de su producción.</p>' : ''}</div>
         <div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close>Cerrar</button></div>`;
       box.innerHTML = h;
-      if ($('#pd-prof')) $('#pd-prof').onclick = () => { Sfx.click(); openModal({ kind: 'pcard', prof: App.room.seats[m.pid].prof }); };
+      if ($('#pd-prof')) $('#pd-prof').onclick = () => { Sfx.click(); openModal({ kind: 'pcard', prof: App.room.seats[m.pid].prof, avatar: App.room.seats[m.pid].avatar }); };
       break;
     }
     case 'newgame': {

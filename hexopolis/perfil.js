@@ -12,6 +12,38 @@ const ProfStore = {
   data() { const x = this.get(); return x ? x.data : null; },
 };
 
+// foto de perfil: se guarda en este navegador (pequeña, recortada en cuadrado) y se envía al servidor al conectar
+const Avatar = {
+  get() { const v = store.get('hx_avatar', ''); return v && v.startsWith('data:image/') ? v : null; },
+  set(v) { if (v) store.set('hx_avatar', v); else { try { localStorage.removeItem('hx_avatar'); } catch (e) { /* */ } } },
+};
+function makeAvatar(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !/^image\//.test(file.type)) return reject(new Error('Elige una imagen'));
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const S = 112, c = document.createElement('canvas'); c.width = S; c.height = S;
+      const x = c.getContext('2d');
+      const side = Math.min(img.naturalWidth, img.naturalHeight); // recorte cuadrado centrado
+      x.imageSmoothingQuality = 'high';
+      x.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, S, S);
+      URL.revokeObjectURL(url);
+      let q = 0.85, out = c.toDataURL('image/jpeg', q);
+      while (out.length > 15000 && q > 0.35) { q -= 0.1; out = c.toDataURL('image/jpeg', q); }
+      resolve(out);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('No se pudo leer la imagen')); };
+    img.src = url;
+  });
+}
+function applyAvatar(img) {
+  Avatar.set(img);
+  if (App.ws && App.ws.readyState === 1) App.ws.send(JSON.stringify({ t: 'avatar', img: img || null }));
+  if (App.localRoom && App.mode === 'local') { const seat = App.localRoom.seats[App.localRoom.seatOf(App.token)]; if (seat) { seat.avatar = img || null; App.localRoom.sendRoom(); } }
+  renderProfileChip();
+}
+
 // jugadores con los que has coincidido (ficha guardada tal como estaba y resultados entre vosotros)
 const Recents = {
   all() { try { return JSON.parse(store.get('hx_recent', '{}')) || {}; } catch (e) { return {}; } },
@@ -89,7 +121,7 @@ async function refreshFriends() {
   for (const x of r.list) {
     if (x.online) App.friendsOnline.add(x.id);
     const it = rec[x.id];
-    if (it && x.p && (!it.prof || (x.p.updated || 0) >= (it.prof.updated || 0))) { it.prof = x.p; it.name = x.p.name; it.seen = x.at; }
+    if (it && x.p && (!it.prof || (x.p.updated || 0) >= (it.prof.updated || 0))) { it.prof = x.p; it.name = x.p.name; it.seen = x.at; it.avatar = x.avatar || null; }
   }
   Recents.save(rec);
   App.friendsAt = Date.now();
@@ -103,8 +135,8 @@ function ago(t) {
 function renderRanking(m, box) {
   const me = ProfStore.data(), rec = Object.values(Recents.all());
   const on = App.friendsOnline || new Set();
-  const rows = rec.map((x) => ({ p: x.prof, name: x.name, x, mine: false }));
-  if (me) rows.push({ p: Object.assign({}, me, { name: App.name }), name: App.name, x: null, mine: true });
+  const rows = rec.map((x) => ({ p: x.prof, name: x.name, x, mine: false, av: x.avatar }));
+  if (me) rows.push({ p: Object.assign({}, me, { name: App.name }), name: App.name, x: null, mine: true, av: Avatar.get() });
   const sort = m.sort || 'lvl';
   const wr = (p) => (p.games ? p.wins / p.games : 0);
   if (sort === 'lvl') rows.sort((a, b) => b.p.xp - a.p.xp);
@@ -115,7 +147,7 @@ function renderRanking(m, box) {
     const p = r.p, l = Profile.levelOf(p.xp), rk = Profile.rankOf(l);
     const vs = r.mine ? '<span class="muted">—</span>' : `<b>${r.x.myWins}</b>–<b>${r.x.theirWins}</b>`;
     const st = r.mine ? 'Tú' : on.has(p.id) ? '<span class="on-dot"></span>Conectado' : r.x.seen ? `Visto ${ago(r.x.seen)}` : `Jugasteis ${ago(r.x.last)}`;
-    return `<tr class="${r.mine ? 'me' : ''}" ${r.mine ? '' : `data-rk="${esc(p.id)}"`}><td>${k + 1}</td><td><span class="rk-name">${emblemHTML(p)}<span><b>${esc(r.name)}</b><small style="color:${rk.color}">${rk.name} · Nv ${l}</small></span></span></td>
+    return `<tr class="${r.mine ? 'me' : ''}" ${r.mine ? '' : `data-rk="${esc(p.id)}"`}><td>${k + 1}</td><td><span class="rk-name">${emblemHTML(p, '', r.av)}<span><b>${esc(r.name)}</b><small style="color:${rk.color}">${rk.name} · Nv ${l}</small></span></span></td>
       <td><b>${p.wins}</b><small> / ${p.games}</small><br><small class="muted">${Math.round(wr(p) * 100)}%</small></td><td>${vs}</td><td><small class="muted">${st}</small></td></tr>`;
   }).join('') : '';
   box.innerHTML = `<div class="row between"><h2>🏆 Ranking de amigos</h2><button class="btn small ghost" data-close>Cerrar</button></div>
@@ -124,7 +156,7 @@ function renderRanking(m, box) {
     ${body ? `<div class="st-wrap"><table class="rk-table"><thead><tr><th>#</th><th>Jugador</th><th>Victorias</th><th>Tú – él/ella</th><th>Estado</th></tr></thead><tbody>${body}</tbody></table></div>` : '<p class="muted">Todavía no hay nadie. Termina una partida online con amigos y aparecerán aquí.</p>'}
     <div class="row gap between"><small class="muted">${App.friendsAt ? 'Actualizado ' + ago(App.friendsAt) : 'Actualizando…'}</small><button class="btn small cyan" id="rk-refresh">↻ Actualizar</button></div>`;
   box.querySelectorAll('[data-rsort]').forEach((b) => (b.onclick = () => { Sfx.click(); m.sort = b.dataset.rsort; renderModal(); }));
-  box.querySelectorAll('[data-rk]').forEach((b) => (b.onclick = () => { Sfx.click(); const x = Recents.all()[b.dataset.rk]; if (x) openModal({ kind: 'pcard', prof: x.prof, back: 'ranking' }); }));
+  box.querySelectorAll('[data-rk]').forEach((b) => (b.onclick = () => { Sfx.click(); const x = Recents.all()[b.dataset.rk]; if (x) openModal({ kind: 'pcard', prof: x.prof, avatar: x.avatar, back: 'ranking' }); }));
   $('#rk-refresh').onclick = () => { Sfx.click(); refreshFriends(); };
 }
 
@@ -136,7 +168,7 @@ function recordRecents(gain) {
   r.seats.forEach((s, i) => {
     if (i === App.me || s.kind !== 'human' || !s.prof || (mine && s.prof.id === mine.id)) return;
     const x = rec[s.prof.id] || { id: s.prof.id, games: 0, myWins: 0, theirWins: 0 };
-    x.prof = s.prof; x.name = s.prof.name; x.last = Date.now(); x.games++;
+    x.prof = s.prof; x.name = s.prof.name; x.last = Date.now(); x.games++; x.avatar = s.avatar || null;
     if (v.winner === App.me) x.myWins++;
     else if (v.winner === i) x.theirWins++;
     rec[x.id] = x;
@@ -155,16 +187,16 @@ function profBadge(p) {
   const l = Profile.levelOf(p.xp), rk = Profile.rankOf(l);
   return `<span class="pbadge" style="--rk:${rk.color}" title="${esc(rk.name)} · nivel ${l}"><i>${p.emblem}</i>Nv ${l}</span>`;
 }
-function emblemHTML(p, size = '') {
+function emblemHTML(p, size = '', av = null) {
   const l = Profile.levelOf(p.xp), rk = Profile.rankOf(l);
-  return `<span class="pemb ${size}" style="--rk:${rk.color}">${p.emblem}<b>${l}</b></span>`;
+  return `<span class="pemb ${size} ${av ? 'has-av' : ''}" style="--rk:${rk.color}">${av ? `<img src="${av}" alt="">` : p.emblem}<b>${l}</b></span>`;
 }
-function profCardHTML(p) {
+function profCardHTML(p, av) {
   const pr = Profile.progress(p.xp), rk = Profile.rankOf(pr.lvl);
   const pct = p.games ? Math.round((p.wins / p.games) * 100) : 0;
   const stat = (n, l) => `<div class="pf-st"><b>${n}</b><small>${l}</small></div>`;
   return `<div class="pf-card" style="--rk:${rk.color}">
-      <div class="pf-head">${emblemHTML(p, 'big')}<div class="pf-id"><b>${esc(p.name)}</b><span class="pf-rank">${rk.name} · Nivel ${pr.lvl}</span>
+      <div class="pf-head">${emblemHTML(p, 'big', av)}<div class="pf-id"><b>${esc(p.name)}</b><span class="pf-rank">${rk.name} · Nivel ${pr.lvl}</span>
         <div class="pf-xp"><i style="width:${pr.pct}%"></i></div><small class="muted">${pr.into} / ${pr.need} de experiencia para el nivel ${pr.lvl + 1}</small></div></div>
       <div class="pf-stats">${stat(p.games, 'Partidas')}${stat(p.wins, 'Victorias')}${stat(pct + '%', 'Ganadas')}${stat(p.best, 'Mejor racha')}${stat(p.prod, 'Producidas')}${stat(p.stole, 'Robadas')}${stat(p.games ? (p.vpTotal / p.games).toFixed(1) : '0', 'Puntos/partida')}${stat(p.ach.length + '/' + Profile.ACH.length, 'Logros')}</div>
     </div>`;
@@ -195,7 +227,7 @@ function renderProfileChip() {
   const pr = Profile.progress(p.xp), rk = Profile.rankOf(pr.lvl);
   el.classList.remove('hidden');
   el.style.setProperty('--rk', rk.color);
-  el.innerHTML = `${emblemHTML(p)}<span class="pc-txt"><b>${esc(App.name)}</b><small>${rk.name} · Nivel ${pr.lvl}</small><span class="pf-xp"><i style="width:${pr.pct}%"></i></span></span><span class="pc-go">Perfil ›</span>`;
+  el.innerHTML = `${emblemHTML(p, '', Avatar.get())}<span class="pc-txt"><b>${esc(App.name)}</b><small>${rk.name} · Nivel ${pr.lvl}</small><span class="pf-xp"><i style="width:${pr.pct}%"></i></span></span><span class="pc-go">Perfil ›</span>`;
 }
 
 // ---------- ventanas ----------
@@ -206,16 +238,26 @@ function renderProfileModal(m, box) {
     const lvl = Profile.levelOf(p.xp);
     const emb = Profile.EMBLEMS.map((x) => `<button class="emb ${x.e === p.emblem ? 'on' : ''}" data-emb="${x.e}" ${lvl >= x.lvl ? '' : 'disabled'} title="${lvl >= x.lvl ? 'Usar este emblema' : 'Se desbloquea en el nivel ' + x.lvl}">${x.e}${lvl >= x.lvl ? '' : `<small>Nv ${x.lvl}</small>`}</button>`).join('');
     const rec = Object.values(Recents.all()).sort((a, b) => b.last - a.last);
-    const recHTML = rec.length ? rec.map((x) => `<button class="rec" data-rec="${esc(x.id)}">${emblemHTML(x.prof)}<span><b>${esc(x.name)}</b><small>${x.games} ${x.games === 1 ? 'partida' : 'partidas'} · tú ${x.myWins} – ${x.theirWins} ${esc(x.name)}</small></span></button>`).join('') : '<p class="muted">Aquí aparecerán las personas con las que juegues partidas online.</p>';
+    const recHTML = rec.length ? rec.map((x) => `<button class="rec" data-rec="${esc(x.id)}">${emblemHTML(x.prof, '', x.avatar)}<span><b>${esc(x.name)}</b><small>${x.games} ${x.games === 1 ? 'partida' : 'partidas'} · tú ${x.myWins} – ${x.theirWins} ${esc(x.name)}</small></span></button>`).join('') : '<p class="muted">Aquí aparecerán las personas con las que juegues partidas online.</p>';
     box.innerHTML = `<div class="row between"><h2>Tu perfil</h2><button class="btn small ghost" data-close>Cerrar</button></div>
       ${App.profileBad ? '<p class="rr-warn">El servidor no ha podido comprobar este perfil. Si tienes un enlace de recuperación, ábrelo.</p>' : ''}
-      ${profCardHTML(Object.assign({}, p, { name: App.name }))}
+      ${profCardHTML(Object.assign({}, p, { name: App.name }), Avatar.get())}
+      <h4 class="tr-sub">Foto de perfil</h4>
+      <div class="av-row">${Avatar.get() ? `<img class="av-prev" src="${Avatar.get()}" alt="Tu foto">` : '<span class="av-prev none">📷</span>'}
+        <div class="av-txt"><small class="muted">Se verá en la sala, en la partida y en tu ficha. Se recorta en cuadrado y se guarda en este navegador.</small>
+        <div class="row gap wrap"><label class="btn small cyan av-pick">📷 ${Avatar.get() ? 'Cambiar foto' : 'Elegir foto'}<input type="file" accept="image/*" id="av-file" hidden></label>${Avatar.get() ? '<button class="btn small ghost" id="av-del">Quitar foto</button>' : ''}</div></div></div>
       <h4 class="tr-sub">Emblema</h4><div class="emb-grid">${emb}</div>
       <h4 class="tr-sub">Logros (${p.ach.length}/${Profile.ACH.length})</h4>${achHTML(p)}
       <div class="row between"><h4 class="tr-sub">Jugadores recientes</h4><button class="btn small ghost" id="pf-rank">🏆 Ver ranking</button></div><div class="rec-list">${recHTML}</div>
       <h4 class="tr-sub">No pierdas tu perfil</h4>
       <p class="muted">Tu perfil se guarda en este navegador. Si borras los datos del navegador o cambias de móvil, abre tu <b>enlace de recuperación</b> y lo recuperas tal como estaba cuando lo copiaste. Cópialo de nuevo cuando subas de nivel. En iPhone, añade el juego a la pantalla de inicio para que Safari no lo borre.</p>
       <div class="row gap wrap"><button class="btn cyan" id="pf-copy">📋 Copiar enlace de recuperación</button><a class="btn green" id="pf-wa" target="_blank" rel="noopener">Enviármelo por WhatsApp</a></div>`;
+    $('#av-file').onchange = async (e) => {
+      const f = e.target.files && e.target.files[0]; if (!f) return;
+      try { const img = await makeAvatar(f); applyAvatar(img); toast('📷 Foto de perfil guardada', true); if (App.ui.modal && App.ui.modal.kind === 'profile') renderModal(); }
+      catch (err) { toast(err.message || 'No se pudo usar esa imagen'); }
+    };
+    if ($('#av-del')) $('#av-del').onclick = () => { Sfx.click(); applyAvatar(null); toast('Foto quitada', true); renderModal(); };
     $('#pf-copy').onclick = () => { const l = recoveryLink(); (navigator.clipboard ? navigator.clipboard.writeText(l) : Promise.reject()).then(() => toast('Enlace de recuperación copiado. Guárdalo en un sitio seguro', true), () => toast(l, true)); };
     $('#pf-wa').href = 'https://wa.me/?text=' + encodeURIComponent('Mi perfil de Hexópolis (enlace de recuperación): ' + recoveryLink());
     box.querySelectorAll('[data-emb]').forEach((b) => (b.onclick = async () => {
@@ -225,7 +267,7 @@ function renderProfileModal(m, box) {
       else toast('No se pudo cambiar el emblema (¿sin conexión con el servidor?)');
     }));
     $('#pf-rank').onclick = () => { Sfx.click(); openModal({ kind: 'ranking' }); refreshFriends(); };
-    box.querySelectorAll('[data-rec]').forEach((b) => (b.onclick = () => { Sfx.click(); const x = Recents.all()[b.dataset.rec]; if (x) openModal({ kind: 'pcard', prof: x.prof, back: 'profile' }); }));
+    box.querySelectorAll('[data-rec]').forEach((b) => (b.onclick = () => { Sfx.click(); const x = Recents.all()[b.dataset.rec]; if (x) openModal({ kind: 'pcard', prof: x.prof, avatar: x.avatar, back: 'profile' }); }));
     return;
   }
   if (m.kind === 'pcard') {
@@ -233,7 +275,7 @@ function renderProfileModal(m, box) {
     if (!q) { closeModal(); return; }
     const mine = p && q.id === p.id;
     box.innerHTML = `<div class="row between"><h2>${mine ? 'Tu perfil' : 'Perfil de ' + esc(q.name)}</h2><button class="btn small ghost" ${m.back ? 'id="pc-back"' : 'data-close'}>${m.back ? '‹ Volver' : 'Cerrar'}</button></div>
-      ${profCardHTML(q)}
+      ${profCardHTML(q, m.avatar || (mine ? Avatar.get() : (Recents.all()[q.id] || {}).avatar))}
       ${mine ? '' : `<h4 class="tr-sub">Entre vosotros</h4>${vsHTML(q.id)}`}
       <h4 class="tr-sub">Logros (${q.ach.length}/${Profile.ACH.length})</h4>${achHTML(q)}`;
     if ($('#pc-back')) $('#pc-back').onclick = () => openModal({ kind: m.back });

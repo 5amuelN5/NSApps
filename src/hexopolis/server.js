@@ -57,10 +57,15 @@ function readProfile(x) {
 // última ficha conocida de cada jugador (en memoria: se rellena según se conectan) para el ranking entre amigos
 const profileCache = new Map(); // id → {p, at}
 const onlineIds = new Map(); // id → nº de conexiones abiertas
-function touchProfile(p) { if (p && p.id) profileCache.set(p.id, { p, at: Date.now() }); }
+function touchProfile(p, avatar) { if (p && p.id) { const old = profileCache.get(p.id); profileCache.set(p.id, { p, at: Date.now(), avatar: avatar !== undefined ? avatar : old ? old.avatar : null }); } }
+// foto de perfil: imagen pequeña (la recorta el navegador) en data URL
+function cleanAvatar(x) {
+  if (typeof x !== 'string' || x.length > 16000) return null;
+  return /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(x) ? x : null;
+}
 function setOnline(c, p) {
   if (c.profId) { const n = (onlineIds.get(c.profId) || 1) - 1; if (n > 0) onlineIds.set(c.profId, n); else onlineIds.delete(c.profId); c.profId = null; }
-  if (p && p.id) { c.profId = p.id; onlineIds.set(p.id, (onlineIds.get(p.id) || 0) + 1); touchProfile(p); }
+  if (p && p.id) { c.profId = p.id; onlineIds.set(p.id, (onlineIds.get(p.id) || 0) + 1); touchProfile(p, c.avatar || null); }
 }
 function cleanName(n) { return String(n || 'Jugador').slice(0, 16).trim() || 'Jugador'; }
 // al acabar una partida: experiencia y logros para cada humano con perfil
@@ -168,6 +173,7 @@ wss.on('connection', (ws) => {
       case 'hello': {
         c.token = String(m.token || '').slice(0, 64) || Math.random().toString(36).slice(2);
         c.name = cleanName(m.name);
+        c.avatar = cleanAvatar(m.avatar);
         c.profile = readProfile(m.profile);
         if (c.profile) { c.profile.name = c.name; setOnline(c, c.profile); }
         if (pendingProfiles.has(c.token)) { const pp = pendingProfiles.get(c.token); pendingProfiles.delete(c.token); c.profile = readProfile(pp.signed); c.send({ t: 'profileUpdate', profile: pp.signed, gain: pp.gain }); }
@@ -210,10 +216,18 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'setName': c.name = cleanName(m.name); break;
+      case 'avatar': {
+        // cambiar o quitar la foto de perfil (se ve en la sala y en la partida)
+        c.avatar = m.img ? cleanAvatar(m.img) : null;
+        if (m.img && !c.avatar) return err('La foto no es válida o es demasiado grande');
+        if (c.profile) touchProfile(c.profile, c.avatar);
+        if (c.room) { const si = c.room.seatOf(c.token); if (si >= 0) { c.room.seats[si].avatar = c.avatar; c.room.sendRoom(); } }
+        break;
+      }
       case 'friends': {
         // fichas actualizadas de tus jugadores recientes (las que el servidor conoce) y quién está conectado
         const ids = Array.isArray(m.ids) ? m.ids.slice(0, 60).map(String) : [];
-        const list = ids.map((id) => { const x = profileCache.get(id); return { id, p: x ? x.p : null, at: x ? x.at : null, online: onlineIds.has(id) }; });
+        const list = ids.map((id) => { const x = profileCache.get(id); return { id, p: x ? x.p : null, at: x ? x.at : null, avatar: x ? x.avatar || null : null, online: onlineIds.has(id) }; });
         c.send({ t: 'friends', req: m.req, list });
         break;
       }
