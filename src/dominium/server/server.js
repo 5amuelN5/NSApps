@@ -100,6 +100,7 @@ function shareSave(room) {
   let blob;
   try { blob = sealSave(room); } catch (e) { console.error('[guardado]', e.message); return; }
   const msg = `data: ${JSON.stringify({ type: 'save', code: room.code, blob })}\n\n`;
+  room.lastSave = msg;
   for (const [cid, set] of room.clients) {
     if (humanSlot(room, cid) < 0) continue;
     for (const res of set) { try { res.write(msg); } catch { /* */ } }
@@ -698,6 +699,8 @@ const server = http.createServer(async (req, res) => {
       }
       broadcast(room);
       schedule(room);
+      // quien se conecta recibe ya la última copia de la partida (sin esperar al siguiente turno)
+      if (room.lastSave && si >= 0 && room.status === 'playing') { try { res.write(room.lastSave); } catch { /* */ } }
       const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch { /* */ } }, 15000);
       req.on('close', () => {
         clearInterval(ping);
