@@ -8,7 +8,10 @@
   const DELAY = { setup: 560, roll: 640, main: 520, robber: 780, discard: 520, respond: 950, confirm: 600, roadBuilding: 520 };
   const AUTO_GRACE = 20000; // ms antes de que un bot sustituya a un humano desconectado
   const TRADE_TIMEOUT = 12000;
-  const LOBBY_GRACE = 60000; // en la sala de espera, un jugador que pierde la conexión conserva su sitio este tiempo
+  const LOBBY_GRACE = 60000;
+  // jugador conectado que no hace nada: pasado este tiempo sin jugar, un bot juega por él hasta que vuelva (solo online)
+  const AFK_LIMIT = { setup: 75000, roll: 45000, main: 120000, robber: 45000, discard: 45000, roadBuilding: 60000 };
+  const TRADE_REPLY = 30000; // sin responder a una oferta: se rechaza sola // en la sala de espera, un jugador que pierde la conexión conserva su sitio este tiempo
 
   class Room {
     constructor({ code, name, isPublic = true, local = false, onChange, onState, onGameOver }) {
@@ -37,7 +40,7 @@
       return {
         code: this.code, name: this.name, isPublic: this.isPublic, creatorSeat: this.seats.findIndex((x) => x.kind === 'human' && x.token === this.creator), hostSeat: this.seats.findIndex((x) => x.kind === 'human' && x.token === this.host), local: this.local, speed: this.speed,
         started: !!this.state, over: !!(this.state && this.state.phase === 'gameOver'), rules: this.rules, max: E.maxSeats(this.rules),
-        seats: this.seats.map((s, i) => ({ i, kind: s.kind, name: s.name, level: s.level, connected: s.kind === 'bot' || s.connected, host: s.token === this.host, color: E.COLORS[i], prof: s.kind === 'human' && s.prof ? s.prof : null, avatar: s.kind === 'human' ? s.avatar || null : null })),
+        seats: this.seats.map((s, i) => ({ i, kind: s.kind, name: s.name, level: s.level, connected: s.kind === 'bot' || s.connected, afk: !!s.afk, host: s.token === this.host, color: E.COLORS[i], prof: s.kind === 'human' && s.prof ? s.prof : null, avatar: s.kind === 'human' ? s.avatar || null : null })),
         spectators: [...this.spectators.values()].map((x) => x.name),
         rematch: this.seats.map((x, i) => (x.kind === 'human' && this.rematch && this.rematch.has(x.token) ? i : -1)).filter((i) => i >= 0),
         startedAt: this.startedAt, endedAt: this.endedAt,
@@ -56,11 +59,11 @@
         this.spectators.delete(token);
         const seat = this.seats[i];
         if (!this.host || this.creator === token && !this.seats.some((x) => x.kind === 'human' && x.token === this.host && x.connected)) this.host = token;
-        clearTimeout(seat.dropT); seat.dropT = null;
+        clearTimeout(seat.dropT); seat.dropT = null; seat.afk = false;
         seat.client = client; seat.connected = true; seat.discAt = null; seat.left = false; seat.name = name || seat.name;
         if (client && client.profile) seat.prof = client.profile;
         if (client && client.avatar !== undefined) seat.avatar = client.avatar;
-        this.sendRoom(); this.sendStateTo(i, []); this.schedule();
+        this.sendRoom(); this.sendStateTo(i, []); this.schedule(); this.sendTimerTo(client);
         return { ok: true };
       }
       // partida empezada, sala llena o quiere mirar: entra como espectador
@@ -79,7 +82,7 @@
       this.spectators.set(token, { client, name: name || 'Espectador' });
       if (!was) this.sysChat(`👁 ${name || 'Alguien'} está mirando la partida`);
       this.sendRoom();
-      if (this.state) { this.sendSpectator(token, []); this.schedule(); }
+      if (this.state) { this.sendSpectator(token, []); this.schedule(); this.sendTimerTo(client); }
       return { ok: true, spectator: true };
     }
     sendSpectator(token, events) {
@@ -226,6 +229,7 @@
       if (i < 0 && !spec) return;
       text = String(text || '').slice(0, 200).trim();
       if (!text) return;
+      if (i >= 0) this.back(token);
       // anti-spam: como mucho 6 mensajes cada 8 segundos
       const now = Date.now(), times = (this.chatTimes.get(token) || []).filter((t) => now - t < 8000);
       if (times.length >= 6) return;
@@ -245,6 +249,7 @@
       if (this.spectators.has(token)) return 'Estás mirando la partida';
       const pid = this.seatOf(token);
       if (pid < 0) return 'No estás en la partida';
+      this.back(token);
       const r = E.apply(this.state, pid, a);
       if (!r.ok) return r.error;
       this.seats[pid].acts = (this.seats[pid].acts || 0) + 1;
@@ -284,10 +289,18 @@
       this.onChange();
     }
 
+    // vuelve a jugar quien estaba ausente (al hacer cualquier jugada, escribir o pulsar «Volver a jugar»)
+    back(token) {
+      const i = this.seatOf(token); const seat = this.seats[i];
+      if (!seat || !seat.afk) return;
+      seat.afk = false;
+      this.sysChat(`👋 ${seat.name} ha vuelto`);
+      this.sendRoom(); this.schedule();
+    }
     isAuto(i) {
       const seat = this.seats[i];
       if (!seat) return false;
-      if (seat.kind === 'bot') return true;
+      if (seat.kind === 'bot' || seat.afk) return true;
       return !seat.connected && seat.discAt && Date.now() - seat.discAt >= AUTO_GRACE;
     }
     levelOf(i) { const s = this.seats[i]; return s.kind === 'bot' ? s.level : 2; }
@@ -295,8 +308,9 @@
     schedule() {
       clearTimeout(this.timer); this.timer = null;
       const s = this.state;
-      if (!s || s.phase === 'gameOver') return;
+      if (!s || s.phase === 'gameOver') { this.armAfk(null); return; }
       if (!this.local && !this.humansConnected()) return; // sala dormida
+      this.armAfk(s);
       const actors = B.whoActs(s).filter((p) => this.isAuto(p));
       // tiempo de espera de ofertas de bots
       clearTimeout(this.tradeTimer);
@@ -343,6 +357,53 @@
     }
     pushBotTradeChat() { /* reservado para mensajes de bots */ }
 
+    // ----- tiempo por turno (online): quien no juega en un rato pasa a «ausente» y juega un bot por él -----
+    armAfk(s) {
+      clearTimeout(this.afkTimer); this.afkTimer = null;
+      if (this.local || !s || s.phase === 'gameOver') { if (this.afkKey) { this.afkKey = null; this.sendTimer(null); } return; }
+      const waiting = B.whoActs(s).filter((p) => { const x = this.seats[p]; return x && x.kind === 'human' && x.connected && !x.afk; });
+      let kind = s.phase, limit = AFK_LIMIT[s.phase] || 90000, pids = waiting;
+      if (s.trade) {
+        const T = s.trade, pend = waiting.filter((p) => p !== T.from && T.responses[p] === null);
+        if (pend.length) { kind = 'trade'; limit = TRADE_REPLY; pids = pend; }
+      }
+      if (!pids.length) { if (this.afkKey) { this.afkKey = null; this.sendTimer(null); } return; }
+      // el plazo se reinicia cada vez que alguien juega (cambia la partida)
+      const key = s.seq + ':' + kind + ':' + pids.join(',');
+      if (this.afkKey !== key) { this.afkKey = key; this.afkDeadline = Date.now() + limit; this.sendTimer({ pids, kind, left: limit, total: limit }); }
+      this.afkTimer = setTimeout(() => this.onAfk(key), Math.max(0, this.afkDeadline - Date.now()));
+    }
+    onAfk(key) {
+      const s = this.state;
+      if (!s || this.afkKey !== key) return;
+      const [, kind, list] = key.split(':'); const pids = list.split(',').map(Number);
+      this.afkKey = null;
+      if (kind === 'trade') { // nadie contesta la oferta: se rechaza sola (sin marcar ausente)
+        const T = s.trade; if (!T) return this.schedule();
+        let evs = [];
+        for (const p of pids) if (T.responses[p] === null) { const r = E.apply(s, p, { type: 'respondTrade', id: T.id, accept: false }); if (r.ok) evs = evs.concat(r.events); }
+        return this.after(evs);
+      }
+      for (const p of pids) {
+        const seat = this.seats[p];
+        if (!seat || seat.kind !== 'human' || seat.afk || !seat.connected) continue;
+        seat.afk = true;
+        this.sysChat(`💤 ${seat.name} no responde: juega un bot en su lugar hasta que vuelva`);
+      }
+      this.sendRoom(); this.schedule();
+    }
+    // a quien entra o vuelve: la cuenta atrás que esté corriendo
+    sendTimerTo(client) {
+      if (!client || !this.afkKey || !this.afkInfo) return;
+      client.send({ t: 'timer', timer: Object.assign({}, this.afkInfo, { left: Math.max(0, this.afkDeadline - Date.now()) }) });
+    }
+    sendTimer(t) {
+      this.afkInfo = t;
+      const msg = { t: 'timer', timer: t };
+      this.seats.forEach((x) => x.kind === 'human' && x.client && x.client.send(msg));
+      this.spectators.forEach((x) => x.client && x.client.send(msg));
+    }
+
     // ----- guardar y recuperar la partida (si el servidor se reinicia o se recarga la página) -----
     snapshot() {
       return {
@@ -364,7 +425,7 @@
       return r;
     }
 
-    destroy() { clearTimeout(this.timer); clearTimeout(this.tradeTimer); this.seats.forEach((x) => clearTimeout(x.dropT)); }
+    destroy() { clearTimeout(this.timer); clearTimeout(this.tradeTimer); clearTimeout(this.afkTimer); this.seats.forEach((x) => clearTimeout(x.dropT)); }
   }
 
   return Room;

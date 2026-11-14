@@ -234,7 +234,8 @@ wss.on('connection', (ws) => {
         pushRoomList();
         break;
       }
-      case 'ping': c.send({ t: 'pong' }); break;
+      case 'ping': c.send({ t: 'pong', at: m.at }); break;
+      case 'back': if (c.room && c.token) c.room.back(c.token); break;
       case 'setName': {
         c.name = cleanName(m.name);
         // en la sala de espera, el nuevo nombre se ve al momento (en partida se mantiene el de la partida)
@@ -353,6 +354,26 @@ setInterval(() => {
     if (now - r.idleSince > 10 * 60 * 1000) { r.destroy(); rooms.delete(r.code); }
   }
 }, 15000);
+
+// el servidor se apaga (Render lo reinicia al actualizar o al dormirse): guardar ya todas las partidas en los
+// navegadores de los jugadores y avisarles, para que vuelvan solos a la partida cuando arranque de nuevo
+let closing = false;
+function shutdown(sig) {
+  if (closing) return; closing = true;
+  console.log(`  ${sig}: guardando las partidas y avisando a los jugadores`);
+  for (const r of rooms.values()) {
+    clearTimeout(saveTimers.get(r)); saveTimers.delete(r);
+    if (!r.state || r.state.phase === 'gameOver') continue;
+    try {
+      const blob = sealSave(r.snapshot());
+      r.seats.forEach((x) => x.kind === 'human' && x.client && x.client.send({ t: 'save', code: r.code, blob }));
+    } catch (e) { console.error('guardar', e); }
+  }
+  for (const c of clients) c.send({ t: 'serverRestart' });
+  setTimeout(() => process.exit(0), 500);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 server.listen(PORT, () => {
   const ips = Object.values(os.networkInterfaces()).flat().filter((i) => i && i.family === 'IPv4' && !i.internal).map((i) => i.address);

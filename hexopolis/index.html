@@ -14,6 +14,7 @@
 
 <!-- ============ MENÚ ============ -->
 <section id="scr-menu" class="screen">
+  <a class="hub-back" id="hub-back" href="https://5amueln5.github.io/nsgames/" title="Volver a NS Games">‹ NS Games</a>
   <div class="menu-box">
     <h1 class="logo"><span>Hex</span>ópolis</h1>
     <p class="tag">Coloniza · Comercia · Conquista</p>
@@ -31,6 +32,7 @@
       <button class="play-card pink" id="btn-create-game"><span class="pc-ic">＋</span><b>Crear partida</b><small>Ponle nombre y añade bots o amigos</small></button>
       <button class="play-card cyan" id="btn-join-game"><span class="pc-ic">🔑</span><b>Unirse a partida</b><small>Entra con el código de 4 letras</small></button>
     </div>
+    <div id="srv-pill" class="srv-pill hidden"></div>
     <div class="menu-foot"><button class="link-btn" id="btn-rules">📖 Cómo se juega</button></div>
   </div>
 </section>
@@ -123,8 +125,10 @@
   <div id="banner" class="banner"></div>
   <div id="bank-hud" class="bank-hud"></div>
   <div id="market-pop" class="market-pop hidden"></div>
+  <div id="afk-bar" class="afk-bar hidden"><span>💤 Estabas ausente y un bot está jugando por ti</span><button class="btn small yellow" id="afk-back">Volver a jugar</button></div>
   <div id="topright" class="topright">
     <div id="dice-mini" class="dice-mini"></div>
+    <span id="net-sig" class="net-sig hidden" title="Conexión con el servidor"><i></i><i></i><i></i></span>
     <button class="icon-btn hidden" id="btn-qchat" title="Chat rápido: emotes y frases">💬</button>
     <button class="icon-btn" id="btn-size" title="Ajustes: tamaño y colocación">⚙</button>
     <button class="icon-btn" id="btn-mute" title="Sonido">♪</button>

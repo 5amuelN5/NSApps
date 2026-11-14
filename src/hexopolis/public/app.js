@@ -301,6 +301,7 @@ function connect() {
     if (App.netLost) { App.netLost = false; netWarn(false); if (App.room) toast('✔ Conectado de nuevo', true); }
   };
   ws.onmessage = (e) => { App.lastMsgAt = Date.now(); try { onMsg(JSON.parse(e.data)); } catch (err) { console.error(err); } };
+  ws.addEventListener('open', () => { try { ws.send(JSON.stringify({ t: 'ping', at: Date.now() })); } catch (e) { /* */ } App.srvState = 'ready'; srvPill('<span class="sp-dot"></span>Servidor listo para jugar', 'ok'); renderSig(); });
   ws.onclose = () => {
     if (App.ws !== ws) return;
     $('#net-status').textContent = 'Desconectado. Reintentando…';
@@ -321,18 +322,55 @@ function reconnectNow() {
   if (App.room) { App.netLost = true; netWarn(true); }
   connect();
 }
+// mientras no hay conexión en una sala o partida: tarjeta en el centro que explica qué pasa (y bloquea los toques)
 function netWarn(on) {
-  let el = $('#net-warn');
-  if (!el) { el = document.createElement('div'); el.id = 'net-warn'; el.className = 'net-warn hidden'; el.innerHTML = '<span class="nw-dot"></span>Sin conexión · reconectando…'; document.body.appendChild(el); }
-  el.classList.toggle('hidden', !on);
+  let el = $('#net-ov');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'net-ov'; el.className = 'net-ov hidden';
+    el.innerHTML = '<div class="net-card"><div class="net-spin"></div><b id="net-t"></b><p id="net-p"></p><small id="net-s"></small><button class="btn small ghost hidden" id="net-leave">Salir al menú</button></div>';
+    document.body.appendChild(el);
+    $('#net-leave').onclick = () => { Sfx.click(); netWarn(false); leaveRoom(); };
+  }
+  clearInterval(App.netTick);
+  if (!on) { el.classList.add('hidden'); App.netSince = null; App.netReason = null; renderSig(); return; }
+  App.netSince = App.netSince || Date.now();
+  const tick = () => {
+    if (!App.room) { el.classList.add('hidden'); return; }
+    const sec = Math.round((Date.now() - App.netSince) / 1000);
+    el.classList.toggle('hidden', Date.now() - App.netSince < 1200); // un corte de un segundo no merece pantalla
+    const offline = navigator.onLine === false;
+    const restart = App.netReason === 'restart';
+    $('#net-t').textContent = offline ? '📵 Sin internet' : restart ? '🔄 Actualizando el servidor' : '📡 Reconectando…';
+    $('#net-p').textContent = offline ? 'Revisa tu conexión. En cuanto vuelva, seguimos donde lo dejaste.'
+      : restart ? 'Tu partida está guardada. Volvemos solos en unos segundos (puede tardar hasta un minuto).'
+      : sec < 8 ? 'Se ha cortado la conexión. Tu partida sigue: volvemos enseguida.'
+      : 'El servidor puede estar reiniciándose (tarda hasta un minuto). Tu partida está guardada y seguirá donde la dejaste.';
+    $('#net-s').textContent = `${sec} s${App.netTries ? ' · intento ' + App.netTries : ''}`;
+    $('#net-leave').classList.toggle('hidden', sec < 25);
+  };
+  tick(); App.netTick = setInterval(tick, 1000);
+  renderSig();
 }
 // latido: si en 45 s no llega nada del servidor, la conexión está muerta aunque el navegador no lo sepa
 setInterval(() => {
   const ws = App.ws;
   if (App.mode !== 'online' || !ws || ws.readyState !== 1) return;
   if (Date.now() - (App.lastMsgAt || 0) > 45000) return reconnectNow();
-  try { ws.send(JSON.stringify({ t: 'ping' })); } catch (e) { /* */ }
+  try { ws.send(JSON.stringify({ t: 'ping', at: Date.now() })); } catch (e) { /* */ }
+  // en una sala, una visita normal al servidor cada pocos minutos para que no se duerma mientras jugáis
+  if (App.room && Date.now() - (App.lastHttpPing || 0) > 240000) { App.lastHttpPing = Date.now(); fetch(srvHttpUrl(), { cache: 'no-store' }).catch(() => {}); }
 }, 15000);
+// señal de conexión (tiempo de ida y vuelta al servidor)
+function renderSig() {
+  const el = $('#net-sig'); if (!el) return;
+  const online = App.mode === 'online';
+  el.classList.toggle('hidden', !online);
+  if (!online) return;
+  const up = App.ws && App.ws.readyState === 1 && !App.netLost, rtt = App.rtt;
+  const lv = !up ? 0 : rtt == null ? 3 : rtt < 150 ? 3 : rtt < 400 ? 2 : 1;
+  el.className = 'net-sig ' + ['off', 'bad', 'mid', 'good'][lv];
+  el.title = !up ? 'Sin conexión con el servidor' : rtt == null ? 'Conectado' : `Conexión con el servidor: ${rtt} ms${lv === 1 ? ' (lenta)' : ''}`;
+}
 // al volver a la pestaña o recuperar la red, comprobar enseguida que la conexión sigue viva
 function checkNet() {
   if (App.mode !== 'online') return;
@@ -454,11 +492,23 @@ function renderShare() {
   } else warn.classList.add('hidden');
 }
 // servidor externo (p. ej. Render gratis): se duerme si nadie lo usa; lo despertamos en cuanto se abre el juego
+// despertar el servidor nada más abrir el juego (en el plan gratuito se duerme si nadie juega) y enseñar cómo va
+function srvHttpUrl() { return App.wsUrl ? App.wsUrl.replace(/^ws/, 'http').replace(/\/ws$/, '/config.json') : 'config.json'; }
+function srvPill(html, cls) { const el = $('#srv-pill'); if (!el) return; el.className = 'srv-pill ' + cls; el.innerHTML = html; }
 function wakeServer() {
-  try { fetch(App.wsUrl.replace(/^ws/, 'http').replace(/\/ws$/, '/config.json'), { mode: 'no-cors', cache: 'no-store' }).catch(() => {}); } catch (e) { /* */ }
+  const t0 = Date.now();
+  App.srvState = 'waking';
+  const tick = () => {
+    if (App.srvState !== 'waking') return;
+    const s = Math.round((Date.now() - t0) / 1000);
+    srvPill(s >= 2 ? `<span class="sp-dot"></span>Despertando el servidor… ${s} s <small>si estaba dormido tarda hasta 1 minuto; puedes ir creando la partida</small>` : '<span class="sp-dot"></span>Conectando con el servidor…', 'wait');
+  };
+  clearInterval(App.srvT); App.srvT = setInterval(tick, 1000); tick();
+  fetch(srvHttpUrl(), { cache: 'no-store' }).then((r) => { if (!r.ok) throw new Error(); clearInterval(App.srvT); App.srvState = 'ready'; App.lastHttpPing = Date.now(); srvPill('<span class="sp-dot"></span>Servidor listo para jugar', 'ok'); })
+    .catch(() => { clearInterval(App.srvT); App.srvState = 'down'; srvPill('<span class="sp-dot"></span>No se puede conectar con el servidor · reintentando…', 'bad'); setTimeout(wakeServer, 5000); });
 }
 function loadConfig() {
-  App.configReady = fetch('config.json', { cache: 'no-store' }).then((r) => r.json()).then((c) => { App.hasServer = !!c.server; App.publicUrl = c.publicUrl || null; App.wsUrl = c.wsUrl || null; if (App.wsUrl) wakeServer(); if (App.room) renderShare(); }).catch(() => { App.hasServer = false; });
+  App.configReady = fetch('config.json', { cache: 'no-store' }).then((r) => r.json()).then((c) => { App.hasServer = !!c.server; App.publicUrl = c.publicUrl || null; App.wsUrl = c.wsUrl || null; if (App.hasServer) wakeServer(); if (App.room) renderShare(); }).catch(() => { App.hasServer = false; });
   return App.configReady;
 }
 document.querySelectorAll('[data-addbot]').forEach((b) => (b.onclick = () => { Sfx.click(); send({ t: 'addBot', level: +b.dataset.addbot }); }));
@@ -476,8 +526,9 @@ function leaveRoom() {
   send({ t: 'leaveRoom' });
   if (App.mode === 'local') { if (localOver) LocalSave.clear(); }
   else if (App.room) { Saves.set(App.token, App.room.code, null); App.leftRoom = App.room.code; } // si el aviso de salida no llegó (sin conexión), se repite al reconectar
-  netWarn(false);
+  netWarn(false); App.turnTimer = null;
   App.room = null; App.view = null; App.queue = []; App.busy = false; App.spectator = false;
+  renderAfkBar();
   if (App.mode === 'local') App.mode = null;
   show('menu'); // siempre al menú principal
   history.replaceState(null, '', location.pathname);
@@ -735,7 +786,9 @@ function onMsg(m) {
       break;
     case 'room': {
       if (m.spectator && !App.spectator) toast('👁 Estás mirando como espectador', true);
+      seatChangeToasts(App.room, m.room, m.you);
       App.room = m.room; App.you = m.you; App.chat = m.chat || []; App.spectator = !!m.spectator;
+      renderAfkBar();
       // mi sitio sin perfil (p. ej. el perfil se creó mientras se conectaba): mandarlo para que la partida dé experiencia
       const mySeat = m.you >= 0 && m.room.seats[m.you];
       if (App.mode === 'online' && mySeat && mySeat.kind === 'human' && !mySeat.prof && ProfStore.signed() && App.ws && App.ws.readyState === 1 && App.ws._profSent !== m.room.code) {
@@ -760,7 +813,13 @@ function onMsg(m) {
     case 'restored': toast('Partida recuperada: seguimos donde lo dejasteis', true); break;
     case 'restoreFail': Saves.set(App.token, m.code, null); break;
     case 'error': toast(m.msg); Sfx.error(); break;
-    case 'pong': break;
+    case 'pong': if (m.at) { App.rtt = Math.max(1, Date.now() - m.at); renderSig(); } break;
+    case 'serverRestart': App.netReason = 'restart'; if (App.room) { App.netLost = true; netWarn(true); } break;
+    case 'timer':
+      App.turnTimer = m.timer ? Object.assign({}, m.timer, { until: Date.now() + m.timer.left }) : null;
+      App.timerWarned = false;
+      if (App.screen === 'game' && App.view) renderBanner();
+      break;
     case 'roomGone': {
       // al reconectar, la sala ya no existe (se reinició el servidor sin copia o se cerró)
       if (!App.room || App.room.code !== m.code) break;
@@ -900,6 +959,7 @@ function handleEvents(events, prev) {
         break;
       }
       case 'turn':
+        if (e.pid === me) bgAlert('🔔 ¡Te toca! · Hexópolis');
         if (e.pid === me) { bigMsg('¡TU TURNO!'); Sfx.turn(); }
         break;
       case 'setupNext': if (e.pid === me) Sfx.turn(); break;
@@ -920,7 +980,7 @@ function handleEvents(events, prev) {
         bigMsg('¡MONOPOLIO!', v.players[e.pid].color);
         break;
       case 'trade': case 'bankTrade': Sfx.trade(); if (e.type === 'trade' && (e.with === me || e.pid === me)) toast('¡Trato cerrado!', true); break;
-      case 'offer': if (e.pid !== me) Sfx.card(); break;
+      case 'offer': if (e.pid !== me) { Sfx.card(); if (v.trade && me in v.trade.responses) bgAlert('🤝 Te ofrecen un trato · Hexópolis'); } break;
       case 'tradeCancel': break;
       case 'gift': if (e.to === me) { Sfx.coin(); toast(`🎁 ${v.players[e.pid].name} te regala ${e.n} ${e.n === 1 ? 'carta' : 'cartas'}`, true); } break;
       case 'discard':
@@ -996,13 +1056,59 @@ function setBuild(kind) {
   renderActions(); renderBuild(); renderBanner(); updateTargets();
 }
 
+// ================= AVISOS DE CONEXIÓN Y PRESENCIA =================
+// el reloj del turno: refresca la cuenta atrás y avisa cuando te quedan 20 s
+setInterval(() => {
+  const tm = App.turnTimer;
+  if (!tm || App.screen !== 'game' || !App.view) return;
+  const left = (tm.until - Date.now()) / 1000;
+  if (left <= 31) renderBanner();
+  if (tm.pids.includes(App.me) && left <= 20 && left > 0 && !App.timerWarned) {
+    App.timerWarned = true;
+    toast(tm.kind === 'trade' ? '⏳ Te quedan 20 s para responder a la oferta' : '⏳ Te quedan 20 s: si no juegas, un bot jugará por ti');
+    Sfx.turn(); if (navigator.vibrate) try { navigator.vibrate(120); } catch (e) { /* */ }
+    bgAlert('⏳ ¡Te quedan 20 s! · Hexópolis');
+  }
+}, 1000);
+function seatChangeToasts(prev, room, you) {
+  if (!prev || !room || prev.code !== room.code || !room.started || room.over || App.screen !== 'game') return;
+  room.seats.forEach((s, i) => {
+    const was = prev.seats[i];
+    if (i === you || !was || s.kind !== 'human' || was.name !== s.name) return;
+    if (was.connected && !s.connected) toast(`📡 ${s.name} se ha desconectado · si no vuelve en 20 s, jugará un bot en su lugar`);
+    else if (!was.connected && s.connected) toast(`✔ ${s.name} ha vuelto a la partida`, true);
+    else if (!was.afk && s.afk) toast(`💤 ${s.name} no responde: juega un bot en su lugar hasta que vuelva`);
+    else if (was.afk && !s.afk) toast(`👋 ${s.name} vuelve a jugar`, true);
+  });
+}
+// «un bot juega por ti»: botón para volver a jugar
+function renderAfkBar() {
+  const el = $('#afk-bar'); if (!el) return;
+  const seat = App.room && App.you >= 0 && App.room.seats[App.you];
+  const on = !!(seat && seat.afk && App.room.started && !App.room.over);
+  el.classList.toggle('hidden', !on);
+  if (on && !App.afkShown) { App.afkShown = true; bgAlert('💤 Un bot juega por ti · Hexópolis'); }
+  if (!on) App.afkShown = false;
+}
+$('#afk-back').onclick = () => { Sfx.click(); send({ t: 'back' }); };
+// con la pestaña en segundo plano: el título parpadea y el móvil vibra
+function bgAlert(text) {
+  if (!document.hidden) return;
+  if (navigator.vibrate) try { navigator.vibrate([160, 90, 160]); } catch (e) { /* */ }
+  App.baseTitle = App.baseTitle || document.title;
+  clearInterval(App.titleT);
+  let on = true; document.title = text;
+  App.titleT = setInterval(() => { on = !on; document.title = on ? text : App.baseTitle; }, 1100);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && App.titleT) { clearInterval(App.titleT); App.titleT = null; document.title = App.baseTitle || document.title; } });
+
 // ================= HUD =================
 function renderHUD() {
   if (!App.view || App.screen !== 'game') return;
   const spec = isSpec();
   if (document.body.classList.contains('spec') !== spec) { document.body.classList.toggle('spec', spec); if (spec) { App.ui.stab = App.ui.stab || 'chat'; $('#spec-qc').innerHTML = qcHTML(); } setTimeout(layout, 0); }
   if (spec) renderSpecCards();
-  renderPlayers(); renderHand(); renderBuild(); renderActions(); renderBanner(); renderLog(); renderOffer(); renderInfo(); renderBankHUD();
+  renderPlayers(); renderHand(); renderBuild(); renderActions(); renderBanner(); renderLog(); renderOffer(); renderInfo(); renderBankHUD(); renderSig();
   if (App.view.dice) renderDiceMini(App.view.dice);
   if (App.ui.modal) renderModal();
   layoutIfNeeded();
@@ -1021,7 +1127,7 @@ function renderPlayers() {
       tag = r === 'accept' ? '<span class="pl-tag ok">Acepta</span>' : r === 'reject' ? '<span class="pl-tag no">Rechaza</span>' : '<span class="pl-tag wait">Pensando…</span>';
     }
     if (v.phase === 'discard' && v.pendingDiscard && v.pendingDiscard[i]) tag = `<span class="pl-tag wait">Descarta ${v.pendingDiscard[i]}</span>`;
-    const off = seatInfo[i] && seatInfo[i].kind === 'human' && !seatInfo[i].connected ? '<span class="pl-off">Desconectado</span>' : '';
+    const off = seatInfo[i] && seatInfo[i].kind === 'human' && !seatInfo[i].connected ? '<span class="pl-off">Desconectado</span>' : seatInfo[i] && seatInfo[i].afk ? '<span class="pl-off afk">💤 Ausente</span>' : '';
     const lr = v.longestRoad.owner === i, la = v.largestArmy.owner === i;
     const who = i === me ? 'Tú' : p.bot ? `Bot ${stars(p.bot)}` : 'Jugador';
     const pct = Math.min(100, (p.vp / Engine.winVP(v)) * 100);
@@ -1232,7 +1338,17 @@ function renderBanner() {
     case 'gameOver': t = v.winTeam != null ? `🏆 Gana el equipo ${Engine.TEAM_NAMES[v.winTeam]}` : `🏆 ${esc(v.players[v.winner].name)} gana`; m = true; break;
   }
   if (me < 0 && v.phase !== 'gameOver') t = `<span class="spec-tag">👁 Espectador</span> ${t}`;
+  // cuenta atrás de los últimos 30 s antes de que juegue un bot (o de que se rechace sola una oferta)
+  const tm = App.turnTimer;
+  if (tm && v.phase !== 'gameOver' && !App.netLost) {
+    const left = Math.ceil((tm.until - Date.now()) / 1000), mineT = tm.pids.includes(me);
+    if (left <= 30 && left >= 0) {
+      t += ` <span class="tmr ${left <= 10 ? 'hot' : ''}">⏳ ${left} s${mineT ? (tm.kind === 'trade' ? ' para responder' : ' · si no juegas, jugará un bot por ti') : ''}</span>`;
+      if (mineT) m = true;
+    }
+  }
   setHTML(el, t); el.classList.toggle('me', m);
+  clampBanner();
 }
 
 function renderLog() {
@@ -1357,7 +1473,7 @@ function renderSpecCards() {
     if (v.phase === 'discard' && v.pendingDiscard && v.pendingDiscard[i]) tag = `<span class="pl-tag wait">Descarta ${v.pendingDiscard[i]}</span>`;
     if (v.phase === 'gameOver' && v.winner === i) tag = '<span class="pl-tag ok">🏆 Gana</span>';
     const who = p.bot ? `Bot ${stars(p.bot)}` : seat.prof ? profBadge(seat.prof) : 'Jugador';
-    const off = seat.kind === 'human' && !seat.connected ? ' <span class="pl-off">Desconectado</span>' : '';
+    const off = seat.kind === 'human' && !seat.connected ? ' <span class="pl-off">Desconectado</span>' : seat.afk ? ' <span class="pl-off afk">💤 Ausente</span>' : '';
     const st = (img, n, t, cls = '') => `<span class="spc-s ${cls}" title="${t}"><img src="${img}" alt=""><b>${n}</b></span>`;
     return `<div class="spc ${cur ? 'cur' : ''}" id="spc-${i}" data-spc="${i}" style="--c:${p.color}">
       <div class="spc-head">${avImg(i, 'spc-av')}<span class="nm">${v.teams ? `<span class="tm-tag" style="--tc:${Engine.TEAM_COLORS[Engine.teamOf(v, i)]}">${Engine.TEAM_NAMES[Engine.teamOf(v, i)]}</span>` : ''}${cur ? '<i class="turn">▶</i>' : ''}${esc(p.name)}</span><span class="spc-vp"><b>${p.vp}</b><small>/${goal}</small></span></div>
@@ -1952,7 +2068,10 @@ function placeOverlays(r) {
   offer.style.top = Math.round(cy / ui) + 'px';
   toastEl.style.left = Math.round(cx / ui) + 'px';
   toastEl.style.top = Math.round((r.y + r.h * 0.18) / ui) + 'px';
+  App.bannerCx = cx;
   bn.style.left = innerWidth > 800 ? Math.round(cx / ui) + 'px' : '';
+  clampBanner();
+  const afk = $('#afk-bar'); afk.style.left = Math.round(cx / ui) + 'px'; afk.style.top = Math.round(cy / ui) + 'px'; // en el centro del tablero: si estás ausente no estás jugando
   placeBankHUD();
 }
 // cartas que le quedan al banco (y al mazo de desarrollo), en una esquina del tablero
@@ -1991,6 +2110,13 @@ function marketPop(res, delay) {
     Sfx.bonus();
     App.mkT2 = setTimeout(() => el.classList.add('hidden'), 3600);
   }, delay || 0);
+}
+// el cartel de turno va centrado sobre el tablero, pero nunca se sale de la pantalla
+function clampBanner() {
+  const bn = $('#banner');
+  if (innerWidth <= 800 || App.bannerCx == null || !bn.innerHTML) return;
+  const w = bn.getBoundingClientRect().width, x = Math.min(innerWidth - w / 2 - 8, Math.max(w / 2 + 8, App.bannerCx));
+  bn.style.left = Math.round(x / Prefs.ui) + 'px';
 }
 function layoutIfNeeded() {
   if (JSON.stringify(computeRegion()) !== lastLayoutKey) layout();
