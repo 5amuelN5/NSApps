@@ -1775,7 +1775,12 @@ function computeRegion() {
   // columna derecha (gráfica, costes y acciones) + registro encima
   const rc = document.querySelector('.rightcol').getBoundingClientRect();
   // hueco entre el registro y la gráfica para los dados de los demás jugadores
-  $('#side').style.bottom = Math.round(rc.height + 20 + 78 * Prefs.ui) + 'px';
+  // el chat/registro se queda siempre con al menos 220 px de alto aunque la gráfica sea muy grande
+  const sTop = parseFloat($('#side').style.top) || $('#side').getBoundingClientRect().top || 60;
+  const want = rc.height + 20 + 78 * Prefs.ui;
+  const maxBottom = innerHeight - sTop - 220;
+  $('#side').style.bottom = Math.round(Math.max(10, Math.min(want, maxBottom))) + 'px';
+  $('#side').classList.toggle('over', want > maxBottom);
   const cc = $('#centercol').getBoundingClientRect();
   const leftH = (innerHeight - cc.top) + 14;
   const right = rc.width + 30;
