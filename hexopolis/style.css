@@ -986,3 +986,4 @@ body.spec .spec-qc { display: flex; margin-top: 8px; }
 .spec-qc .qc-p { font-size: calc(11.5px * var(--rc, 1)); }
 #qchat-pop { zoom: calc(var(--ui) * var(--rc, 1)); }
 .side.over { z-index: 21; }
+.rr-warn-in { color: #ffcf8a; font-weight: 700; }

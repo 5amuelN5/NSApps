@@ -546,7 +546,7 @@ function randomRules(R) {
   const keys = Engine.SPECIAL_RULES.map((x) => x.key).sort(() => Math.random() - 0.5);
   const k = 2 + Math.floor(Math.random() * 3);
   const o = Object.assign({}, R, Object.fromEntries(keys.map((key, i) => [key, i < k])));
-  o.vp = 6 + Math.floor(Math.random() * 9);
+  o.vp = 6 + Math.floor(Math.random() * 11);
   o.hand = [5, 7, 7, 9, 12, 99][Math.floor(Math.random() * 6)];
   if (R.mode !== 'teams') o.map = ['auto', 'auto', 'normal', 'big'][Math.floor(Math.random() * 4)];
   return o;
@@ -581,10 +581,10 @@ function roomRulesHTML(R, n) {
 function rulesTilesHTML(R, n, showSpecials) {
   const big = Engine.mapKind(R, n) === 'big';
   const tile = (ic, lbl, val, sub) => `<div class="rt"><span class="rt-ic">${ic}</span><span class="rt-txt"><small>${lbl}</small><b>${val}</b>${sub ? `<em>${sub}</em>` : ''}</span></div>`;
-  const pc = Engine.piecesFor(R.vp);
+  const pc = Engine.piecesFor(R.teams ? R.vp : Math.min(R.vp, Engine.vpCap(n)));
   const tiles = [
     tile('🗺️', 'Mapa', big ? 'Grande' : 'Normal', `${big ? '30' : '19'} casillas${R.map === 'auto' ? ' · automático' : ''}`),
-    tile('🏆', 'Para ganar', R.teams ? `${Engine.teamTarget(R.vp, R.teams)} por equipo` : `${R.vp} puntos`, R.teams ? `sumando los ${R.teams} del equipo` : R.vp > 10 ? `${pc.settlements} poblados · ${pc.cities} ciudades` : 'lo normal son 10'),
+    tile('🏆', 'Para ganar', R.teams ? `${Engine.teamTarget(R.vp, R.teams)} por equipo` : `${Math.min(R.vp, Engine.vpCap(n))} puntos`, R.teams ? `sumando los ${R.teams} del equipo` : R.vp > Engine.vpCap(n) ? `máximo con ${n} jugadores` : R.vp > 10 ? `${pc.settlements} poblados · ${pc.cities} ciudades` : 'lo normal son 10'),
     tile('🃏', 'Con un 7', R.hand === 99 ? 'Sin límite' : `Más de ${R.hand} cartas`, R.hand === 99 ? 'nadie descarta' : 'descartas la mitad'),
     tile('👥', 'Equipos', R.teams ? `${R.teams} contra ${R.teams}` : 'Cada uno', R.teams ? 'suman puntos juntos' : 'juego individual'),
   ].join('');
@@ -1502,7 +1502,7 @@ function renderModal() {
           ${R.mode === 'teams' ? `<p class="muted">🗺️ Mapa ${R.teams === 2 ? 'normal' : 'grande'} (lo fija el formato ${R.teams} contra ${R.teams}).</p>` : `<div class="rr-row"><div class="rr-lbl"><b>Mapa</b><small>El grande tiene 30 casillas, 11 puertos y más cartas.</small></div>`}
             ${R.mode === 'teams' ? '' : seg('rmap', [['auto', autoTxt, 'Normal hasta 4 jugadores, grande con 5 o más'], ['normal', 'Normal (2-5)', forced ? 'Con 6 o más jugadores no se puede elegir' : ''], ['big', 'Grande (5-7)']], shownMap).replace('data-rmap="normal"', forced ? 'data-rmap="normal" disabled data-off="1"' : 'data-rmap="normal"') + '</div>'}
           ${R.mode === 'teams' ? '' : warn}
-          <div class="rr-row"><div class="rr-lbl"><b>Puntos para ganar</b><small>Lo normal son 10 (de 5 a 16). ${piecesTxt(R.vp)}</small></div>
+          <div class="rr-row"><div class="rr-lbl"><b>Puntos para ganar</b><small>Lo normal son 10 (de 5 a 20). ${piecesTxt(R.teams ? R.vp : Math.min(R.vp, Engine.vpCap(n)))}${!R.teams && R.vp > Engine.vpCap(n) ? ` <b class="rr-warn-in">Con ${n} jugadores el máximo es ${Engine.vpCap(n)}: se jugará a ${Engine.vpCap(n)}.</b>` : ''}</small></div>
             <div class="rr-step"><button data-rvp="-1" ${dis}>−</button><b>${R.vp}</b><button data-rvp="1" ${dis}>+</button></div></div>
           ${R.teams ? `<p class="muted">👥 Meta del equipo: ${Engine.teamTarget(R.vp, R.teams)} puntos sumando a todos.</p>` : ''}
           <div class="rr-row"><div class="rr-lbl"><b>Límite de cartas al salir un 7</b><small>Quien tenga más descarta la mitad.</small></div>
@@ -1518,7 +1518,7 @@ function renderModal() {
         box.querySelectorAll('[data-rmap]').forEach((b) => (b.onclick = () => put({ map: b.dataset.rmap })));
         box.querySelectorAll('[data-rhand]').forEach((b) => (b.onclick = () => put({ hand: +b.dataset.rhand })));
         box.querySelectorAll('[data-rteams]').forEach((b) => (b.onclick = () => put({ teams: +b.dataset.rteams })));
-        box.querySelectorAll('[data-rvp]').forEach((b) => (b.onclick = () => { const nv = R.vp + +b.dataset.rvp; if (nv >= 5 && nv <= 16) put({ vp: nv }); }));
+        box.querySelectorAll('[data-rvp]').forEach((b) => (b.onclick = () => { const nv = R.vp + +b.dataset.rvp; if (nv >= 5 && nv <= 20) put({ vp: nv }); }));
         box.querySelectorAll('[data-rsp]').forEach((b) => (b.onclick = () => {
           const k = b.dataset.rsp, on = !R[k];
           const patch = { [k]: on };

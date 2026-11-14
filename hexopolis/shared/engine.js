@@ -38,8 +38,8 @@
     { key: 'goldRain', icon: '🌧️', name: 'Lluvia de oro', desc: 'Al sacar un 2 o un 12, todos los jugadores reciben 1 carta al azar del banco.' },
     { key: 'fastStart', icon: '🚀', name: 'Arranque rápido', desc: 'Recibes recursos de tus dos poblados iniciales, no solo del segundo.' },
     { key: 'chaosNumbers', icon: '🌀', name: 'Mapa caótico', desc: 'Los números del mapa se reparten sin restricciones: el 6 y el 8 pueden quedar juntos.' },
-    { key: 'market', icon: '🛒', name: 'Mercado del día', desc: 'Cada ronda hay un recurso de oferta: todos lo cambian 2 a 1 con el banco.' },
-    { key: 'portBoost', icon: '⚓', name: 'Puertos de oro', desc: 'Los puertos de «cualquier recurso» cambian 2 a 1 en lugar de 3 a 1.' },
+    { key: 'market', icon: '🛒', name: 'Mercado del día', desc: 'Cada 5 rondas sale un recurso de oferta: mientras dura, todos lo cambian 2 a 1 con el banco.' },
+    { key: 'portBoost', icon: '⚓', name: 'Puertos de oro', desc: 'Los puertos de un recurso concreto cambian 1 a 1 en lugar de 2 a 1.' },
     { key: 'taxes', icon: '💸', name: 'Impuestos', desc: 'Cada 4 rondas, quien va primero paga 1 carta a quien va último.' },
     { key: 'underdog', icon: '🍀', name: 'Ayuda al último', desc: 'Al empezar tu turno, si vas último en puntos, recibes 1 carta al azar del banco.' },
     { key: 'heroes', icon: '🏅', name: 'Héroes', desc: 'El camino más largo y el ejército más grande valen 3 puntos en vez de 2.' },
@@ -55,7 +55,7 @@
     const custom = () => {
       const c = {};
       if (['auto', 'normal', 'big'].includes(r.map)) c.map = r.map;
-      if (r.vp != null && Number.isFinite(+r.vp)) c.vp = Math.max(5, Math.min(16, Math.round(+r.vp)));
+      if (r.vp != null && Number.isFinite(+r.vp)) c.vp = Math.max(5, Math.min(20, Math.round(+r.vp)));
       if (HAND_OPTS.includes(r.hand | 0)) c.hand = r.hand | 0;
       for (const x of SPECIAL_RULES) c[x.key] = !!r[x.key];
       return c;
@@ -74,6 +74,8 @@
     o.map = o.teams === 2 ? 'normal' : 'big';
     return o;
   }
+  // con mucha gente no hay sitio en la isla para metas muy altas
+  function vpCap(n) { return n >= 7 ? 16 : n >= 6 ? 18 : 20; }
   function maxSeats(rules) { return rules && rules.mode === 'teams' ? (rules.teams | 0) * 2 : MAX_PLAYERS; }
   function R(s) { return s.rules || DEFAULT_RULES; }
 
@@ -146,7 +148,7 @@
       bank: 24, deck: { knight: 20, vp: 5, roadBuilding: 3, yop: 3, monopoly: 3 },
     },
   };
-  function mapKind(rules, n) { return rules.map === 'big' || n >= BIG_ONLY || (rules.map === 'auto' && n > 4) ? 'big' : 'normal'; }
+  function mapKind(rules, n) { return rules.map === 'big' || n >= BIG_ONLY || (rules.map === 'auto' && (n > 4 || (n >= 4 && rules.vp >= 15))) ? 'big' : 'normal'; }
 
   function buildBoard(s, kind) {
     const M = MAPS[kind] || MAPS.normal;
@@ -260,6 +262,7 @@
   function createGame(cfg, opts = {}) {
     const n = cfg.length;
     const rules = normRules(opts.rules);
+    if (!rules.teams && rules.vp > vpCap(n)) rules.vp = vpCap(n);
     const kind = mapKind(rules, n);
     const M = MAPS[kind];
     const pc = piecesFor(rules.vp);
@@ -297,7 +300,9 @@
     if (rules.teams && !teamsError(rules, n)) s.teams = { size: rules.teams, count: n / rules.teams, target: teamTarget(rules.vp, rules.teams) };
     s.board = buildBoard(s, kind);
     const deck = [];
-    for (const k in M.deck) for (let i = 0; i < M.deck[k]; i++) deck.push(k);
+    // metas altas: más cartas de desarrollo (más puntos y caballeros disponibles)
+    const deckX = rules.vp > 10 ? (rules.vp / 10) * (n >= 6 ? 1.5 : 1) : 1;
+    for (const k in M.deck) for (let i = 0; i < Math.round(M.deck[k] * deckX); i++) deck.push(k);
     s.devDeck = shuffle(s, deck);
     s.first = randInt(s, n);
     const order = [];
@@ -348,8 +353,8 @@
     const r = { wood: 4, brick: 4, sheep: 4, wheat: 4, ore: 4 };
     for (const V of s.board.vertices) {
       if (!V.b || V.b.owner !== pid || !V.port) continue;
-      if (V.port === 'any') { const q = R(s).portBoost ? 2 : 3; for (const k of RES) r[k] = Math.min(r[k], q); }
-      else r[V.port] = 2;
+      if (V.port === 'any') { for (const k of RES) r[k] = Math.min(r[k], 3); }
+      else r[V.port] = R(s).portBoost ? 1 : 2;
     }
     if (R(s).market && s.market) r[s.market] = Math.min(r[s.market], 2);
     return r;
@@ -506,9 +511,11 @@
   function newRound(s, ev) {
     const RU = R(s), n = s.players.length;
     const round = Math.floor((s.turn - 1) / n) + 1;
-    if (RU.market) {
-      s.market = RES[randInt(s, RES.length)];
-      log(s, `🛒 Mercado del día: esta ronda ${RES_NAMES[s.market]} se cambia 2 a 1 con el banco`);
+    if (RU.market && (round - 1) % 5 === 0) {
+      // la oferta dura 5 rondas
+      const prev = s.market;
+      do { s.market = RES[randInt(s, RES.length)]; } while (s.market === prev);
+      log(s, `🛒 Mercado: durante las próximas 5 rondas ${RES_NAMES[s.market]} se cambia 2 a 1 con el banco`);
     }
     if (RU.taxes && round > 1 && (round - 1) % 4 === 0) {
       const v = s.players.map((p) => vp(s, p.id, false));
@@ -1000,7 +1007,7 @@
   return {
     RES, RES_NAMES, COST, PIPS, DEV_NAMES, COLORS, WIN_VP, MAX_PLAYERS, DEFAULT_RULES, SPECIAL_RULES, HAND_OPTS,
     TEAM_NAMES, TEAM_COLORS, teamsError, teamTarget, teamOf, sameTeam, teamVP, teamGoal,
-    BIG_ONLY, MODES, maxSeats, normRules, winVP, rulesOf: R, piecesFor, piecesOf, robberHexOk, mapKind,
+    BIG_ONLY, MODES, maxSeats, vpCap, normRules, winVP, rulesOf: R, piecesFor, piecesOf, robberHexOk, mapKind,
     createGame, apply, viewFor, filterEvents,
     canSettle, canRoad, legalSettlements, legalRoads, legalCities, tradeRatios, robberVictims,
     vp, total, has, emptyRes, longestRoadFor, fmtRes,

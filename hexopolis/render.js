@@ -471,7 +471,8 @@ class BoardRenderer {
       x.imageSmoothingEnabled = true;
       x.drawImage(spr, pp.x - spr.cw / 2, pp.y - rr * 0.82, spr.cw, spr.ch);
       x.fillStyle = '#2b3442'; x.font = `600 ${Math.max(9, S * 0.24)}px "Fredoka", system-ui, sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle';
-      x.fillText(p.ratio + ':1', pp.x, pp.y + rr * 0.48);
+      const boosted = p.type !== 'any' && this.view.rules && this.view.rules.portBoost; // puertos de oro: 1 a 1
+      x.fillText((boosted ? 1 : p.ratio) + ':1', pp.x, pp.y + rr * 0.48);
     }
     this.base = { c, size };
   }
