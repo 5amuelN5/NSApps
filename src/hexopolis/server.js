@@ -38,7 +38,8 @@ const closedRooms = new Map(); // código → cuándo la cerró su anfitrión (p
 
 // ---- perfiles de jugador ----
 // El perfil vive en el navegador de cada jugador, firmado por el servidor: nadie puede subirse el nivel a mano.
-const PROF_KEY = crypto.createHash('sha256').update('perfil:').update(SAVE_KEY).digest();
+// 'v2': borrado general de perfiles (todos empiezan de cero); los perfiles firmados antes ya no valen
+const PROF_KEY = crypto.createHash('sha256').update('perfil:v2:').update(SAVE_KEY).digest();
 const pendingProfiles = new Map(); // token → perfil firmado que no se pudo entregar (jugador desconectado al acabar)
 function signProfile(p) {
   const d = JSON.stringify(p);
@@ -203,7 +204,8 @@ wss.on('connection', (ws) => {
           r.broadcast([]);
         }
         if (!r) {
-          r = Room.fromSnapshot(snap, { onChange: pushRoomList });
+          // (también reparte experiencia al terminar: antes las partidas recuperadas tras un reinicio no daban nada)
+          r = Room.fromSnapshot(snap, { onChange: pushRoomList, onGameOver: () => awardRoom(r) });
           r.onState = () => scheduleSave(r);
           rooms.set(r.code, r);
           console.log(`  Partida ${r.code} recuperada de una copia (${snap.seats.length} jugadores)`);
@@ -233,7 +235,12 @@ wss.on('connection', (ws) => {
         break;
       }
       case 'ping': c.send({ t: 'pong' }); break;
-      case 'setName': c.name = cleanName(m.name); break;
+      case 'setName': {
+        c.name = cleanName(m.name);
+        // en la sala de espera, el nuevo nombre se ve al momento (en partida se mantiene el de la partida)
+        if (c.room && (!c.room.state || c.room.state.phase === 'gameOver')) { const si = c.room.seatOf(c.token); if (si >= 0) { c.room.seats[si].name = c.name; c.room.sendRoom(); } }
+        break;
+      }
       case 'avatar': {
         // cambiar o quitar la foto de perfil (se ve en la sala y en la partida)
         c.avatar = m.img ? cleanAvatar(m.img) : null;

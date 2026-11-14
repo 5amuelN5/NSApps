@@ -14,6 +14,14 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* */ } },
 };
+// borrado general: al cambiar DATA_EPOCH, cada navegador borra perfil, estadísticas, jugadores recientes y partidas
+// guardadas, y empieza de cero (se mantienen el nombre, la foto y los ajustes de tamaño)
+const DATA_EPOCH = '2';
+if (store.get('hx_epoch', '1') !== DATA_EPOCH) {
+  ['hx_profile', 'hx_lstats', 'hx_recent', 'hx_saves', 'hx_local'].forEach((k) => { try { localStorage.removeItem(k); } catch (e) { /* */ } });
+  store.set('hx_epoch', DATA_EPOCH);
+  window.HX_WIPED = true;
+}
 
 const App = {
   token: (() => {
@@ -115,12 +123,13 @@ function bigMsg(text, color) {
 }
 
 // ================= MENÚ =================
-$('#in-name').value = App.name;
-$('#in-name').addEventListener('input', (e) => {
-  App.name = e.target.value.toUpperCase().replace(/[^A-Z0-9ÑÁÉÍÓÚÜ _-]/gi, '').slice(0, 14) || 'JUGADOR';
+// el nombre se cambia desde el perfil
+function cleanPlayerName(v) { return String(v || '').toUpperCase().replace(/[^A-Z0-9ÑÁÉÍÓÚÜ _-]/gi, '').trim().slice(0, 14); }
+function setPlayerName(v) {
+  App.name = cleanPlayerName(v) || 'JUGADOR';
   store.set('hx_name', App.name);
   if (App.ws && App.ws.readyState === 1) send({ t: 'setName', name: App.name });
-});
+}
 // conectar con el servidor sin salir del menú (para ver la lista de salas en «Unirse a partida»)
 async function ensureOnline() {
   await App.configReady;
@@ -727,6 +736,11 @@ function onMsg(m) {
     case 'room': {
       if (m.spectator && !App.spectator) toast('👁 Estás mirando como espectador', true);
       App.room = m.room; App.you = m.you; App.chat = m.chat || []; App.spectator = !!m.spectator;
+      // mi sitio sin perfil (p. ej. el perfil se creó mientras se conectaba): mandarlo para que la partida dé experiencia
+      const mySeat = m.you >= 0 && m.room.seats[m.you];
+      if (App.mode === 'online' && mySeat && mySeat.kind === 'human' && !mySeat.prof && ProfStore.signed() && App.ws && App.ws.readyState === 1 && App.ws._profSent !== m.room.code) {
+        App.ws._profSent = m.room.code; App.ws.send(JSON.stringify({ t: 'profile', profile: ProfStore.signed(), req: -1 }));
+      }
       if (!m.room.started || m.room.over) {
         if (!m.room.started) { App.view = null; App.queue = []; App.busy = false; if (App.screen !== 'room') show('room'); }
         else if (App.screen === 'game') renderHUD();
@@ -2011,6 +2025,5 @@ function loop(now) {
     b.textContent = '▶ UNIRSE A LA SALA ' + code;
     b.classList.remove('hidden');
     b.onclick = () => { Sfx.unlock(); Sfx.click(); goOnline(code); };
-    $('#in-name').focus(); $('#in-name').select();
   }
 })();

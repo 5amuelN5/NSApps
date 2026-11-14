@@ -77,63 +77,40 @@ function localStatsHTML() {
   const lv = [1, 2, 3, 4].filter((l) => L.byLevel[l]).map((l) => `<span class="rchip">${'★'.repeat(l)} ${L.byLevel[l].w}/${L.byLevel[l].g}</span>`).join('');
   return L.games ? statsGrid(L, `<div class="pf-st"><b>${bestWon ? '★'.repeat(bestWon) : '—'}</b><small>Mejor bot ganado</small></div>`) + (lv ? `<div class="rr-mini"><small class="muted">Victorias según el nivel de bot más alto:</small>${lv}</div>` : '') : '<p class="muted st-empty">Todavía no has terminado ninguna partida local.</p>';
 }
-// estadísticas por modo de juego en un deslizable: Todas · Clásica · Por equipos · Personalizada · Local
+// estadísticas por modo de juego: un desplegable elige qué modo se ve (Todas · Clásica · Por equipos · Personalizada · Local)
 const STAT_MODES = [
-  { k: 'all', tab: '🌐 Todas', t: 'Todas las partidas online', sub: 'dan experiencia y logros' },
-  { k: 'classic', tab: '🏛️ Clásica', t: 'Partidas clásicas online', sub: 'reglas de siempre' },
-  { k: 'teams', tab: '👥 Equipos', t: 'Partidas por equipos online', sub: 'ganas si gana tu equipo' },
-  { k: 'custom', tab: '🎲 Personalizada', t: 'Partidas personalizadas online', sub: 'con normas especiales' },
-  { k: 'local', tab: '🤖 Local', t: 'Partidas locales', sub: 'contra bots, sin conexión · no dan experiencia' },
+  { k: 'all', name: 'Todas las online', t: 'Todas las partidas online', sub: 'dan experiencia y logros' },
+  { k: 'classic', name: 'Clásica', t: 'Partidas clásicas online', sub: 'reglas de siempre' },
+  { k: 'teams', name: 'Por equipos', t: 'Partidas por equipos online', sub: 'ganas si gana tu equipo' },
+  { k: 'custom', name: 'Personalizada', t: 'Partidas personalizadas online', sub: 'con normas especiales' },
+  { k: 'local', name: 'Local (contra bots)', t: 'Partidas locales', sub: 'contra bots, sin conexión · no dan experiencia' },
 ];
-function statsSliderHTML(p, withLocal) {
+function statsModes(withLocal) { return STAT_MODES.filter((x) => x.k !== 'local' || withLocal); }
+function statsCount(p, k) { const M = p.modes || {}; return k === 'all' ? p.games : k === 'local' ? LocalStats.get().games : (M[k] && M[k].games) || 0; }
+function statsBodyHTML(p, k, withLocal) {
+  const x = STAT_MODES.find((y) => y.k === k) || STAT_MODES[0];
   const stat = (n, l) => `<div class="pf-st"><b>${n}</b><small>${l}</small></div>`;
-  const modes = STAT_MODES.filter((x) => x.k !== 'local' || withLocal);
   const M = p.modes || {};
-  const split = Profile.MODE_KEYS.reduce((a, k) => a + ((M[k] && M[k].games) || 0), 0);
-  const body = (x) => {
-    if (x.k === 'all') return statsGrid(p, stat(p.ach.length + '/' + Profile.ACH.length, 'Logros')) + (p.games > split ? `<small class="muted st-note">${p.games - split} ${p.games - split === 1 ? 'partida jugada' : 'partidas jugadas'} antes de separar por modos solo ${p.games - split === 1 ? 'cuenta' : 'cuentan'} aquí.</small>` : '');
-    if (x.k === 'local') return localStatsHTML();
-    const m = M[x.k];
-    return m && m.games ? statsGrid(m) : `<p class="muted st-empty">${withLocal ? 'Todavía no has terminado' : 'Todavía no ha terminado'} ninguna partida de este modo online.</p>`;
-  };
-  const cnt = (x) => x.k === 'all' ? p.games : x.k === 'local' ? LocalStats.get().games : (M[x.k] && M[x.k].games) || 0;
-  return `<div class="st-wrap">
-      <div class="st-tabs">${modes.map((x, i) => `<button class="st-tab ${i ? '' : 'on'}" data-sti="${i}">${x.tab} <small>${cnt(x)}</small></button>`).join('')}</div>
-      <div class="st-slider">${modes.map((x) => `<div class="st-slide"><h4 class="pf-sec-t">${x.t} <small class="muted">${x.sub}</small></h4>${body(x)}</div>`).join('')}</div>
-      <div class="st-dots">${modes.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>
+  let body;
+  if (x.k === 'all') {
+    const split = Profile.MODE_KEYS.reduce((a, key) => a + ((M[key] && M[key].games) || 0), 0), old = p.games - split;
+    body = statsGrid(p, stat(p.ach.length + '/' + Profile.ACH.length, 'Logros')) + (old > 0 ? `<small class="muted st-note">${old} ${old === 1 ? 'partida jugada' : 'partidas jugadas'} antes de separar por modos solo ${old === 1 ? 'cuenta' : 'cuentan'} aquí.</small>` : '');
+  } else if (x.k === 'local') body = localStatsHTML();
+  else body = M[x.k] && M[x.k].games ? statsGrid(M[x.k]) : `<p class="muted st-empty">${withLocal ? 'Todavía no has terminado' : 'Todavía no ha terminado'} ninguna partida de este modo online.</p>`;
+  return `<small class="muted st-sub">${x.sub}</small>${body}`;
+}
+function statsBlockHTML(p, withLocal) {
+  const modes = statsModes(withLocal);
+  const k = modes.some((x) => x.k === App.ui.stMode) ? App.ui.stMode : 'all';
+  return `<div class="pst-wrap">
+      <label class="st-pick"><span>📊 Estadísticas</span><select class="st-sel">${modes.map((x) => `<option value="${x.k}" ${x.k === k ? 'selected' : ''}>${x.name} (${statsCount(p, x.k)})</option>`).join('')}</select></label>
+      <div class="st-body">${statsBodyHTML(p, k, withLocal)}</div>
     </div>`;
 }
-// deslizar con el dedo, o pulsar las pestañas; recuerda la última pestaña vista
-function bindStatsSlider(box) {
-  const sl = box.querySelector('.st-slider'); if (!sl) return;
-  const tabs = [...box.querySelectorAll('.st-tab')], dots = [...box.querySelectorAll('.st-dots i')];
-  const mark = (i) => { tabs.forEach((t, j) => t.classList.toggle('on', j === i)); dots.forEach((d, j) => d.classList.toggle('on', j === i)); const t = tabs[i], bar = t && t.parentElement; if (t && bar.scrollWidth > bar.clientWidth) { const l = t.offsetLeft - bar.offsetLeft; if (l < bar.scrollLeft) bar.scrollLeft = l - 8; else if (l + t.offsetWidth > bar.scrollLeft + bar.clientWidth) bar.scrollLeft = l + t.offsetWidth - bar.clientWidth + 8; } };
-  let lock = 0; // mientras se desliza por pulsar una pestaña, no marcar las intermedias
-  let anim = 0;
-  const go = (i, smooth) => {
-    mark(i); App.ui.stTab = i;
-    const to = i * sl.clientWidth, from = sl.scrollLeft;
-    cancelAnimationFrame(anim);
-    if (!smooth || Math.abs(to - from) < 2) { sl.scrollLeft = to; return; }
-    // animación propia (el desplazamiento suave del navegador no va igual en todos)
-    lock = Date.now() + 1000; sl.style.scrollSnapType = 'none';
-    const t0 = performance.now(), dur = 260;
-    let done = false;
-    const end = () => { if (done) return; done = true; cancelAnimationFrame(anim); sl.style.scrollSnapType = ''; sl.scrollLeft = to; lock = Date.now() + 80; };
-    const step = (now) => {
-      if (done) return;
-      const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
-      sl.scrollLeft = from + (to - from) * e;
-      if (k < 1) anim = requestAnimationFrame(step); else end();
-    };
-    anim = requestAnimationFrame(step);
-    setTimeout(end, dur + 120); // por si el navegador no pinta (pestaña en segundo plano)
-  };
-  tabs.forEach((t, i) => (t.onclick = () => { Sfx.click(); go(i, true); }));
-  let raf = 0;
-  sl.addEventListener('scroll', () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { if (Date.now() < lock) return; const i = Math.round(sl.scrollLeft / Math.max(1, sl.clientWidth)); if (!tabs[i] || tabs[i].classList.contains('on')) return; mark(i); App.ui.stTab = i; }); });
-  const start = Math.min(tabs.length - 1, App.ui.stTab || 0);
-  if (start) requestAnimationFrame(() => go(start, false));
+// al cambiar el desplegable solo se redibujan las cifras; recuerda el modo elegido
+function bindStats(box, p, withLocal) {
+  const sel = box.querySelector('.st-sel'); if (!sel) return;
+  sel.onchange = () => { Sfx.click(); App.ui.stMode = sel.value; box.querySelector('.st-body').innerHTML = statsBodyHTML(p, sel.value, withLocal); };
 }
 
 // jugadores con los que has coincidido (ficha guardada tal como estaba y resultados entre vosotros)
@@ -197,9 +174,15 @@ async function syncProfile() {
       else toast('Tu perfil de este navegador tiene más experiencia que el del enlace: se mantiene el actual');
     } else toast('Ese enlace de perfil no es válido');
   }
-  const r = await profileCall({ profile: ProfStore.signed(), name: App.name });
+  let r = await profileCall({ profile: ProfStore.signed(), name: App.name });
+  if (r && r.t === 'profileBad') {
+    // el perfil guardado ya no vale (p. ej. tras el borrado general): se empieza uno nuevo para no quedarse sin experiencia
+    r = await profileCall({ profile: null, name: App.name });
+    if (r && r.t === 'profile') toast('Tu perfil anterior ya no es válido: empiezas uno nuevo desde el nivel 1', true);
+  }
   if (r && r.t === 'profile') { ProfStore.set(r.profile); App.profileBad = false; }
   else if (r && r.t === 'profileBad') App.profileBad = true;
+  if (window.HX_WIPED) { window.HX_WIPED = false; toast('🆕 Hexópolis empieza de cero: perfiles y estadísticas reiniciados para todos', true); }
   renderProfileChip();
 }
 
@@ -287,8 +270,8 @@ function profCardHTML(p, av, withLocal) {
   const pr = Profile.progress(p.xp), rk = Profile.rankOf(pr.lvl);
   return `<div class="pf-card" style="--rk:${rk.color}">
       <div class="pf-head">${emblemHTML(p, 'big', av)}<div class="pf-id"><b>${esc(p.name)}</b><span class="pf-rank">${rk.name} · Nivel ${pr.lvl}</span>
-        <div class="pf-xp"><i style="width:${pr.pct}%"></i></div><small class="muted">${pr.into} / ${pr.need} de experiencia para el nivel ${pr.lvl + 1}</small></div></div>
-      ${statsSliderHTML(p, withLocal)}
+        <div class="pf-xp"><i style="width:${pr.pct}%"></i></div><small class="muted">${pr.max ? `¡Nivel máximo! ${p.xp} de experiencia en total` : `${pr.into} / ${pr.need} de experiencia para el nivel ${pr.lvl + 1}`}</small></div></div>
+      ${statsBlockHTML(p, withLocal)}
     </div>`;
 }
 function achHTML(p) {
@@ -313,7 +296,8 @@ function gainHTML() {
 function renderProfileChip() {
   const el = $('#prof-chip'); if (!el) return;
   const p = ProfStore.data();
-  if (!p) { el.innerHTML = App.hasServer === false ? '' : '<span class="muted">Creando tu perfil…</span>'; el.classList.toggle('hidden', App.hasServer === false); return; }
+  // sin perfil todavía (o sin servidor) el botón sigue ahí: desde el perfil se cambia el nombre
+  if (!p) { el.classList.remove('hidden'); el.style.removeProperty('--rk'); el.innerHTML = `<span class="pc-txt"><b>${esc(App.name)}</b><small>${App.hasServer === false ? 'Toca para cambiar tu nombre' : 'Creando tu perfil…'}</small></span><span class="pc-go">Perfil ›</span>`; return; }
   const pr = Profile.progress(p.xp), rk = Profile.rankOf(pr.lvl);
   el.classList.remove('hidden');
   el.style.setProperty('--rk', rk.color);
@@ -321,16 +305,34 @@ function renderProfileChip() {
 }
 
 // ---------- ventanas ----------
+const nameFieldHTML = () => `<div class="pf-name"><label for="pf-name-in">Tu nombre</label><input id="pf-name-in" maxlength="14" autocomplete="off" spellcheck="false" value="${esc(App.name)}"><button class="btn small yellow" id="pf-name-ok">Guardar</button></div>`;
+function bindNameField() {
+  const nameIn = $('#pf-name-in'); if (!nameIn) return;
+  const saveName = async () => {
+    const nv = cleanPlayerName(nameIn.value);
+    if (!nv) { toast('Escribe un nombre'); nameIn.focus(); return; }
+    if (nv === App.name) { nameIn.value = nv; return; }
+    Sfx.click(); setPlayerName(nv); nameIn.value = App.name;
+    renderProfileChip();
+    toast('✔ Nombre cambiado a ' + App.name, true);
+    if (ProfStore.get()) { const r = await profileCall({ profile: ProfStore.signed(), name: App.name }); if (r && r.t === 'profile') ProfStore.set(r.profile); }
+    if (App.ui.modal && App.ui.modal.kind === 'profile') renderModal();
+  };
+  $('#pf-name-ok').onclick = saveName;
+  nameIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveName(); });
+  nameIn.addEventListener('input', () => { const c = nameIn.selectionStart; nameIn.value = nameIn.value.toUpperCase(); try { nameIn.setSelectionRange(c, c); } catch (e) { /* */ } });
+}
 function renderProfileModal(m, box) {
   const p = ProfStore.data();
   if (m.kind === 'profile') {
-    if (!p) { box.innerHTML = `<h2>Tu perfil</h2><p class="muted">${App.hasServer ? 'Se está creando tu perfil, vuelve a abrirlo en un momento.' : 'El perfil necesita el servidor del juego.'}</p><button class="btn small ghost" data-close>Cerrar</button>`; return; }
+    if (!p) { box.innerHTML = `<div class="row between"><h2>Tu perfil</h2><button class="btn small ghost" data-close>Cerrar</button></div>${nameFieldHTML()}<p class="muted">${App.hasServer ? 'Se está creando tu perfil, vuelve a abrirlo en un momento.' : 'El nivel y los logros necesitan el servidor del juego.'}</p>`; bindNameField(); return; }
     const lvl = Profile.levelOf(p.xp);
     const emb = Profile.EMBLEMS.map((x) => `<button class="emb ${x.e === p.emblem ? 'on' : ''}" data-emb="${x.e}" ${lvl >= x.lvl ? '' : 'disabled'} title="${lvl >= x.lvl ? 'Usar este emblema' : 'Se desbloquea en el nivel ' + x.lvl}">${x.e}${lvl >= x.lvl ? '' : `<small>Nv ${x.lvl}</small>`}</button>`).join('');
     const rec = Object.values(Recents.all()).sort((a, b) => b.last - a.last);
     const recHTML = rec.length ? rec.map((x) => `<button class="rec" data-rec="${esc(x.id)}">${emblemHTML(x.prof, '', x.avatar)}<span><b>${esc(x.name)}</b><small>${x.games} ${x.games === 1 ? 'partida' : 'partidas'} · tú ${x.myWins} – ${x.theirWins} ${esc(x.name)}</small></span></button>`).join('') : '<p class="muted">Aquí aparecerán las personas con las que juegues partidas online.</p>';
     box.innerHTML = `<div class="row between"><h2>Tu perfil</h2><button class="btn small ghost" data-close>Cerrar</button></div>
       ${App.profileBad ? '<p class="rr-warn">El servidor no ha podido comprobar este perfil. Si tienes un enlace de recuperación, ábrelo.</p>' : ''}
+      ${nameFieldHTML()}
       ${profCardHTML(Object.assign({}, p, { name: App.name }), Avatar.get(), true)}
       <h4 class="tr-sub">Foto de perfil</h4>
       <div class="av-row">${Avatar.get() ? `<img class="av-prev" src="${Avatar.get()}" alt="Tu foto">` : '<span class="av-prev none">📷</span>'}
@@ -342,7 +344,8 @@ function renderProfileModal(m, box) {
       <h4 class="tr-sub">No pierdas tu perfil</h4>
       <p class="muted">Tu perfil se guarda en este navegador. Si borras los datos del navegador o cambias de móvil, abre tu <b>enlace de recuperación</b> y lo recuperas tal como estaba cuando lo copiaste. Cópialo de nuevo cuando subas de nivel. En iPhone, añade el juego a la pantalla de inicio para que Safari no lo borre.</p>
       <div class="row gap wrap"><button class="btn cyan" id="pf-copy">📋 Copiar enlace de recuperación</button><a class="btn green" id="pf-wa" target="_blank" rel="noopener">Enviármelo por WhatsApp</a></div>`;
-    bindStatsSlider(box);
+    bindStats(box, Object.assign({}, p, { name: App.name }), true);
+    bindNameField();
     $('#av-file').onchange = async (e) => {
       const f = e.target.files && e.target.files[0]; if (!f) return;
       try { const img = await makeAvatar(f); applyAvatar(img); toast('📷 Foto de perfil guardada', true); if (App.ui.modal && App.ui.modal.kind === 'profile') renderModal(); }
@@ -369,13 +372,12 @@ function renderProfileModal(m, box) {
       ${profCardHTML(q, m.avatar || (mine ? Avatar.get() : (Recents.all()[q.id] || {}).avatar))}
       ${mine ? '' : `<h4 class="tr-sub">Entre vosotros</h4>${vsHTML(q.id)}`}
       <h4 class="tr-sub">Logros (${q.ach.length}/${Profile.ACH.length})</h4>${achHTML(q)}`;
-    bindStatsSlider(box);
+    bindStats(box, q, false);
     if ($('#pc-back')) $('#pc-back').onclick = () => openModal({ kind: m.back });
   }
 }
 
 $('#prof-chip').onclick = () => { Sfx.unlock(); Sfx.click(); openModal({ kind: 'profile' }); };
 $('#btn-ranking').onclick = () => { Sfx.unlock(); Sfx.click(); openModal({ kind: 'ranking' }); refreshFriends(); };
-$('#in-name').addEventListener('change', () => { if (ProfStore.get()) profileCall({ profile: ProfStore.signed(), name: App.name }).then((r) => r && r.t === 'profile' && ProfStore.set(r.profile)); renderProfileChip(); });
 renderProfileChip();
 syncProfile();

@@ -5,12 +5,17 @@
 })(typeof self !== 'undefined' ? self : this, function (E) {
   'use strict';
 
-  // experiencia total necesaria para llegar a cada nivel: 0, 100, 300, 600, 1000…
-  const xpFor = (lvl) => 50 * lvl * (lvl - 1);
-  function levelOf(xp) { let l = 1; while (xpFor(l + 1) <= (xp || 0)) l++; return l; }
+  // experiencia total necesaria para llegar a cada nivel: 0, 100, 300, 600, 1000… (cada nivel pide 100 más que el
+  // anterior hasta el 25; desde ahí, 2500 por nivel para que los niveles altos sigan siendo alcanzables). Máximo: 100
+  const MAX_LVL = 100, SOFT = 25;
+  const xpFor = (lvl) => (lvl <= SOFT ? 50 * lvl * (lvl - 1) : 50 * SOFT * (SOFT - 1) + (lvl - SOFT) * 2500);
+  function levelOf(xp) { let l = 1; while (l < MAX_LVL && xpFor(l + 1) <= (xp || 0)) l++; return l; }
   function progress(xp) {
-    const l = levelOf(xp), a = xpFor(l), b = xpFor(l + 1);
-    return { lvl: l, into: xp - a, need: b - a, pct: Math.round(((xp - a) / (b - a)) * 100), next: b };
+    xp = xp || 0;
+    const l = levelOf(xp);
+    if (l >= MAX_LVL) return { lvl: l, into: xp - xpFor(l), need: 0, pct: 100, next: null, max: true };
+    const a = xpFor(l), b = xpFor(l + 1);
+    return { lvl: l, into: xp - a, need: b - a, pct: Math.round(((xp - a) / (b - a)) * 100), next: b, max: false };
   }
 
   const RANKS = [
@@ -20,12 +25,19 @@
     { lvl: 10, name: 'Constructor', color: '#b57bff' },
     { lvl: 15, name: 'Gobernador', color: '#ffc21e' },
     { lvl: 20, name: 'Leyenda', color: '#ff3b6b' },
+    { lvl: 25, name: 'Héroe', color: '#ff8a3d' },
+    { lvl: 30, name: 'Mítico', color: '#3df0ff' },
+    { lvl: 40, name: 'Titán', color: '#c0ff3d' },
+    { lvl: 50, name: 'Inmortal', color: '#ff5ce1' },
+    { lvl: 75, name: 'Emperador', color: '#ffe066' },
+    { lvl: 100, name: 'Dios de Hexópolis', color: '#ffffff' },
   ];
   function rankOf(lvl) { let r = RANKS[0]; for (const x of RANKS) if (lvl >= x.lvl) r = x; return r; }
 
   const EMBLEMS = [
     { e: '🏠', lvl: 1 }, { e: '🌲', lvl: 1 }, { e: '🐑', lvl: 2 }, { e: '🌾', lvl: 3 }, { e: '🧱', lvl: 4 }, { e: '⛰️', lvl: 5 },
     { e: '⚓', lvl: 6 }, { e: '🎲', lvl: 7 }, { e: '🦹', lvl: 8 }, { e: '⚔️', lvl: 10 }, { e: '🏰', lvl: 12 }, { e: '👑', lvl: 15 }, { e: '🐉', lvl: 18 }, { e: '🌟', lvl: 20 },
+    { e: '🦄', lvl: 25 }, { e: '🔱', lvl: 30 }, { e: '🌋', lvl: 35 }, { e: '🪐', lvl: 40 }, { e: '☄️', lvl: 50 }, { e: '🏛️', lvl: 60 }, { e: '🗿', lvl: 75 }, { e: '💎', lvl: 100 },
   ];
   function emblemOk(e, lvl) { const x = EMBLEMS.find((y) => y.e === e); return !!x && lvl >= x.lvl; }
 
@@ -63,11 +75,13 @@
     const st = (s.stats && s.stats.pl && s.stats.pl[pid]) || {};
     const won = !ctx.left && (s.winTeam != null ? E.teamOf(s, pid) === s.winTeam : s.winner === pid);
     const vp = E.vp(s, pid, true), target = E.winVP(s);
+    // por equipos se gana sumando: lo que cuenta es lo cerca que quedó tu equipo de su meta
+    const reach = s.teams ? E.teamVP(s, E.teamOf(s, pid), true) / s.teams.target : vp / target;
     const from = [];
     let xp = 0;
     if (!ctx.left) {
       xp += 25; from.push(['Partida jugada', 25]);
-      const byVp = Math.round(Math.min(1, vp / target) * 40); xp += byVp; from.push([`${vp} puntos`, byVp]);
+      const byVp = Math.round(Math.min(1, reach) * 40); xp += byVp; from.push([s.teams ? `${vp} puntos (equipo ${E.teamVP(s, E.teamOf(s, pid), true)}/${s.teams.target})` : `${vp} puntos`, byVp]);
       if (won) { xp += 60; from.push(['Victoria', 60]); }
       // premios del resumen (sin empates)
       const bestOf = (fn) => { const vals = s.players.map((_, i) => fn(i)); const m = Math.max(...vals); return m > 0 && vals.filter((x) => x === m).length === 1 ? vals.indexOf(m) : -1; };
@@ -122,5 +136,5 @@
     return { profile: p, gain: { xp, from, total: p.xp, lvlFrom, lvlTo: levelOf(p.xp), newAch, won } };
   }
 
-  return { xpFor, levelOf, progress, RANKS, rankOf, EMBLEMS, emblemOk, ACH, MODE_KEYS, newProfile, applyGame };
+  return { MAX_LVL, xpFor, levelOf, progress, RANKS, rankOf, EMBLEMS, emblemOk, ACH, MODE_KEYS, newProfile, applyGame };
 });
