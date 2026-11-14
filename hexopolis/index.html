@@ -17,6 +17,7 @@
   <div class="menu-box">
     <h1 class="logo"><span>Hex</span>ópolis</h1>
     <p class="tag">Coloniza · Comercia · Conquista</p>
+    <button class="prof-chip hidden" id="prof-chip" title="Tu perfil: nivel, logros y enlace de recuperación"></button>
     <label class="field">TU NOMBRE
       <input id="in-name" maxlength="14" autocomplete="off" spellcheck="false">
     </label>
@@ -103,6 +104,7 @@
 <!-- ============ PARTIDA ============ -->
 <section id="scr-game" class="screen hidden nopad">
   <div id="players" class="players"></div>
+  <div id="spec-cards" class="spec-cards"></div>
   <div id="banner" class="banner"></div>
   <div id="topright" class="topright">
     <div id="dice-mini" class="dice-mini"></div>
@@ -131,8 +133,11 @@
     <div class="chat-row"><input id="qchat-in" placeholder="Escribe un mensaje…" maxlength="200"><button class="btn small cyan" id="qchat-send">Enviar</button></div>
   </div>
   <aside id="side" class="side">
+    <div class="side-tabs"><button data-stab="chat" class="on">💬 Chat</button><button data-stab="log">📜 Jugadas</button></div>
     <h3>REGISTRO</h3>
     <div id="log" class="log"></div>
+    <div id="chatlog" class="log chatlog"></div>
+    <div class="qc spec-qc" id="spec-qc"></div>
     <div id="chat-wrap" class="chat-wrap">
       <div class="chat-row"><input id="chat-in" placeholder="Chat…" maxlength="200"><button class="btn small cyan" id="chat-send" title="Enviar">➤</button></div>
     </div>
@@ -165,9 +170,11 @@
 <script src="shared/engine.js"></script>
 <script src="shared/bots.js"></script>
 <script src="shared/room.js"></script>
+<script src="shared/profile.js"></script>
 <script src="p2p.js"></script>
 <script src="audio.js"></script>
 <script src="render.js"></script>
 <script src="app.js"></script>
+<script src="perfil.js"></script>
 </body>
 </html>

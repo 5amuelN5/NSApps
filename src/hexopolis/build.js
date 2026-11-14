@@ -9,7 +9,7 @@ fs.rmSync(DIST, { recursive: true, force: true });
 fs.mkdirSync(path.join(DIST, 'shared'), { recursive: true });
 
 for (const f of fs.readdirSync(path.join(ROOT, 'public'))) fs.copyFileSync(path.join(ROOT, 'public', f), path.join(DIST, f));
-for (const f of ['engine.js', 'bots.js', 'room.js']) fs.copyFileSync(path.join(ROOT, 'shared', f), path.join(DIST, 'shared', f));
+for (const f of ['engine.js', 'bots.js', 'room.js', 'profile.js']) fs.copyFileSync(path.join(ROOT, 'shared', f), path.join(DIST, 'shared', f));
 
 // Salas online con servidor propio (p. ej. Render): SERVER_URL=https://tu-servidor.onrender.com npm run build
 const SERVER = (process.env.SERVER_URL || '').trim().replace(/\/+$/, '');

@@ -7,6 +7,7 @@ const { WebSocketServer } = require('ws');
 const crypto = require('crypto');
 const zlib = require('zlib');
 const Room = require('./shared/room');
+const Profile = require('./shared/profile');
 
 // ---- copias de seguridad de las partidas ----
 // El servidor gratuito puede reiniciarse y perder la memoria. Cada pocos segundos manda a los jugadores
@@ -33,6 +34,48 @@ function openSave(b64) {
   } catch (e) { return null; }
 }
 const saveTimers = new Map();
+
+// ---- perfiles de jugador ----
+// El perfil vive en el navegador de cada jugador, firmado por el servidor: nadie puede subirse el nivel a mano.
+const PROF_KEY = crypto.createHash('sha256').update('perfil:').update(SAVE_KEY).digest();
+const pendingProfiles = new Map(); // token → perfil firmado que no se pudo entregar (jugador desconectado al acabar)
+function signProfile(p) {
+  const d = JSON.stringify(p);
+  return { d, s: crypto.createHmac('sha256', PROF_KEY).update(d).digest('base64url') };
+}
+function readProfile(x) {
+  try {
+    if (!x || typeof x.d !== 'string' || typeof x.s !== 'string' || x.d.length > 6000) return null;
+    const want = crypto.createHmac('sha256', PROF_KEY).update(x.d).digest();
+    const got = Buffer.from(x.s, 'base64url');
+    if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return null;
+    const p = JSON.parse(x.d);
+    return p && p.v === 1 && typeof p.id === 'string' ? p : null;
+  } catch (e) { return null; }
+}
+function cleanName(n) { return String(n || 'Jugador').slice(0, 16).trim() || 'Jugador'; }
+// al acabar una partida: experiencia y logros para cada humano con perfil
+function awardRoom(r) {
+  const s = r.state; if (!s) return;
+  r.seats.forEach((seat, i) => {
+    if (seat.kind !== 'human') return;
+    const base = (seat.client && seat.client.profile) || seat.prof;
+    if (!base) return;
+    const others = r.seats.filter((_, j) => j !== i);
+    const { profile, gain } = Profile.applyGame(base, {
+      // si se fue o si el bot jugó por él la mayor parte de la partida, no gana experiencia
+      state: s, pid: i, left: !!seat.left || (seat.autoActs || 0) > (seat.acts || 0),
+      humansOthers: others.filter((x) => x.kind === 'human').length,
+      botLevels: others.filter((x) => x.kind === 'bot').map((x) => x.level),
+    });
+    profile.name = cleanName(seat.name);
+    const signed = signProfile(profile);
+    seat.prof = profile;
+    if (seat.client && seat.client.ws) { seat.client.profile = profile; seat.client.send({ t: 'profileUpdate', profile: signed, gain }); }
+    else pendingProfiles.set(seat.token, { signed, gain });
+  });
+  r.sendRoom();
+}
 function scheduleSave(r) {
   if (saveTimers.has(r)) return;
   saveTimers.set(r, setTimeout(() => {
@@ -43,7 +86,7 @@ function scheduleSave(r) {
     r.seats.forEach((x) => x.kind === 'human' && x.client && x.client.send({ t: 'save', code: r.code, blob }));
   }, 700));
 }
-function makeRoom(opts) { const r = new Room({ ...opts, onChange: pushRoomList, onState: () => scheduleSave(r) }); return r; }
+function makeRoom(opts) { const r = new Room({ ...opts, onChange: pushRoomList, onState: () => scheduleSave(r), onGameOver: () => awardRoom(r) }); return r; }
 
 const PORT = +process.env.PORT || 3000;
 const ROOT = __dirname;
@@ -108,7 +151,9 @@ wss.on('connection', (ws) => {
     switch (m.t) {
       case 'hello': {
         c.token = String(m.token || '').slice(0, 64) || Math.random().toString(36).slice(2);
-        c.name = String(m.name || 'Jugador').slice(0, 16).trim() || 'Jugador';
+        c.name = cleanName(m.name);
+        c.profile = readProfile(m.profile);
+        if (pendingProfiles.has(c.token)) { const pp = pendingProfiles.get(c.token); pendingProfiles.delete(c.token); c.profile = readProfile(pp.signed); c.send({ t: 'profileUpdate', profile: pp.signed, gain: pp.gain }); }
         // reconexión automática a su sala
         for (const r of rooms.values()) {
           const si = r.seatOf(c.token);
@@ -146,7 +191,21 @@ wss.on('connection', (ws) => {
         }
         break;
       }
-      case 'setName': c.name = String(m.name || 'Jugador').slice(0, 16).trim() || 'Jugador'; break;
+      case 'setName': c.name = cleanName(m.name); break;
+      case 'profile': {
+        // crear un perfil nuevo, comprobar uno (p. ej. del enlace de recuperación) o cambiar el emblema
+        let p = null;
+        if (m.profile) { p = readProfile(m.profile); if (!p) return c.send({ t: 'profileBad', req: m.req }); }
+        else p = Profile.newProfile(crypto.randomBytes(9).toString('base64url'), cleanName(m.name));
+        if (m.name) p.name = cleanName(m.name);
+        if (m.emblem && Profile.emblemOk(m.emblem, Profile.levelOf(p.xp))) p.emblem = m.emblem;
+        if (!m.check) {
+          c.profile = p;
+          if (c.room) { const si = c.room.seatOf(c.token); if (si >= 0) { c.room.seats[si].prof = p; c.room.sendRoom(); } }
+        }
+        c.send({ t: 'profile', profile: signProfile(p), req: m.req, fresh: !m.profile });
+        break;
+      }
       case 'listRooms': c.send({ t: 'rooms', list: roomList() }); break;
       case 'createRoom': {
         if (!c.token) return;

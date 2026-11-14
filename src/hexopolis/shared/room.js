@@ -10,7 +10,7 @@
   const TRADE_TIMEOUT = 12000;
 
   class Room {
-    constructor({ code, name, isPublic = true, local = false, onChange, onState }) {
+    constructor({ code, name, isPublic = true, local = false, onChange, onState, onGameOver }) {
       this.code = code; this.name = name; this.isPublic = isPublic; this.local = local;
       this.seats = []; // {kind, token, name, level, client, connected, discAt}
       this.spectators = new Map(); // token → {client, name}
@@ -25,6 +25,8 @@
       this.lastTurn = -1;
       this.onChange = onChange || (() => {});
       this.onState = onState || (() => {}); // cada vez que cambia la partida (para guardarla)
+      this.onGameOver = onGameOver || (() => {}); // al terminar (experiencia de los perfiles)
+      this.awarded = false;
       this.speed = 1;
       this.rules = E.normRules({});
     }
@@ -34,7 +36,7 @@
       return {
         code: this.code, name: this.name, isPublic: this.isPublic, hostSeat: this.seats.findIndex((x) => x.kind === 'human' && x.token === this.host), local: this.local, speed: this.speed,
         started: !!this.state, over: !!(this.state && this.state.phase === 'gameOver'), rules: this.rules, max: E.MAX_PLAYERS,
-        seats: this.seats.map((s, i) => ({ i, kind: s.kind, name: s.name, level: s.level, connected: s.kind === 'bot' || s.connected, host: s.token === this.host, color: E.COLORS[i] })),
+        seats: this.seats.map((s, i) => ({ i, kind: s.kind, name: s.name, level: s.level, connected: s.kind === 'bot' || s.connected, host: s.token === this.host, color: E.COLORS[i], prof: s.kind === 'human' && s.prof ? s.prof : null })),
         spectators: [...this.spectators.values()].map((x) => x.name),
         startedAt: this.startedAt, endedAt: this.endedAt,
       };
@@ -46,13 +48,14 @@
       if (i >= 0) {
         const seat = this.seats[i];
         seat.client = client; seat.connected = true; seat.discAt = null; seat.left = false; seat.name = name || seat.name;
+        if (client && client.profile) seat.prof = client.profile;
         this.sendRoom(); this.sendStateTo(i, []); this.schedule();
         return { ok: true };
       }
       // partida empezada, sala llena o quiere mirar: entra como espectador
       if (opts.watch || this.state || this.seats.length >= E.MAX_PLAYERS) return this.watch(client, token, name);
       if (this.spectators.has(token)) this.spectators.delete(token); // un espectador ocupa un sitio libre
-      this.seats.push({ kind: 'human', token, name: name || 'Jugador', client, connected: true });
+      this.seats.push({ kind: 'human', token, name: name || 'Jugador', client, connected: true, prof: (client && client.profile) || null });
       if (!this.host) this.host = token;
       this.sysChat(`${name} entra en la sala`);
       this.sendRoom();
@@ -153,7 +156,8 @@
       this.seats = this.seats.filter((s) => s.kind === 'bot' || s.connected);
       this.state = E.createGame(this.seats.map((s, i) => ({ name: s.name, bot: s.kind === 'bot' ? s.level : 0, color: E.COLORS[i] })), Object.assign({}, opts, { rules: this.rules }));
       this.mem = {}; this.lastTurn = -1;
-      this.startedAt = Date.now(); this.endedAt = null;
+      this.startedAt = Date.now(); this.endedAt = null; this.awarded = false;
+      this.seats.forEach((x) => { x.acts = 0; x.autoActs = 0; });
       this.sysChat(`¡Partida iniciada! Mapa ${this.state.map === 'big' ? 'grande' : 'normal'} a ${this.rules.vp} puntos.`);
       this.sendRoom();
       this.broadcast([{ type: 'start' }]);
@@ -189,6 +193,7 @@
       if (pid < 0) return 'No estás en la partida';
       const r = E.apply(this.state, pid, a);
       if (!r.ok) return r.error;
+      this.seats[pid].acts = (this.seats[pid].acts || 0) + 1;
       this.after(r.events);
       return null;
     }
@@ -197,7 +202,11 @@
       const s = this.state;
       if (s.turn !== this.lastTurn) { this.lastTurn = s.turn; this.mem = {}; }
       this.broadcast(events);
-      if (s.phase === 'gameOver') { if (!this.endedAt) this.endedAt = Date.now(); this.sendRoom(); this.onChange(); }
+      if (s.phase === 'gameOver') {
+        if (!this.endedAt) this.endedAt = Date.now();
+        if (!this.awarded) { this.awarded = true; try { this.onGameOver(); } catch (e) { console.error('perfil', e); } }
+        this.sendRoom(); this.onChange();
+      }
       this.schedule();
       this.onState();
     }
@@ -269,6 +278,7 @@
           r = f ? E.apply(s, pid, f) : r;
         }
         if (r.ok) {
+          if (this.seats[pid] && this.seats[pid].kind === 'human') this.seats[pid].autoActs = (this.seats[pid].autoActs || 0) + 1;
           if (a.type === 'offerTrade' && s.trade) this.pushBotTradeChat(pid);
           this.after(r.events);
           return;
@@ -284,7 +294,7 @@
       return {
         v: 1, code: this.code, name: this.name, isPublic: this.isPublic, local: this.local, speed: this.speed,
         host: this.host, rules: this.rules, startedAt: this.startedAt, lastTurn: this.lastTurn, chat: this.chat.slice(-30), state: this.state, savedAt: Date.now(),
-        seats: this.seats.map((x) => ({ kind: x.kind, token: x.token, name: x.name, level: x.level, left: !!x.left })),
+        seats: this.seats.map((x) => ({ kind: x.kind, token: x.token, name: x.name, level: x.level, left: !!x.left, prof: x.prof || null, acts: x.acts || 0, autoActs: x.autoActs || 0 })),
       };
     }
     static fromSnapshot(snap, opts = {}) {
@@ -294,7 +304,7 @@
       r.speed = snap.speed || 1; r.rules = E.normRules(snap.rules || (snap.state && snap.state.rules)); r.host = snap.host; r.lastTurn = snap.lastTurn; r.chat = snap.chat || []; r.state = snap.state;
       // los humanos vuelven como desconectados: si alguien no regresa, un bot juega por él pasado el tiempo de gracia
       r.seats = snap.seats.map((x) => (x.kind === 'bot' ? { kind: 'bot', name: x.name, level: x.level, connected: true }
-        : { kind: 'human', token: x.token, name: x.name, connected: false, client: null, left: x.left, discAt: x.left ? now - AUTO_GRACE : now }));
+        : { kind: 'human', token: x.token, name: x.name, connected: false, client: null, left: x.left, discAt: x.left ? now - AUTO_GRACE : now, prof: x.prof || null, acts: x.acts || 0, autoActs: x.autoActs || 0 }));
       r.restoredSeq = snap.state && snap.state.seq;
       if (!r.local) setTimeout(() => r.schedule(), AUTO_GRACE + 50);
       return r;

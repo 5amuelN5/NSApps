@@ -66,11 +66,12 @@ board.onZoom = (z) => { if (App.screen === 'game') { Prefs.board = z; store.set(
 // ================= PANTALLAS =================
 function show(name) {
   App.screen = name;
+  if (name !== 'game') document.body.classList.remove('spec');
   ['menu', 'lobby', 'room', 'game'].forEach((n) => $('#scr-' + n).classList.toggle('hidden', n !== name));
   if (name !== 'game') { closeModal(); $('#offer-pop').classList.add('hidden'); }
   if (name === 'menu' || name === 'lobby' || name === 'room') showDemo();
   if (name !== 'game') $('#size-pop').classList.add('hidden');
-  if (name === 'menu') renderResume();
+  if (name === 'menu') { renderResume(); if (typeof renderProfileChip === 'function') renderProfileChip(); }
   layout();
   if (name === 'game') { board.zoom = Prefs.board; board.panX = 0; board.panY = 0; board.applyCamera(true); showBoardZoom(Prefs.board); }
   else { board.zoom = 1; board.panX = 0; board.panY = 0; board.applyCamera(true); }
@@ -227,7 +228,7 @@ function connect() {
   App.ws = ws;
   ws.onopen = () => {
     $('#net-status').textContent = 'Conectado ✔';
-    ws.send(JSON.stringify({ t: 'hello', token: App.token, name: App.name }));
+    ws.send(JSON.stringify({ t: 'hello', token: App.token, name: App.name, profile: ProfStore.signed() }));
     const sv = Saves.mine();
     if (sv) ws.send(JSON.stringify({ t: 'restore', code: sv.code, blob: sv.blob }));
     if (App.pendingJoin) { send({ t: 'joinRoom', code: App.pendingJoin }); App.pendingJoin = null; }
@@ -386,10 +387,12 @@ function renderRoom() {
       ? (host ? `<span class="kind">Bot · elige dificultad</span><div class="lvl-pick">${[1, 2, 3, 4].map((l) => `<button data-lvl="${i}:${l}" class="${s.level === l ? 'on' : ''}" title="${LVL_NAME[l][0] + LVL_NAME[l].slice(1).toLowerCase()}"><span class="st">${'★'.repeat(l)}</span><span class="ln">${LVL_NAME[l][0] + LVL_NAME[l].slice(1).toLowerCase()}</span></button>`).join('')}</div>` : `<span class="kind">Bot ${stars(s.level)} ${LVL_NAME[s.level][0] + LVL_NAME[s.level].slice(1).toLowerCase()}</span>`)
       : `<span class="kind">${s.host ? '👑 ANFITRIÓN' : 'HUMANO'}${i === App.you ? ' (TÚ)' : ''}${s.connected ? '' : ' · DESCONECTADO'}</span>`;
     const kick = host && i !== App.you ? `<button class="x" data-kick="${i}" title="Quitar">✕</button>` : '';
-    seats.push(`<div class="seat" style="--c:${s.color}"><span class="nm">${esc(s.name)}</span>${lvl}${kick}</div>`);
+    const pb = s.prof ? `<button class="seat-prof" data-pcard="${i}" title="Ver el perfil de ${esc(s.name)}">${profBadge(s.prof)}<span>${Profile.rankOf(Profile.levelOf(s.prof.xp)).name} · ver perfil</span></button>` : '';
+    seats.push(`<div class="seat" style="--c:${s.color}"><span class="nm">${esc(s.name)}</span>${pb}${lvl}${kick}</div>`);
   }
   $('#seats').innerHTML = seats.join('');
   $('#seats').querySelectorAll('[data-lvl]').forEach((b) => (b.onclick = () => { const [i, l] = b.dataset.lvl.split(':').map(Number); Sfx.click(); send({ t: 'botLevel', i, level: l }); }));
+  $('#seats').querySelectorAll('[data-pcard]').forEach((b) => (b.onclick = () => { Sfx.click(); const s = App.room.seats[+b.dataset.pcard]; if (s && s.prof) openModal({ kind: 'pcard', prof: s.prof }); }));
   $('#seats').querySelectorAll('[data-kick]').forEach((b) => (b.onclick = () => { Sfx.click(); send({ t: 'removeSeat', i: +b.dataset.kick }); }));
   const watchers = r.spectators || [];
   $('#room-watchers').classList.toggle('hidden', !watchers.length);
@@ -514,6 +517,7 @@ function onMsg(m) {
       break;
     case 'state': enqueue(m.view, m.events || []); break;
     case 'save': Saves.set(App.token, m.code, m.blob); break;
+    case 'profile': case 'profileBad': case 'profileUpdate': handleProfileMsg(m); break;
     case 'restored': toast('Partida recuperada: seguimos donde lo dejasteis', true); break;
     case 'restoreFail': Saves.set(App.token, m.code, null); break;
     case 'error': toast(m.msg); Sfx.error(); break;
@@ -581,7 +585,10 @@ function applyState(view, events) {
 
 // ================= EVENTOS / ANIMACIONES =================
 function elCenter(el) { if (!el) return { x: innerWidth / 2, y: innerHeight / 2 }; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
-function targetFor(pid, res) { return pid === App.me ? $('#rc-' + res) || $('#hand') : $('#pl-' + pid); }
+// tarjeta o línea de un jugador (en modo espectador se usan las tarjetas grandes de la izquierda)
+function plEl(pid) { return isSpec() ? $('#spc-' + pid) : $('#pl-' + pid); }
+function isSpec() { return App.screen === 'game' && App.me < 0 && !!App.view; }
+function targetFor(pid, res) { return pid === App.me ? $('#rc-' + res) || $('#hand') : plEl(pid); }
 function bump(el) { if (!el) return; el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
 
 function handleEvents(events, prev) {
@@ -589,7 +596,7 @@ function handleEvents(events, prev) {
   let chipN = 0;
   for (const e of events) {
     switch (e.type) {
-      case 'start': bigMsg('¡A JUGAR!'); Sfx.turn(); break;
+      case 'start': bigMsg('¡A JUGAR!'); Sfx.turn(); App.lastGain = null; break;
       case 'build': {
         const p = e.kind === 'road' ? midEdge(e.e) : board.vertexScreen(e.v);
         const col = v.players[e.pid].color;
@@ -615,8 +622,8 @@ function handleEvents(events, prev) {
         break;
       case 'robber': Sfx.robber(); break;
       case 'steal': {
-        const from = elCenter($('#pl-' + e.from)), to = elCenter(e.pid === me ? $('#hand') : $('#pl-' + e.pid));
-        fx.fly(Sprites.get(e.res || 'card', 4), from, to, 300, () => bump(e.pid === me ? $('#hand') : $('#pl-' + e.pid)), 30);
+        const from = elCenter(plEl(e.from)), to = elCenter(e.pid === me ? $('#hand') : plEl(e.pid));
+        fx.fly(Sprites.get(e.res || 'card', 4), from, to, 300, () => bump(e.pid === me ? $('#hand') : plEl(e.pid)), 30);
         if (e.pid === me && e.res) toast(`Robaste ${RN[e.res]} a ${v.players[e.from].name}`, true);
         if (e.from === me && e.res) toast(`${v.players[e.pid].name} te robó ${RN[e.res]}`);
         break;
@@ -630,7 +637,7 @@ function handleEvents(events, prev) {
       case 'buyDev':
         Sfx.card();
         if (e.pid === me && e.card) toast(`Carta: ${Engine.DEV_NAMES[e.card]}`, true);
-        fx.fly(Sprites.get('card', 4), elCenter($('#actions')), elCenter(e.pid === me ? $('#devs') : $('#pl-' + e.pid)), 0, null, 30);
+        fx.fly(Sprites.get('card', 4), elCenter($('#actions')), elCenter(e.pid === me ? $('#devs') : plEl(e.pid)), 0, null, 30);
         break;
       case 'playDev':
         Sfx.card();
@@ -638,7 +645,7 @@ function handleEvents(events, prev) {
         break;
       case 'gain': for (const r of e.res) fx.fly(Sprites.get(r, 4), { x: boardCenter().x, y: boardCenter().y }, elCenter(targetFor(e.pid, r)), chipN++ * 120, () => Sfx.coin(), 30); break;
       case 'monopoly':
-        e.takes.forEach((t, i) => fx.fly(Sprites.get(e.res, 4), elCenter($('#pl-' + t.from)), elCenter(targetFor(e.pid, e.res)), i * 150, () => Sfx.coin(), 30));
+        e.takes.forEach((t, i) => fx.fly(Sprites.get(e.res, 4), elCenter(plEl(t.from)), elCenter(targetFor(e.pid, e.res)), i * 150, () => Sfx.coin(), 30));
         bigMsg('¡MONOPOLIO!', v.players[e.pid].color);
         break;
       case 'trade': case 'bankTrade': Sfx.trade(); if (e.type === 'trade' && (e.with === me || e.pid === me)) toast('¡Trato cerrado!', true); break;
@@ -718,6 +725,9 @@ function setBuild(kind) {
 // ================= HUD =================
 function renderHUD() {
   if (!App.view || App.screen !== 'game') return;
+  const spec = isSpec();
+  if (document.body.classList.contains('spec') !== spec) { document.body.classList.toggle('spec', spec); if (spec) { App.ui.stab = App.ui.stab || 'chat'; $('#spec-qc').innerHTML = qcHTML(); } setTimeout(layout, 0); }
+  if (spec) renderSpecCards();
   renderPlayers(); renderHand(); renderBuild(); renderActions(); renderBanner(); renderLog(); renderOffer(); renderInfo();
   if (App.view.dice) renderDiceMini(App.view.dice);
   if (App.ui.modal) renderModal();
@@ -953,6 +963,8 @@ function renderBanner() {
 
 function renderLog() {
   const v = App.view;
+  if (isSpec()) return renderSpecSide();
+  $('#log').classList.remove('hidden');
   const el = $('#log');
   el.innerHTML = v.log.slice(-40).map((l) => `<div>${esc(l)}</div>`).join('') + App.chat.slice(-8).filter((c) => !c.sys).map((c) => `<div class="chat" style="--c:${c.color}"><b>${esc(c.name)}:</b> ${esc(c.text)}</div>`).join('');
   el.scrollTop = el.scrollHeight;
@@ -998,7 +1010,7 @@ function sendFromInput(sel) { const el = $(sel); if (sendChat(el.value)) el.valu
 // bocadillo encima del jugador que habla
 const EMOJI_ONLY = /^(\p{Extended_Pictographic}|\uFE0F|\u200D|\s)+$/u;
 function chatBubble(seat, text) {
-  const line = $('#pl-' + seat); if (!line) return;
+  const line = plEl(seat); if (!line) return;
   App.bubbles = App.bubbles || {};
   if (App.bubbles[seat]) App.bubbles[seat].remove();
   const r = line.getBoundingClientRect();
@@ -1006,8 +1018,8 @@ function chatBubble(seat, text) {
   b.className = 'chat-bubble' + (EMOJI_ONLY.test(text) ? ' big' : '');
   b.style.setProperty('--c', App.view && App.view.players[seat] ? App.view.players[seat].color : '#fff');
   b.textContent = text;
-  b.style.left = Math.max(6, Math.min(innerWidth - 240, r.left)) + 'px';
-  b.style.top = (r.bottom + 6) + 'px';
+  if (isSpec() && innerWidth > 800) { b.style.left = (r.right + 8) + 'px'; b.style.top = (r.top + 8) + 'px'; }
+  else { b.style.left = Math.max(6, Math.min(innerWidth - 240, r.left)) + 'px'; b.style.top = (r.bottom + 6) + 'px'; }
   document.body.appendChild(b);
   App.bubbles[seat] = b;
   setTimeout(() => { b.classList.add('out'); setTimeout(() => { b.remove(); if (App.bubbles[seat] === b) delete App.bubbles[seat]; }, 400); }, 3600);
@@ -1054,6 +1066,68 @@ function renderOffer() {
     }
   } else { el.classList.add('hidden'); return; }
   el.classList.remove('hidden');
+}
+
+// ================= MODO ESPECTADOR =================
+// quien mira ve el tablero, las tarjetas de todos (sin sus cartas) y el chat completo a la derecha
+function renderSpecCards() {
+  const v = App.view, T = v.trade, seats = (App.room && App.room.seats) || [];
+  const goal = Engine.winVP(v);
+  $('#spec-cards').innerHTML = `<div class="spc-title">👁 Estás mirando · ${App.room ? esc(App.room.name) : ''}</div>` + v.players.map((p, i) => {
+    const cur = v.current === i && v.phase !== 'gameOver', seat = seats[i] || {};
+    const lr = v.longestRoad.owner === i, la = v.largestArmy.owner === i;
+    let tag = '';
+    if (T && i in T.responses) tag = T.responses[i] === 'accept' ? '<span class="pl-tag ok">Acepta</span>' : T.responses[i] === 'reject' ? '<span class="pl-tag no">Rechaza</span>' : '<span class="pl-tag wait">Pensando…</span>';
+    if (T && T.from === i) tag = '<span class="pl-tag wait">Ofrece un trato</span>';
+    if (v.phase === 'discard' && v.pendingDiscard && v.pendingDiscard[i]) tag = `<span class="pl-tag wait">Descarta ${v.pendingDiscard[i]}</span>`;
+    if (v.phase === 'gameOver' && v.winner === i) tag = '<span class="pl-tag ok">🏆 Gana</span>';
+    const who = p.bot ? `Bot ${stars(p.bot)}` : seat.prof ? profBadge(seat.prof) : 'Jugador';
+    const off = seat.kind === 'human' && !seat.connected ? ' <span class="pl-off">Desconectado</span>' : '';
+    const st = (img, n, t, cls = '') => `<span class="spc-s ${cls}" title="${t}"><img src="${img}" alt=""><b>${n}</b></span>`;
+    return `<div class="spc ${cur ? 'cur' : ''}" id="spc-${i}" data-spc="${i}" style="--c:${p.color}">
+      <div class="spc-head"><span class="nm">${cur ? '<i class="turn">▶</i>' : ''}${esc(p.name)}</span><span class="spc-vp"><b>${p.vp}</b><small>/${goal}</small></span></div>
+      <div class="spc-who">${who}${off}</div>
+      <div class="vpbar"><i style="width:${Math.min(100, (p.vp / goal) * 100)}%"></i></div>
+      <div class="spc-stats">${st(Sprites.url('card', 3), p.resCount, 'Cartas de recurso en la mano', p.resCount > handLimit(v) ? 'warn' : '')}${st(Sprites.url('devcard', 3), p.devCount, 'Cartas de desarrollo sin jugar')}${st(Sprites.url('knight', 3), p.knights, 'Caballeros jugados', la ? 'gold' : '')}${st(Sprites.url('road', 3, p.color), p.roadLen, 'Camino más largo propio', lr ? 'gold' : '')}</div>
+      ${lr || la || tag ? `<div class="spc-aw">${lr ? '<span class="aw">🛣️ Camino</span>' : ''}${la ? '<span class="aw">⚔️ Ejército</span>' : ''}${tag}</div>` : ''}
+    </div>`;
+  }).join('');
+  $('#spec-cards').querySelectorAll('[data-spc]').forEach((el) => (el.onclick = () => { Sfx.click(); openModal({ kind: 'player', pid: +el.dataset.spc }); }));
+}
+function renderSpecSide() {
+  const v = App.view, tab = App.ui.stab || 'chat';
+  document.querySelectorAll('[data-stab]').forEach((b) => b.classList.toggle('on', b.dataset.stab === tab));
+  $('#log').classList.toggle('hidden', tab !== 'log');
+  $('#chatlog').classList.toggle('hidden', tab !== 'chat');
+  $('#spec-qc').classList.toggle('hidden', tab !== 'chat');
+  $('#chat-wrap').classList.toggle('hidden', tab !== 'chat');
+  $('#btn-qchat').classList.add('hidden');
+  if (tab === 'log') {
+    const el = $('#log'); el.innerHTML = v.log.map((l) => `<div>${esc(l)}</div>`).join(''); el.scrollTop = el.scrollHeight;
+  } else {
+    const el = $('#chatlog');
+    el.innerHTML = App.chat.length ? App.chat.map((c) => c.sys ? `<div class="sys">» ${esc(c.text)}</div>` : `<div class="chat" style="--c:${c.color}"><b>${esc(c.name)}:</b> ${esc(c.text)}</div>`).join('') : '<div class="sys">Todavía no hay mensajes. ¡Saluda!</div>';
+    el.scrollTop = el.scrollHeight;
+  }
+}
+document.querySelectorAll('[data-stab]').forEach((b) => (b.onclick = () => { Sfx.click(); App.ui.stab = b.dataset.stab; renderSpecSide(); }));
+function specRegion() {
+  const W = innerWidth, H = innerHeight, ui = Prefs.ui;
+  const tr = $('#topright').getBoundingClientRect(), side = $('#side'), cards = $('#spec-cards'), bn = $('#banner');
+  if (W > 800) {
+    side.style.top = Math.round(tr.bottom + 8) + 'px'; side.style.bottom = '10px';
+    const cr = cards.getBoundingClientRect(), sr = side.getBoundingClientRect();
+    bn.style.top = Math.round(10 / ui) + 'px';
+    const top = 10 + (bn.offsetHeight ? bn.getBoundingClientRect().height + 10 : 30);
+    const x = cr.right + 10;
+    return { x, y: top, w: Math.max(120, sr.left - 10 - x), h: Math.max(120, H - top - 10) };
+  }
+  cards.style.top = Math.round(tr.bottom + 6) + 'px';
+  side.style.top = ''; side.style.bottom = '';
+  const cr = cards.getBoundingClientRect(), sr = side.getBoundingClientRect();
+  bn.style.top = Math.round((cr.bottom + 6) / ui) + 'px';
+  const top = cr.bottom + 6 + (bn.offsetHeight ? bn.getBoundingClientRect().height + 6 : 0);
+  return { x: 6, y: top, w: W - 12, h: Math.max(120, sr.top - 6 - top) };
 }
 
 // ================= MODALES =================
@@ -1250,13 +1324,14 @@ function renderModal() {
       break;
     }
     case 'gameover': {
-      h = `<h2>🏆 FIN DE LA PARTIDA</h2>${gameSummaryHTML(v)}
+      h = `<h2>🏆 FIN DE LA PARTIDA</h2>${me >= 0 ? gainHTML() : ''}${gameSummaryHTML(v)}
         <div class="row gap between wrap"><button class="btn ghost" id="g-menu">SALIR</button><button class="btn small" data-close>VER TABLERO</button>${isHost() ? '<button class="btn pink" id="g-again">▶ REVANCHA (MAPA NUEVO)</button>' : '<span class="muted">El anfitrión puede iniciar la revancha</span>'}</div>`;
       box.innerHTML = h;
       $('#g-menu').onclick = () => { closeModal(); leaveRoom(); };
       if ($('#g-again')) $('#g-again').onclick = () => { closeModal(); send({ t: 'start' }); };
       break;
     }
+    case 'profile': case 'pcard': renderProfileModal(m, box); break;
     case 'roomRules': {
       const r = App.room; if (!r) { closeModal(); return; }
       const R = r.rules, host = isHost(), n = r.seats.length;
@@ -1365,6 +1440,7 @@ function renderModal() {
       }).join('');
       const portTxt = d.ports.length ? d.ports.map((t) => t === 'any' ? '<span class="chip">3:1 cualquiera</span>' : `<span class="chip"><img src="${Sprites.url(t, 3)}">2:1 ${RN[t]}</span>`).join(' ') : '<span class="muted">Ninguno</span>';
       h = `<div class="pd-head" style="--c:${p.color}"><div><h2 style="color:${p.color}">${esc(p.name)}</h2><span class="muted">${mine ? 'Tú' : p.bot ? 'Bot ' + LVL_NAME[p.bot].toLowerCase() + ' ' + stars(p.bot) : 'Jugador'}${v.current === m.pid && v.phase !== 'gameOver' ? ' · está jugando su turno' : ''}</span></div><div class="pd-vp"><b>${p.vp}</b><small>PV visibles</small></div></div>
+        ${(() => { const seat = App.room && App.room.seats[m.pid]; const q = seat && seat.prof; return q ? `<button class="pd-prof" id="pd-prof">${emblemHTML(q)}<span><b>${Profile.rankOf(Profile.levelOf(q.xp)).name} · Nivel ${Profile.levelOf(q.xp)}</b><small>${q.games} partidas · ${q.wins} victorias · ${q.ach.length} logros</small></span><span class="pc-go">Ver perfil ›</span></button>` : ''; })()}
         <div class="pd-grid">
           <div class="pd-box"><h4>Puntos</h4>
             ${row('Poblados', d.settlements, ' <small>×1</small>')}${row('Ciudades', d.cities, ' <small>×2</small>')}
@@ -1383,6 +1459,7 @@ function renderModal() {
         <div class="pd-box"><h4>Qué produce <small>(números de sus casillas)</small></h4>${prodRows}${d.blocked ? '<p class="muted small">El ladrón le está bloqueando parte de su producción.</p>' : ''}</div>
         <div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close>Cerrar</button></div>`;
       box.innerHTML = h;
+      if ($('#pd-prof')) $('#pd-prof').onclick = () => { Sfx.click(); openModal({ kind: 'pcard', prof: App.room.seats[m.pid].prof }); };
       break;
     }
     case 'quit': {
@@ -1455,6 +1532,7 @@ let lastLayoutKey = '';
 function computeRegion() {
   const W = innerWidth, H = innerHeight;
   if (App.screen !== 'game') return { x: 0, y: 0, w: W, h: H };
+  if (document.body.classList.contains('spec')) return specRegion();
   if (W > 800) {
     // las líneas de jugadores llegan hasta los botones de arriba a la derecha; el registro empieza debajo
     $('#players').style.right = Math.round(W - $('#topright').getBoundingClientRect().left + 10) + 'px';
