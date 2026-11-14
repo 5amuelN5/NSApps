@@ -34,6 +34,7 @@ function openSave(b64) {
   } catch (e) { return null; }
 }
 const saveTimers = new Map();
+const closedRooms = new Map(); // código → cuándo la cerró su anfitrión (para que no resucite desde una copia)
 
 // ---- perfiles de jugador ----
 // El perfil vive en el navegador de cada jugador, firmado por el servidor: nadie puede subirse el nivel a mano.
@@ -178,6 +179,7 @@ wss.on('connection', (ws) => {
         if (!snap) return c.send({ t: 'restoreFail', code: m.code });
         const seat = snap.seats.findIndex((x) => x.kind === 'human' && x.token === c.token);
         if (seat < 0 || snap.state.phase === 'gameOver') return c.send({ t: 'restoreFail', code: snap.code });
+        if (closedRooms.has(snap.code) && snap.savedAt <= closedRooms.get(snap.code)) return c.send({ t: 'restoreFail', code: snap.code });
         let r = rooms.get(snap.code);
         if (r && r.restoredSeq != null && r.state && r.state.seq === r.restoredSeq && snap.state.seq > r.restoredSeq) {
           // otra copia más reciente llega antes de que nadie haya jugado: nos quedamos con la más nueva
@@ -249,6 +251,26 @@ wss.on('connection', (ws) => {
         if (c.room) { c.room.leave(c.token); cleanup(c.room); c.room = null; }
         c.send({ t: 'rooms', list: roomList() });
         pushRoomList();
+        break;
+      }
+      case 'closeRoom': {
+        // el anfitrión elimina la sala: todos (jugadores y espectadores) vuelven a la lista de salas
+        const r = c.room;
+        if (!r) return;
+        if (r.host !== c.token) return err('Solo quien creó la sala puede eliminarla');
+        closedRooms.set(r.code, Date.now());
+        for (const o of clients) {
+          if (o.room !== r) continue;
+          o.room = null;
+          o.send({ t: 'save', code: r.code, blob: null });
+          o.send({ t: 'roomClosed', code: r.code, byMe: o === c });
+          o.send({ t: 'rooms', list: [] });
+        }
+        clearTimeout(saveTimers.get(r)); saveTimers.delete(r);
+        r.destroy(); rooms.delete(r.code);
+        const list = roomList();
+        for (const o of clients) if (!o.room) o.send({ t: 'rooms', list });
+        console.log(`  Sala ${r.code} eliminada por su anfitrión`);
         break;
       }
       case 'addBot': if (c.room) err(c.room.addBot(c.token, m.level)); break;

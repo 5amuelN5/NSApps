@@ -309,6 +309,7 @@ function renderRoomList(list) {
 
 // ================= SALA =================
 $('#btn-leave').onclick = () => { Sfx.click(); leaveRoom(); };
+$('#btn-delroom').onclick = () => { Sfx.click(); openModal({ kind: 'delroom' }); };
 function isPrivateHost(h) { return /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1)/.test(h); }
 function roomLink() {
   const base = (App.publicUrl || location.origin).replace(/\/$/, '');
@@ -401,6 +402,7 @@ function renderRoom() {
   $('#room-watchers').classList.toggle('hidden', !watchers.length);
   $('#room-watchers').textContent = watchers.length ? `👁 Mirando: ${watchers.join(', ')}` : '';
   $('#btn-take-seat').classList.toggle('hidden', !(App.spectator && !r.started && r.seats.length < maxP));
+  $('#btn-delroom').classList.toggle('hidden', !(host && App.mode === 'online'));
   $('#btn-start').classList.toggle('hidden', !host);
   $('#btn-start').disabled = r.seats.length < 2;
   $('#room-wait').textContent = host ? (r.seats.length < 2 ? 'Añade bots o espera a otros jugadores (mínimo 2).' : '') : 'Esperando a que el anfitrión empiece la partida…';
@@ -556,6 +558,14 @@ function onMsg(m) {
     case 'restoreFail': Saves.set(App.token, m.code, null); break;
     case 'error': toast(m.msg); Sfx.error(); break;
     case 'joinFail': App.room = null; if (App.mode === 'p2p') P2P.close(); show('lobby'); $('#net-status').textContent = m.msg || 'No se pudo entrar en la sala'; break;
+    case 'roomClosed':
+      closeModal();
+      Saves.set(App.token, m.code, null);
+      App.room = null; App.view = null; App.queue = []; App.busy = false; App.spectator = false;
+      history.replaceState(null, '', location.pathname);
+      show('lobby'); send({ t: 'listRooms' });
+      toast(m.byMe ? '🗑 Sala eliminada' : 'El anfitrión ha eliminado la sala', !!m.byMe);
+      break;
     case 'kicked': toast('Te han expulsado de la sala'); App.room = null; if (App.mode === 'p2p') P2P.close(); show('lobby'); if (App.mode === 'online') send({ t: 'listRooms' }); break;
   }
 }
@@ -1503,6 +1513,16 @@ function renderModal() {
       if ($('#pd-prof')) $('#pd-prof').onclick = () => { Sfx.click(); openModal({ kind: 'pcard', prof: App.room.seats[m.pid].prof }); };
       break;
     }
+    case 'delroom': {
+      const R = App.room; if (!R) { closeModal(); return; }
+      const others = R.seats.filter((s, i) => s.kind === 'human' && i !== App.you).length + (R.spectators || []).length;
+      h = `<h2>🗑 ¿Eliminar la sala?</h2>
+        <p>La sala <b>${esc(R.name)}</b> (${esc(R.code)}) se cerrará${others ? ` para todos: ${others === 1 ? 'la otra persona vuelve' : `las otras ${others} personas vuelven`} a la lista de salas` : ''}.${R.started && !R.over ? ' <b>La partida en curso se perderá.</b>' : ''} No se puede deshacer.</p>
+        <div class="row gap between"><button class="btn ghost" data-close>Cancelar</button><button class="btn red" id="dr-ok">🗑 Eliminar la sala</button></div>`;
+      box.innerHTML = h;
+      $('#dr-ok').onclick = () => { Sfx.click(); closeModal(); send({ t: 'closeRoom' }); };
+      break;
+    }
     case 'quit': {
       if (App.me < 0) {
         h = `<h2>¿DEJAR DE MIRAR?</h2><p class="muted">Estás viendo la partida como espectador. Puedes volver a entrar cuando quieras.</p>
@@ -1512,9 +1532,10 @@ function renderModal() {
         break;
       }
       h = `<h2>¿SALIR DE LA PARTIDA?</h2><p class="muted">${App.mode === 'online' ? 'Un bot jugará en tu lugar.' : App.mode === 'p2p' && P2P.role === 'host' ? 'Eres el anfitrión: si sales, la partida termina para todos.' : App.mode === 'p2p' ? 'Un bot jugará en tu lugar.' : 'Se perderá la partida.'}</p>
-        <div class="row gap between"><button class="btn ghost" data-close>SEGUIR JUGANDO</button><button class="btn red" id="q-ok">SALIR</button></div>`;
+        <div class="row gap between"><button class="btn ghost" data-close>SEGUIR JUGANDO</button>${isHost() && App.mode === 'online' ? '<button class="btn small trash" id="q-del" title="Cerrar la sala para todos">🗑 Eliminar la sala</button>' : ''}<button class="btn red" id="q-ok">SALIR</button></div>`;
       box.innerHTML = h;
       $('#q-ok').onclick = () => { closeModal(); leaveRoom(); };
+      if ($('#q-del')) $('#q-del').onclick = () => openModal({ kind: 'delroom' });
       break;
     }
   }
