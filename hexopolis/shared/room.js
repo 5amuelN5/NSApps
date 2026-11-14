@@ -34,7 +34,7 @@
     // ----- lobby -----
     info() {
       return {
-        code: this.code, name: this.name, isPublic: this.isPublic, hostSeat: this.seats.findIndex((x) => x.kind === 'human' && x.token === this.host), local: this.local, speed: this.speed,
+        code: this.code, name: this.name, isPublic: this.isPublic, creatorSeat: this.seats.findIndex((x) => x.kind === 'human' && x.token === this.creator), hostSeat: this.seats.findIndex((x) => x.kind === 'human' && x.token === this.host), local: this.local, speed: this.speed,
         started: !!this.state, over: !!(this.state && this.state.phase === 'gameOver'), rules: this.rules, max: E.MAX_PLAYERS,
         seats: this.seats.map((s, i) => ({ i, kind: s.kind, name: s.name, level: s.level, connected: s.kind === 'bot' || s.connected, host: s.token === this.host, color: E.COLORS[i], prof: s.kind === 'human' && s.prof ? s.prof : null })),
         spectators: [...this.spectators.values()].map((x) => x.name),
@@ -54,6 +54,7 @@
       if (i >= 0) {
         this.spectators.delete(token);
         const seat = this.seats[i];
+        if (!this.host || this.creator === token && !this.seats.some((x) => x.kind === 'human' && x.token === this.host && x.connected)) this.host = token;
         seat.client = client; seat.connected = true; seat.discAt = null; seat.left = false; seat.name = name || seat.name;
         if (client && client.profile) seat.prof = client.profile;
         this.sendRoom(); this.sendStateTo(i, []); this.schedule();

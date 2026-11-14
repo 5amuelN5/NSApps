@@ -65,7 +65,7 @@
         <h2 id="room-title">SALA</h2>
         <div class="rh-meta" id="room-meta"></div>
       </div>
-      <div class="row gap"><button class="btn small trash hidden" id="btn-delroom" title="Eliminar la sala para todos">🗑</button><button class="btn small ghost" id="btn-leave">✕ SALIR</button></div>
+      <button class="btn small ghost" id="btn-leave">✕ SALIR</button>
     </header>
     <div class="room-grid">
       <div class="room-main">
@@ -85,9 +85,9 @@
           <button class="btn small" data-speed="1">NORMAL</button>
           <button class="btn small" data-speed="1.8">RÁPIDA</button>
         </div>
-        <div class="rules-box" id="rules-box">
-          <div class="rules-head"><b>📜 Reglas de la partida</b><button class="btn small yellow" id="btn-room-rules">⚙ CAMBIAR REGLAS</button></div>
-          <div class="rules-sum" id="rules-sum"></div>
+        <div class="rules-card" id="rules-box">
+          <div class="sec-title"><b>📜 Reglas de la partida</b><button class="btn small yellow" id="btn-room-rules">⚙ Cambiar</button></div>
+          <div id="rules-sum"></div>
         </div>
       </div>
       <aside class="room-side" id="room-side">

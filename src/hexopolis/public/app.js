@@ -318,10 +318,9 @@ $('#btn-leave').onclick = () => {
   Sfx.click();
   const r = App.room;
   const others = r ? r.seats.filter((x, i) => x.kind === 'human' && i !== App.you).length + (r.spectators || []).length : 0;
-  if (isHost() && App.mode === 'online' && others) return openModal({ kind: 'hostleave' });
+  if (canDeleteRoom() && (others || (r.started && !r.over))) return openModal({ kind: 'hostleave' });
   leaveRoom();
 };
-$('#btn-delroom').onclick = () => { Sfx.click(); openModal({ kind: 'delroom' }); };
 function isPrivateHost(h) { return /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[?::1)/.test(h); }
 function roomLink() {
   const base = (App.publicUrl || location.origin).replace(/\/$/, '');
@@ -378,6 +377,8 @@ function leaveRoom() {
 }
 
 function isHost() { return App.room && App.room.hostSeat === App.you; }
+// quien creó la sala (o el anfitrión actual) puede eliminarla
+function canDeleteRoom() { return App.mode === 'online' && App.room && App.you >= 0 && (App.room.hostSeat === App.you || App.room.creatorSeat === App.you); }
 
 function renderRoom() {
   const r = App.room; if (!r) return;
@@ -395,8 +396,8 @@ function renderRoom() {
   document.querySelectorAll('[data-speed]').forEach((b) => b.classList.toggle('on', +b.dataset.speed === r.speed));
   const maxP = r.max || 4;
   $('#host-tools').classList.toggle('hidden', !host || r.seats.length >= maxP);
-  $('#rules-sum').innerHTML = rulesSummary(r.rules, r.seats.length) + (r.rules && Engine.teamsError(r.rules, r.seats.length) ? `<span class="rchip warn">⚠ ${Engine.teamsError(r.rules, r.seats.length)}</span>` : '');
-  $('#btn-room-rules').textContent = host ? '⚙ CAMBIAR REGLAS' : '📜 VER REGLAS';
+  $('#rules-sum').innerHTML = roomRulesHTML(r.rules, r.seats.length);
+  $('#btn-room-rules').textContent = host ? '⚙ Cambiar' : '📜 Ver detalles';
   const seats = [];
   const lvlName = (l) => LVL_NAME[l][0] + LVL_NAME[l].slice(1).toLowerCase();
   for (let i = 0; i < Math.max(4, Math.min(maxP, r.seats.length + 1)); i++) {
@@ -425,7 +426,6 @@ function renderRoom() {
   $('#room-watchers').classList.toggle('hidden', !watchers.length);
   $('#room-watchers').textContent = watchers.length ? `👁 Mirando: ${watchers.join(', ')}` : '';
   $('#btn-take-seat').classList.toggle('hidden', !(App.spectator && !r.started && r.seats.length < maxP));
-  $('#btn-delroom').classList.toggle('hidden', !(host && App.mode === 'online'));
   $('#btn-start').classList.toggle('hidden', !host);
   $('#btn-start').disabled = r.seats.length < 2;
   $('#room-wait').textContent = host ? (r.seats.length < 2 ? 'Añade bots o espera a otros jugadores (mínimo 2).' : '') : 'Esperando a que el anfitrión empiece la partida…';
@@ -519,6 +519,25 @@ function gameSummaryHTML(v) {
 }
 
 // ----- reglas de la partida -----
+// fichas de la sala: mapa, puntos, límite con el 7 y equipos, y debajo las normas especiales
+function roomRulesHTML(R, n) {
+  if (!R) return '';
+  const big = Engine.mapKind(R, n) === 'big';
+  const tile = (ic, lbl, val, sub) => `<div class="rt"><span class="rt-ic">${ic}</span><span class="rt-txt"><small>${lbl}</small><b>${val}</b>${sub ? `<em>${sub}</em>` : ''}</span></div>`;
+  const pc = Engine.piecesFor(R.vp);
+  const tiles = [
+    tile('🗺️', 'Mapa', big ? 'Grande' : 'Normal', `${big ? '30' : '19'} casillas${R.map === 'auto' ? ' · automático' : ''}`),
+    tile('🏆', 'Para ganar', R.teams ? `${Engine.teamTarget(R.vp, R.teams)} por equipo` : `${R.vp} puntos`, R.vp > 10 ? `${pc.settlements} poblados · ${pc.cities} ciudades` : 'lo normal son 10'),
+    tile('🃏', 'Con un 7', R.hand === 99 ? 'Sin límite' : `Más de ${R.hand} cartas`, R.hand === 99 ? 'nadie descarta' : 'descartas la mitad'),
+    tile('👥', 'Equipos', R.teams === 2 ? 'Parejas' : R.teams === 3 ? 'Tríos' : 'Cada uno', R.teams ? 'suman puntos juntos' : 'juego individual'),
+  ].join('');
+  const sp = Engine.SPECIAL_RULES.filter((x) => R[x.key]);
+  const spHTML = sp.length
+    ? `<div class="rs-list">${sp.map((x) => `<div class="rs" title="${esc(x.desc)}"><span class="rs-ic">${x.icon}</span><span><b>${x.name}</b><small>${esc(x.desc)}</small></span></div>`).join('')}</div>`
+    : '<p class="rs-none">✨ Sin normas especiales: partida clásica.</p>';
+  const warn = Engine.teamsError(R, n) ? `<p class="rr-warn">⚠ ${Engine.teamsError(R, n)} (ahora sois ${n}).</p>` : '';
+  return `<div class="rt-grid">${tiles}</div>${warn}<div class="rs-head">Normas especiales <span class="muted">(${sp.length})</span></div>${spHTML}`;
+}
 function handLimit(v) { return Engine.rulesOf(v).hand; }
 function devReady(v, P, c) { return P.dev[c] - P.devNew[c]; }
 function rulesSummary(R, n) {
@@ -1544,7 +1563,9 @@ function renderModal() {
       break;
     }
     case 'hostleave': {
-      h = `<h2>¿Salir de la sala?</h2><p class="muted">Eres quien la creó. Puedes dejarla abierta (otra persona pasa a ser anfitriona) o eliminarla: entonces todos los que están dentro vuelven al menú.</p>
+      const R0 = App.room || {};
+      const alone = !R0.seats || !R0.seats.some((x, i) => x.kind === 'human' && i !== App.you);
+      h = `<h2>¿Salir de la sala?</h2><p class="muted">Eres quien la creó. ${alone ? 'Si la dejas abierta, los bots siguen esperando y puedes volver desde la lista de salas (↩ Volver).' : 'Si la dejas abierta, otra persona pasa a ser anfitriona y puedes volver desde la lista de salas.'} Si la eliminas, ${alone ? 'la partida se borra' : 'todos los que están dentro vuelven al menú'}.</p>
         <div class="col gap"><button class="btn" id="hl-leave">✕ Salir y dejar la sala abierta</button><button class="btn red" id="hl-del">🗑 Eliminar la sala para todos</button><button class="btn small ghost" data-close>Cancelar</button></div>`;
       box.innerHTML = h;
       $('#hl-leave').onclick = () => { closeModal(); leaveRoom(); };
@@ -1572,7 +1593,7 @@ function renderModal() {
         break;
       }
       h = `<h2>¿SALIR DE LA PARTIDA?</h2><p class="muted">${App.mode === 'online' ? 'Un bot jugará en tu lugar. Puedes volver cuando quieras desde la lista de salas (↩ Volver).' : App.mode === 'p2p' && P2P.role === 'host' ? 'Eres el anfitrión: si sales, la partida termina para todos.' : App.mode === 'p2p' ? 'Un bot jugará en tu lugar.' : 'Se perderá la partida.'}</p>
-        <div class="row gap between"><button class="btn ghost" data-close>SEGUIR JUGANDO</button>${isHost() && App.mode === 'online' ? '<button class="btn small trash" id="q-del" title="Cerrar la sala para todos">🗑 Eliminar la sala</button>' : ''}<button class="btn red" id="q-ok">SALIR</button></div>`;
+        <div class="row gap between"><button class="btn ghost" data-close>SEGUIR JUGANDO</button>${canDeleteRoom() ? '<button class="btn small trash" id="q-del" title="Cerrar la sala para todos">🗑 Eliminar la sala</button>' : ''}<button class="btn red" id="q-ok">SALIR</button></div>`;
       box.innerHTML = h;
       $('#q-ok').onclick = () => { closeModal(); leaveRoom(); };
       if ($('#q-del')) $('#q-del').onclick = () => openModal({ kind: 'delroom' });

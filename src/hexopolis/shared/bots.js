@@ -90,7 +90,8 @@
       }
       sc += 0.18 * best;
     }
-    if (level === 1) sc = sc * 0.35 + Math.random() * 9;
+    if (level === 1) sc = sc * 0.8 + Math.random() * 3.5;
+    else if (level === 3) sc *= 0.93 + Math.random() * 0.14;
     return sc;
   }
 
@@ -266,7 +267,8 @@
     for (const g of goals) {
       g.T = rollsToAfford(s, pid, g.cost, prod, ratios);
       g.score = g.value / (1 + g.T * (level >= 3 ? 0.35 : 0.25));
-      if (level === 1) g.score = Math.random();
+      if (level === 1) g.score *= 0.3 + Math.random() * 1.4;
+      else if (level === 3) g.score *= 0.87 + Math.random() * 0.26;
     }
     goals.sort((a, b) => b.score - a.score);
     return goals;
@@ -497,13 +499,18 @@
     if (dev) return dev;
 
     if (level === 1) {
+      // novato: construye lo que puede, a veces en buen sitio y a veces no; casi no comercia
       const opts = [];
-      if (P.cities > 0 && E.has(P.res, COST.city) && E.legalCities(s, pid).length) opts.push({ type: 'placeCity', v: pick(E.legalCities(s, pid)) });
-      if (P.settlements > 0 && E.has(P.res, COST.settlement)) { const l = E.legalSettlements(s, pid, false); if (l.length) opts.push({ type: 'placeSettlement', v: pick(l) }); }
-      if (P.roads > 0 && E.has(P.res, COST.road) && Math.random() < 0.55) { const l = E.legalRoads(s, pid); if (l.length) opts.push({ type: 'placeRoad', e: pick(l) }); }
+      const bestOf = (ids, f) => ids.slice().sort((a, b) => f(b) - f(a))[0];
+      if (P.cities > 0 && E.has(P.res, COST.city) && E.legalCities(s, pid).length) { const l = E.legalCities(s, pid); opts.push({ type: 'placeCity', v: Math.random() < 0.6 ? bestOf(l, (v) => spotScore(s, pid, v, 2, ctx)) : pick(l) }); }
+      if (P.settlements > 0 && E.has(P.res, COST.settlement)) { const l = E.legalSettlements(s, pid, false); if (l.length) opts.push({ type: 'placeSettlement', v: Math.random() < 0.6 ? bestOf(l, (v) => spotScore(s, pid, v, 2, ctx)) : pick(l) }); }
+      if (P.roads > 0 && E.has(P.res, COST.road) && Math.random() < 0.6) {
+        const l = E.legalRoads(s, pid);
+        if (l.length) { const tg = Math.random() < 0.5 ? roadTargets(s, pid, 2).filter((t) => t.path.length) : []; opts.push({ type: 'placeRoad', e: tg.length ? tg[0].path[0] : pick(l) }); }
+      }
       if (E.has(P.res, COST.dev) && deckLeft(s) > 0 && Math.random() < 0.35) opts.push({ type: 'buyDev' });
       if (opts.length) return opts[0];
-      if (!mem.traded && tot(P.res) >= 6) {
+      if (!mem.traded && tot(P.res) >= 5) {
         mem.traded = true;
         const ratios = E.tradeRatios(s, pid);
         const give = RES.find((r) => P.res[r] >= ratios[r]);
@@ -523,7 +530,7 @@
     if (g) {
       const bt = bankTradeToward(s, pid, g.step);
       if (bt) return bt;
-      if (level >= 3 && (mem.offers || 0) < (level >= 4 ? 3 : 2)) {
+      if (level >= 3 && (mem.offers || 0) < (level >= 4 ? 3 : 1)) {
         const off = domesticOffer(s, pid, level, g.step, mem);
         if (off) { mem.offers = (mem.offers || 0) + 1; return off; }
       }

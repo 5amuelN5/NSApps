@@ -905,3 +905,27 @@ body.spec .spec-qc { display: flex; margin-top: 8px; }
 }
 @media (max-width: 480px) { .room-panel .seats { grid-template-columns: 1fr 1fr; } .seat-av { width: 34px; height: 34px; font-size: 17px; } .room-panel .seat .nm { font-size: 14px; } }
 .room-panel .seats { align-items: start; }
+
+/* ===== reglas de la sala en fichas ===== */
+.rules-card { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 14px; background: rgba(0,0,0,0.18); border: 1px solid var(--line); }
+.rt-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.rt { display: flex; gap: 8px; align-items: center; padding: 9px 10px; border-radius: 12px; background: linear-gradient(160deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02)); border: 1px solid var(--line); min-width: 0; }
+.rt-ic { font-size: 22px; flex: none; }
+.rt-txt { display: flex; flex-direction: column; min-width: 0; }
+.rt-txt small { font-size: 10.5px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; color: var(--muted); }
+.rt-txt b { font-family: var(--px); font-weight: 600; font-size: 15px; line-height: 1.15; }
+.rt-txt em { font-style: normal; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rs-head { font-size: 12px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; color: var(--muted); margin-top: 2px; }
+.rs-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; }
+.rs { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border-radius: 12px; background: rgba(242,193,78,0.09); border: 1px solid rgba(242,193,78,0.4); }
+.rs-ic { font-size: 18px; line-height: 1.2; }
+.rs b { display: block; font-size: 13px; color: #ffe3a1; }
+.rs small { display: block; font-size: 11.5px; color: var(--muted); line-height: 1.3; }
+.rs-none { margin: 0; font-size: 13px; color: var(--muted); padding: 8px 10px; border-radius: 10px; border: 1px dashed var(--line); }
+@media (max-width: 680px) { .rt-grid { grid-template-columns: 1fr 1fr; } }
+.rt-grid { grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); }
+.rs small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+@media (max-width: 680px) { .rt-grid { grid-template-columns: 1fr 1fr; } }
+.rt-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.room-panel.solo .rt-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 680px) { .room-panel.solo .rt-grid { grid-template-columns: 1fr 1fr; } }
