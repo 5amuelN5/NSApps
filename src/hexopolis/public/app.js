@@ -279,20 +279,64 @@ function connect() {
   catch (e) { $('#net-status').textContent = 'No se pudo conectar al servidor. Abre el juego con "npm start".'; return; }
   App.ws = ws;
   ws.onopen = () => {
+    if (App.ws !== ws) return;
     $('#net-status').textContent = 'Conectado ✔';
-    ws.send(JSON.stringify({ t: 'hello', token: App.token, name: App.name, profile: ProfStore.signed(), avatar: Avatar.get() }));
+    App.lastMsgAt = Date.now(); App.netTries = 0;
+    ws.send(JSON.stringify({ t: 'hello', token: App.token, name: App.name, profile: ProfStore.signed(), avatar: Avatar.get(), left: App.leftRoom || null }));
     const sv = Saves.mine();
     if (sv) ws.send(JSON.stringify({ t: 'restore', code: sv.code, blob: sv.blob }));
+    // estaba en una sala: volver a ella (el servidor nos coloca en nuestro sitio, o mirando si estábamos mirando)
+    if (App.room && App.room.code && !App.pendingJoin) ws.send(JSON.stringify({ t: 'rejoin', code: App.room.code, watch: !!App.spectator }));
     if (App.pendingJoin) { send({ t: 'joinRoom', code: App.pendingJoin }); App.pendingJoin = null; }
     flushPendingCreate();
+    if (App.netLost) { App.netLost = false; netWarn(false); if (App.room) toast('✔ Conectado de nuevo', true); }
   };
-  ws.onmessage = (e) => { try { onMsg(JSON.parse(e.data)); } catch (err) { console.error(err); } };
+  ws.onmessage = (e) => { App.lastMsgAt = Date.now(); try { onMsg(JSON.parse(e.data)); } catch (err) { console.error(err); } };
   ws.onclose = () => {
     if (App.ws !== ws) return;
     $('#net-status').textContent = 'Desconectado. Reintentando…';
-    if (App.mode === 'online') { if (App.screen === 'game') toast('Conexión perdida… reconectando'); setTimeout(() => { if (App.mode === 'online' && App.ws === ws) connect(); }, 1500); }
+    if (App.mode === 'online') {
+      if (App.room) { App.netLost = true; netWarn(true); }
+      // reintentos cada vez más espaciados (1,5 s → 5 s) mientras siga cortado
+      const wait = Math.min(5000, 1500 + (App.netTries || 0) * 700); App.netTries = (App.netTries || 0) + 1;
+      setTimeout(() => { if (App.mode === 'online' && App.ws === ws) connect(); }, wait);
+    }
   };
 }
+// conexión colgada (el móvil cambió de red, el ordenador se durmió…): cerrarla y abrir otra al momento
+function reconnectNow() {
+  if (App.mode !== 'online') return;
+  const ws = App.ws;
+  App.ws = null;
+  if (ws) { ws.onclose = null; try { ws.close(); } catch (e) { /* */ } }
+  if (App.room) { App.netLost = true; netWarn(true); }
+  connect();
+}
+function netWarn(on) {
+  let el = $('#net-warn');
+  if (!el) { el = document.createElement('div'); el.id = 'net-warn'; el.className = 'net-warn hidden'; el.innerHTML = '<span class="nw-dot"></span>Sin conexión · reconectando…'; document.body.appendChild(el); }
+  el.classList.toggle('hidden', !on);
+}
+// latido: si en 45 s no llega nada del servidor, la conexión está muerta aunque el navegador no lo sepa
+setInterval(() => {
+  const ws = App.ws;
+  if (App.mode !== 'online' || !ws || ws.readyState !== 1) return;
+  if (Date.now() - (App.lastMsgAt || 0) > 45000) return reconnectNow();
+  try { ws.send(JSON.stringify({ t: 'ping' })); } catch (e) { /* */ }
+}, 15000);
+// al volver a la pestaña o recuperar la red, comprobar enseguida que la conexión sigue viva
+function checkNet() {
+  if (App.mode !== 'online') return;
+  const ws = App.ws;
+  if (!ws || ws.readyState > 1) return reconnectNow();
+  if (ws.readyState !== 1) return;
+  const at = Date.now();
+  try { ws.send(JSON.stringify({ t: 'ping' })); } catch (e) { return reconnectNow(); }
+  setTimeout(() => { if (App.ws === ws && (App.lastMsgAt || 0) < at) reconnectNow(); }, 4000);
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkNet(); });
+window.addEventListener('online', checkNet);
+window.addEventListener('pageshow', (e) => { if (e.persisted) checkNet(); });
 // ================= MODO DIRECTO (sin servidor) =================
 function setLobbyMode(direct) {
   $('#room-list').classList.toggle('hidden', direct);
@@ -341,6 +385,7 @@ function send(m) {
   if (App.mode === 'local' || (App.mode === 'p2p' && P2P.role === 'host')) return localDispatch(m);
   if (App.mode === 'p2p') { if (m.t === 'leaveRoom') { P2P.send(m); setTimeout(() => P2P.close(), 150); } else P2P.send(m); return; }
   if (App.ws && App.ws.readyState === 1) App.ws.send(JSON.stringify(m));
+  else if (App.mode === 'online' && App.room && m.t === 'action') toast('Sin conexión: espera un momento a que se reconecte');
 }
 
 $('#btn-create').onclick = () => { Sfx.click(); if (App.mode === 'p2p') return directHost(); send({ t: 'createRoom', name: $('#in-roomname').value.trim() || `SALA DE ${App.name}`, isPublic: $('#in-public').checked }); };
@@ -421,7 +466,8 @@ function leaveRoom() {
   const localOver = App.mode === 'local' && (!App.localRoom || !App.localRoom.state || App.localRoom.state.phase === 'gameOver');
   send({ t: 'leaveRoom' });
   if (App.mode === 'local') { if (localOver) LocalSave.clear(); }
-  else if (App.room) Saves.set(App.token, App.room.code, null);
+  else if (App.room) { Saves.set(App.token, App.room.code, null); App.leftRoom = App.room.code; } // si el aviso de salida no llegó (sin conexión), se repite al reconectar
+  netWarn(false);
   App.room = null; App.view = null; App.queue = []; App.busy = false; App.spectator = false;
   if (App.mode === 'local') App.mode = null;
   show('menu'); // siempre al menú principal
@@ -675,6 +721,7 @@ function onMsg(m) {
       if (App.ui.modal && App.ui.modal.kind === 'joingame') renderJoinRooms();
       break;
     case 'joined':
+      App.leftRoom = null; // ha entrado (o vuelto) a una sala a propósito
       if (App.mode === 'online' || App.mode === 'p2p') history.replaceState(null, '', '?sala=' + m.code);
       break;
     case 'room': {
@@ -699,6 +746,17 @@ function onMsg(m) {
     case 'restored': toast('Partida recuperada: seguimos donde lo dejasteis', true); break;
     case 'restoreFail': Saves.set(App.token, m.code, null); break;
     case 'error': toast(m.msg); Sfx.error(); break;
+    case 'pong': break;
+    case 'roomGone': {
+      // al reconectar, la sala ya no existe (se reinició el servidor sin copia o se cerró)
+      if (!App.room || App.room.code !== m.code) break;
+      closeModal(); Saves.set(App.token, m.code, null);
+      App.room = null; App.view = null; App.queue = []; App.busy = false; App.spectator = false;
+      history.replaceState(null, '', location.pathname);
+      show('menu'); netWarn(false);
+      toast('La sala ya no existe (se cerró o se reinició el servidor)');
+      break;
+    }
     case 'joinFail': App.room = null; if (App.mode === 'p2p') P2P.close(); toast(m.msg || 'No se pudo entrar en la sala'); if (App.screen !== 'menu') show(App.mode === 'p2p' ? 'lobby' : 'menu'); break;
     case 'roomClosed': {
       if (m.fromList) { closeModal(); toast('🗑 Sala eliminada', true); break; } // eliminada desde la lista: te quedas en la lista

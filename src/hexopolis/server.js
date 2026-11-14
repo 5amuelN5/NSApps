@@ -180,7 +180,10 @@ wss.on('connection', (ws) => {
         // reconexión automática a su sala
         for (const r of rooms.values()) {
           const si = r.seatOf(c.token);
-          if (si >= 0 && !r.seats[si].left && r.state && r.state.phase !== 'gameOver') { c.room = r; r.join(c, c.token, c.name); c.send({ t: 'joined', code: r.code }); return; }
+          // salió de esa sala mientras estaba sin conexión: se completa la salida en vez de volver a meterle
+          if (si >= 0 && m.left && r.code === m.left) { r.leave(c.token); cleanup(r); continue; }
+          // vuelve a su sitio en cualquier momento: sala de espera, partida o resumen final
+          if (si >= 0 && !r.seats[si].left) { c.room = r; r.join(c, c.token, c.name); c.send({ t: 'joined', code: r.code }); return; }
         }
         c.send({ t: 'rooms', list: roomList(c) });
         break;
@@ -215,6 +218,21 @@ wss.on('connection', (ws) => {
         }
         break;
       }
+      case 'rejoin': {
+        // al reconectar: volver a la sala en la que estaba (como jugador o mirando)
+        if (!c.token || c.room) return; // ya ha vuelto con 'hello' o 'restore'
+        const r = rooms.get(String(m.code || '').toUpperCase().trim());
+        if (!r) return c.send({ t: 'roomGone', code: m.code });
+        const si = r.seatOf(c.token);
+        if (!m.watch && !(si >= 0 && !r.seats[si].left) && r.state && r.state.phase !== 'gameOver') return c.send({ t: 'roomGone', code: m.code });
+        const res = r.join(c, c.token, c.name, { watch: !!m.watch });
+        if (!res.ok) return c.send({ t: 'roomGone', code: m.code });
+        c.room = r;
+        c.send({ t: 'joined', code: r.code });
+        pushRoomList();
+        break;
+      }
+      case 'ping': c.send({ t: 'pong' }); break;
       case 'setName': c.name = cleanName(m.name); break;
       case 'avatar': {
         // cambiar o quitar la foto de perfil (se ve en la sala y en la partida)
@@ -308,7 +326,7 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     clients.delete(c);
     setOnline(c, null);
-    if (c.room) { c.room.disconnect(c.token); cleanup(c.room); }
+    if (c.room) { c.room.disconnect(c.token, c); cleanup(c.room); }
     pushRoomList();
   });
 });
@@ -322,6 +340,7 @@ setInterval(() => {
   for (const ws of wss.clients) { if (!ws.isAlive) { ws.terminate(); continue; } ws.isAlive = false; ws.ping(); }
   const now = Date.now();
   for (const r of rooms.values()) {
+    if (!r.seats.some((s) => s.kind === 'human') && !r.spectators.size) { r.destroy(); rooms.delete(r.code); pushRoomList(); continue; }
     if (r.humansConnected()) { r.idleSince = null; continue; }
     r.idleSince = r.idleSince || now;
     if (now - r.idleSince > 10 * 60 * 1000) { r.destroy(); rooms.delete(r.code); }

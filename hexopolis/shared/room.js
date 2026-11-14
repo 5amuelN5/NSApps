@@ -8,6 +8,7 @@
   const DELAY = { setup: 560, roll: 640, main: 520, robber: 780, discard: 520, respond: 950, confirm: 600, roadBuilding: 520 };
   const AUTO_GRACE = 20000; // ms antes de que un bot sustituya a un humano desconectado
   const TRADE_TIMEOUT = 12000;
+  const LOBBY_GRACE = 60000; // en la sala de espera, un jugador que pierde la conexión conserva su sitio este tiempo
 
   class Room {
     constructor({ code, name, isPublic = true, local = false, onChange, onState, onGameOver }) {
@@ -55,6 +56,7 @@
         this.spectators.delete(token);
         const seat = this.seats[i];
         if (!this.host || this.creator === token && !this.seats.some((x) => x.kind === 'human' && x.token === this.host && x.connected)) this.host = token;
+        clearTimeout(seat.dropT); seat.dropT = null;
         seat.client = client; seat.connected = true; seat.discAt = null; seat.left = false; seat.name = name || seat.name;
         if (client && client.profile) seat.prof = client.profile;
         if (client && client.avatar !== undefined) seat.avatar = client.avatar;
@@ -109,13 +111,27 @@
       this.sendRoom();
     }
 
-    disconnect(token) {
-      if (this.spectators.has(token)) { this.spectators.delete(token); this.sendRoom(); return; }
+    // se cortó la conexión (no ha salido a propósito). 'client' es la conexión que se cortó: si el jugador
+    // ya ha vuelto con otra conexión (otra pestaña, o reconectó antes de que el servidor notara el corte), no se toca nada
+    disconnect(token, client) {
+      if (this.spectators.has(token)) {
+        const x = this.spectators.get(token);
+        if (client && x.client && x.client !== client) return;
+        this.spectators.delete(token); this.sendRoom(); return;
+      }
       const i = this.seatOf(token);
       if (i < 0) return;
       const seat = this.seats[i];
-      if (!this.state) { this.leave(token); return; }
+      if (client && seat.client && seat.client !== client) return;
+      if (!seat.connected) return;
       seat.connected = false; seat.client = null; seat.discAt = Date.now();
+      if (!this.state) {
+        // sala de espera: conserva el sitio un rato por si vuelve (p. ej. al cambiar de app en el móvil)
+        clearTimeout(seat.dropT);
+        seat.dropT = setTimeout(() => { seat.dropT = null; if (!seat.connected && !this.state && this.seats.includes(seat)) this.leave(token); }, LOBBY_GRACE);
+        this.sendRoom();
+        return;
+      }
       this.sendRoom();
       this.checkRematch();
       setTimeout(() => this.schedule(), AUTO_GRACE + 50);
@@ -166,7 +182,8 @@
     startGame(opts = {}) {
       if (this.state && this.state.phase !== 'gameOver') return 'Ya hay una partida en curso';
       // quitar humanos desconectados o que se fueron
-      const seats = this.seats.filter((s) => s.kind === 'bot' || (s.connected && !s.left));
+      // (quien perdió la conexión hace poco sigue dentro: al volver retoma su sitio, y si no, juega un bot)
+      const seats = this.seats.filter((s) => s.kind === 'bot' || (!s.left && (s.connected || (s.discAt && Date.now() - s.discAt < LOBBY_GRACE))));
       if (seats.length < 2) return 'Se necesitan al menos 2 jugadores';
       const tErr = E.teamsError(this.rules, seats.length);
       if (tErr) return tErr;
@@ -347,7 +364,7 @@
       return r;
     }
 
-    destroy() { clearTimeout(this.timer); clearTimeout(this.tradeTimer); }
+    destroy() { clearTimeout(this.timer); clearTimeout(this.tradeTimer); this.seats.forEach((x) => clearTimeout(x.dropT)); }
   }
 
   return Room;

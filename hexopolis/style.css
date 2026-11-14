@@ -1087,3 +1087,8 @@ body.spec .spec-qc { display: flex; margin-top: 8px; }
 .market-pop span { font-size: 13px; color: var(--muted); line-height: 1.35; }
 .market-pop.show { animation: mkpop 3.6s ease-out forwards; }
 @keyframes mkpop { 0% { opacity: 0; transform: translate(-50%, -50%) scale(0.6); } 8% { opacity: 1; transform: translate(-50%, -50%) scale(1.06); } 13% { transform: translate(-50%, -50%) scale(1); } 85% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 100% { opacity: 0; transform: translate(-50%, -60%) scale(0.96); } }
+
+/* aviso de conexión perdida */
+.net-warn { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 90; display: flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px; background: #3a1d24; border: 1px solid rgba(255,107,107,0.7); color: #ffd6d6; font-weight: 800; font-size: 13px; box-shadow: 0 6px 18px rgba(0,0,0,0.4); pointer-events: none; }
+.net-warn .nw-dot { width: 9px; height: 9px; border-radius: 50%; background: #ff6b6b; animation: nwblink 1s ease-in-out infinite; }
+@keyframes nwblink { 50% { opacity: 0.25; } }
