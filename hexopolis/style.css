@@ -999,3 +999,24 @@ body.spec .spec-qc { display: flex; margin-top: 8px; }
 }
 .mode-seg:has(> :nth-child(3)) { grid-template-columns: repeat(3, 1fr); }
 @media (max-width: 560px) { .mode-seg:has(> :nth-child(3)) { grid-template-columns: 1fr; } }
+
+/* ===== menú: copa de ranking, crear local y salas en «Unirse» ===== */
+.prof-row { display: flex; gap: 8px; width: 100%; align-items: stretch; }
+.prof-row .prof-chip { flex: 1; min-width: 0; }
+.cup-btn { flex: none; width: 58px; border-radius: 14px; border: 1px solid rgba(242,193,78,0.5); background: linear-gradient(160deg, rgba(242,193,78,0.22), rgba(242,193,78,0.06)); font-size: 26px; cursor: pointer; transition: transform .12s, filter .12s; }
+.cup-btn:hover { transform: translateY(-2px); filter: brightness(1.12); }
+.prof-row:has(.prof-chip.hidden) { justify-content: center; }
+.ng-vis.three { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 480px) { .ng-vis.three { grid-template-columns: 1fr; } }
+.modal-box:has(.jg-rooms) { width: min(520px, 100%); }
+.jg-sec { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--line); padding-top: 10px; }
+.jg-sec b { font-family: var(--px); font-weight: 600; font-size: 15px; }
+.jg-rooms { display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; }
+.jr { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; background: rgba(255,255,255,0.04); border: 1px solid var(--line); }
+.jr.mine { border-color: rgba(76,184,122,0.55); background: rgba(76,184,122,0.08); }
+.jr-code { font-family: var(--px); letter-spacing: 2px; color: var(--yellow); font-size: 15px; flex: none; }
+.jr-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.jr-txt b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jr-txt small { color: var(--muted); font-size: 12px; }
+.jr-btns { display: flex; gap: 4px; flex: none; }
+.jr-btns .btn:disabled { opacity: 0.35; }

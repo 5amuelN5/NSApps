@@ -17,7 +17,10 @@
   <div class="menu-box">
     <h1 class="logo"><span>Hex</span>ópolis</h1>
     <p class="tag">Coloniza · Comercia · Conquista</p>
-    <button class="prof-chip hidden" id="prof-chip" title="Tu perfil: nivel, logros y enlace de recuperación"></button>
+    <div class="prof-row">
+      <button class="prof-chip hidden" id="prof-chip" title="Tu perfil: nivel, logros y enlace de recuperación"></button>
+      <button class="cup-btn" id="btn-ranking" title="Ranking de amigos">🏆</button>
+    </div>
     <label class="field name-field"><span>Tu nombre</span>
       <input id="in-name" maxlength="14" autocomplete="off" spellcheck="false">
     </label>
@@ -31,12 +34,7 @@
       <button class="play-card pink" id="btn-create-game"><span class="pc-ic">＋</span><b>Crear partida</b><small>Ponle nombre y añade bots o amigos</small></button>
       <button class="play-card cyan" id="btn-join-game"><span class="pc-ic">🔑</span><b>Unirse a partida</b><small>Entra con el código de 4 letras</small></button>
     </div>
-    <div class="menu-foot">
-      <button class="link-btn" id="btn-local">🤖 Solo contra bots</button><span>·</span>
-      <button class="link-btn" id="btn-online">🌐 Salas públicas</button><span>·</span>
-      <button class="link-btn" id="btn-ranking">🏆 Ranking</button><span>·</span>
-      <button class="link-btn" id="btn-rules">📖 Cómo se juega</button>
-    </div>
+    <div class="menu-foot"><button class="link-btn" id="btn-rules">📖 Cómo se juega</button></div>
   </div>
 </section>
 

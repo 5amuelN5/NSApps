@@ -118,8 +118,37 @@ $('#in-name').addEventListener('input', (e) => {
   store.set('hx_name', App.name);
   if (App.ws && App.ws.readyState === 1) send({ t: 'setName', name: App.name });
 });
-$('#btn-local').onclick = () => { Sfx.unlock(); Sfx.click(); startLocal(); };
-$('#btn-online').onclick = () => { Sfx.unlock(); Sfx.click(); goOnline(); };
+// conectar con el servidor sin salir del menú (para ver la lista de salas en «Unirse a partida»)
+async function ensureOnline() {
+  await App.configReady;
+  if (!App.hasServer) return false;
+  if (App.mode !== 'online') { if (App.localRoom) { App.localRoom.destroy(); App.localRoom = null; } App.mode = 'online'; }
+  if (App.ws && App.ws.readyState === 1) { send({ t: 'listRooms' }); return true; }
+  if (!App.ws || App.ws.readyState > 1) connect();
+  return true;
+}
+// entrar a mirar una sala (espera a que la conexión esté lista)
+async function watchRoom(code) {
+  await goOnline();
+  const t0 = Date.now();
+  const tryWatch = () => { if (App.ws && App.ws.readyState === 1) send({ t: 'joinRoom', code, watch: true }); else if (Date.now() - t0 < 70000) setTimeout(tryWatch, 400); };
+  tryWatch();
+}
+function renderJoinRooms() {
+  const el = $('#jg-rooms'); if (!el) return;
+  if (App.hasServer === false) { el.innerHTML = '<p class="muted">Sin servidor no hay lista de salas: usa el código.</p>'; return; }
+  const list = App.lastRooms;
+  if (!list) { el.innerHTML = '<p class="muted">Buscando salas… (si el servidor estaba dormido puede tardar un poco)</p>'; return; }
+  if (!list.length) { el.innerHTML = '<p class="muted">No hay salas públicas ahora mismo. ¡Crea una!</p>'; return; }
+  el.innerHTML = list.map((r) => {
+    const full = r.players >= (r.max || 4);
+    const play = r.mine ? `<button class="btn small green" data-jr="${esc(r.code)}">↩ Volver</button>` : `<button class="btn small pink" data-jr="${esc(r.code)}" ${r.started || full ? 'disabled' : ''} title="${r.started ? 'La partida ya ha empezado: puedes mirarla' : full ? 'La sala está llena' : 'Entrar a jugar'}">▶ Jugar</button>`;
+    return `<div class="jr ${r.mine ? 'mine' : ''}"><b class="jr-code">${esc(r.code)}</b><span class="jr-txt"><b>${esc(r.name)}${r.mine ? ' <span class="ri-mine">Tu sala</span>' : ''}</b><small>${r.players}/${r.max || 4} jugadores · ${r.started ? 'en partida' : 'esperando'}${r.watchers ? ` · 👁 ${r.watchers}` : ''}</small></span>
+      <span class="jr-btns">${play}<button class="btn small cyan" data-jw="${esc(r.code)}">👁</button></span></div>`;
+  }).join('');
+  el.querySelectorAll('[data-jr]').forEach((b) => (b.onclick = () => { Sfx.click(); closeModal(); goOnline(b.dataset.jr); }));
+  el.querySelectorAll('[data-jw]').forEach((b) => (b.onclick = () => { Sfx.click(); closeModal(); watchRoom(b.dataset.jw); }));
+}
 $('#btn-create-game').onclick = () => { Sfx.unlock(); Sfx.click(); openModal({ kind: 'newgame' }); };
 $('#btn-join-game').onclick = () => { Sfx.unlock(); Sfx.click(); openModal({ kind: 'joingame' }); };
 // crear una sala online con nombre (si no hay servidor, se crea en modo directo)
@@ -198,12 +227,12 @@ $('#btn-resume-local').onclick = () => { Sfx.unlock(); Sfx.click(); resumeLocal(
 $('#btn-resume-online').onclick = () => { Sfx.unlock(); Sfx.click(); const on = Saves.latest(); if (!on) return renderResume(); Saves.adopt(on[0]); goOnline(on[1].code); };
 
 // ================= MODO LOCAL =================
-function startLocal() {
+function startLocal(name) {
   if (App.ws) { try { App.ws.close(); } catch (e) { /* */ } App.ws = null; }
   App.mode = 'local';
   if (App.localRoom) App.localRoom.destroy();
   LocalSave.clear();
-  const r = new Room({ code: 'LOCAL', name: 'PARTIDA LOCAL', isPublic: false, local: true, onState: () => LocalSave.save(r) });
+  const r = new Room({ code: 'LOCAL', name: typeof name === 'string' && name ? name : 'Partida contra bots', isPublic: false, local: true, onState: () => LocalSave.save(r) });
   App.localRoom = r;
   r.join(localClient(), App.token, App.name);
   r.addBot(App.token, 2); r.addBot(App.token, 3); r.addBot(App.token, 4);
@@ -400,8 +429,8 @@ function canDeleteRoom() { return App.mode === 'online' && App.room && App.you >
 function renderRoom() {
   const r = App.room; if (!r) return;
   const host = isHost();
-  $('#room-title').textContent = r.local ? 'Partida contra bots' : r.name;
-  $('#room-kicker').textContent = r.local ? 'SIN CONEXIÓN' : r.isPublic ? 'SALA ONLINE · PÚBLICA' : 'SALA ONLINE · PRIVADA';
+  $('#room-title').textContent = r.name;
+  $('#room-kicker').textContent = r.local ? 'PARTIDA LOCAL · SIN CONEXIÓN' : r.isPublic ? 'SALA ONLINE · PÚBLICA' : 'SALA ONLINE · PRIVADA';
   $('#room-panel').classList.toggle('solo', !!r.local);
   const st = r.started && !r.over ? '<span class="rh-chip live">● En partida</span>' : r.over ? '<span class="rh-chip">Partida terminada</span>' : '<span class="rh-chip wait">Esperando jugadores</span>';
   $('#room-meta').innerHTML = `${st}<span class="rh-chip">👥 ${r.seats.length}/${r.max || 4}</span>${(r.spectators || []).length ? `<span class="rh-chip">👁 ${(r.spectators || []).length}</span>` : ''}${r.local ? '' : `<span class="rh-chip code">#${esc(r.code)}</span>`}`;
@@ -631,7 +660,11 @@ function renderRoomChat() {
 // ================= MENSAJES =================
 function onMsg(m) {
   switch (m.t) {
-    case 'rooms': if (App.screen === 'lobby') renderRoomList(m.list); break;
+    case 'rooms':
+      App.lastRooms = m.list;
+      if (App.screen === 'lobby') renderRoomList(m.list);
+      if (App.ui.modal && App.ui.modal.kind === 'joingame') renderJoinRooms();
+      break;
     case 'joined':
       if (App.mode === 'online' || App.mode === 'p2p') history.replaceState(null, '', '?sala=' + m.code);
       break;
@@ -1627,13 +1660,13 @@ function renderModal() {
       const def = `Sala de ${App.name}`;
       h = `<div class="row between"><h2>＋ Crear partida</h2><button class="btn small ghost" data-close>✕</button></div>
         <label class="ng-field"><span>Nombre de la sala</span><input id="ng-name" maxlength="22" placeholder="${esc(def)}" value="${esc(m.name || '')}" autocomplete="off"></label>
-        <div class="ng-vis"><button class="${m.priv ? '' : 'on'}" data-vis="pub"><b>🌐 Pública</b><small>Sale en la lista de salas</small></button><button class="${m.priv ? 'on' : ''}" data-vis="priv"><b>🔒 Privada</b><small>Solo con el código o el enlace</small></button></div>
-        <button class="btn big pink" id="ng-ok">Crear sala</button>
-        <p class="muted ng-note">Dentro podrás añadir bots, invitar a amigos con el enlace y elegir las reglas.</p>`;
+        <div class="ng-vis three"><button class="${!m.vis || m.vis === 'pub' ? 'on' : ''}" data-vis="pub"><b>🌐 Pública</b><small>Sale en la lista de salas</small></button><button class="${m.vis === 'priv' ? 'on' : ''}" data-vis="priv"><b>🔒 Privada</b><small>Solo con el código o el enlace</small></button><button class="${m.vis === 'local' ? 'on' : ''}" data-vis="local"><b>🤖 Local</b><small>Solo contra bots, sin conexión</small></button></div>
+        <button class="btn big pink" id="ng-ok">${m.vis === 'local' ? 'Crear partida local' : 'Crear sala'}</button>
+        <p class="muted ng-note">${m.vis === 'local' ? 'Juegas en este dispositivo contra bots: no hace falta internet.' : 'Dentro podrás añadir bots, invitar a amigos con el enlace y elegir las reglas.'}</p>`;
       box.innerHTML = h;
       const inp = $('#ng-name'); setTimeout(() => inp.focus(), 50);
-      box.querySelectorAll('[data-vis]').forEach((b) => (b.onclick = () => { m.priv = b.dataset.vis === 'priv'; m.name = inp.value; Sfx.click(); renderModal(); }));
-      const go = () => { const name = inp.value.trim() || def; closeModal(); createRoomFlow(name, !m.priv); };
+      box.querySelectorAll('[data-vis]').forEach((b) => (b.onclick = () => { m.vis = b.dataset.vis; m.name = inp.value; Sfx.click(); renderModal(); }));
+      const go = () => { const name = inp.value.trim() || def; closeModal(); if (m.vis === 'local') startLocal(name); else createRoomFlow(name, m.vis !== 'priv'); };
       $('#ng-ok').onclick = go;
       inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); e.stopPropagation(); });
       break;
@@ -1642,8 +1675,9 @@ function renderModal() {
       h = `<div class="row between"><h2>🔑 Unirse a partida</h2><button class="btn small ghost" data-close>✕</button></div>
         <label class="ng-field"><span>Código de la sala</span><input id="jg-code" class="jg-code" maxlength="4" placeholder="ABCD" autocomplete="off" autocapitalize="characters" spellcheck="false" value="${esc(m.code || '')}"></label>
         <div class="row gap"><button class="btn big pink" id="jg-play" style="flex:1">▶ Jugar</button><button class="btn big cyan" id="jg-watch" style="flex:1">👁 Mirar</button></div>
-        <p class="muted ng-note">Pide el código a quien creó la sala (son 4 letras o números). Si la partida ya ha empezado, entrarás a mirarla.</p>
-        <p class="ng-note"><button class="link-btn" id="jg-list">🌐 Ver salas públicas</button></p>`;
+        <p class="muted ng-note">Pide el código a quien creó la sala (4 letras o números). Si la partida ya ha empezado, entrarás a mirarla.</p>
+        <div class="jg-sec"><b>🌐 Salas online</b><button class="link-btn" id="jg-refresh" title="Actualizar la lista">↻</button></div>
+        <div class="jg-rooms" id="jg-rooms"></div>`;
       box.innerHTML = h;
       const inp = $('#jg-code'); setTimeout(() => inp.focus(), 50);
       const val = () => inp.value.trim().toUpperCase();
@@ -1651,14 +1685,10 @@ function renderModal() {
       inp.addEventListener('input', () => { inp.value = inp.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4); m.code = inp.value; });
       inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#jg-play').click(); e.stopPropagation(); });
       $('#jg-play').onclick = () => { const c = ok(); if (!c) return; Sfx.click(); closeModal(); goOnline(c); };
-      $('#jg-watch').onclick = async () => {
-        const c = ok(); if (!c) return; Sfx.click(); closeModal();
-        await goOnline();
-        const t0 = Date.now();
-        const tryWatch = () => { if (App.ws && App.ws.readyState === 1) send({ t: 'joinRoom', code: c, watch: true }); else if (Date.now() - t0 < 70000) setTimeout(tryWatch, 400); };
-        tryWatch();
-      };
-      $('#jg-list').onclick = () => { Sfx.click(); closeModal(); goOnline(); };
+      $('#jg-watch').onclick = () => { const c = ok(); if (!c) return; Sfx.click(); closeModal(); watchRoom(c); };
+      renderJoinRooms();
+      if (!m.asked) { m.asked = true; ensureOnline(); }
+      $('#jg-refresh').onclick = () => { Sfx.click(); App.lastRooms = null; renderJoinRooms(); ensureOnline(); };
       break;
     }
     case 'hostleave': {
