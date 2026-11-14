@@ -58,50 +58,64 @@
 
 <!-- ============ SALA ============ -->
 <section id="scr-room" class="screen hidden">
-  <div class="panel wide">
-    <div class="row between">
-      <h2 id="room-title">SALA</h2>
+  <div class="panel wide room-panel" id="room-panel">
+    <header class="room-head">
+      <div class="rh-left">
+        <span class="rh-kicker" id="room-kicker">SALA ONLINE</span>
+        <h2 id="room-title">SALA</h2>
+        <div class="rh-meta" id="room-meta"></div>
+      </div>
       <div class="row gap"><button class="btn small trash hidden" id="btn-delroom" title="Eliminar la sala para todos">🗑</button><button class="btn small ghost" id="btn-leave">✕ SALIR</button></div>
-    </div>
-    <div id="room-code-box" class="share-box">
-      <div class="share-head"><span>Invita a tus amigos con este enlace</span><span class="share-code">Código <b id="room-code">----</b></span></div>
-      <div class="share-row">
-        <input id="room-link" readonly>
-        <button class="btn cyan" id="btn-copy">Copiar</button>
+    </header>
+    <div class="room-grid">
+      <div class="room-main">
+        <div class="sec-title"><b>👥 Jugadores</b><span class="muted" id="seat-count"></span></div>
+        <div id="seats" class="seats"></div>
+        <p class="muted watchers hidden" id="room-watchers"></p>
+        <div class="bot-add" id="host-tools">
+          <span class="ba-lbl">＋ Añadir bot</span>
+          <button class="ba-btn" data-addbot="1"><span class="st">★</span>Novato</button>
+          <button class="ba-btn" data-addbot="2"><span class="st">★★</span>Normal</button>
+          <button class="ba-btn" data-addbot="3"><span class="st">★★★</span>Difícil</button>
+          <button class="ba-btn hot" data-addbot="4"><span class="st">★★★★</span>Experto</button>
+        </div>
+        <div class="row gap speed-row" id="speed-row">
+          <span class="muted">Velocidad de los bots:</span>
+          <button class="btn small" data-speed="0.6">LENTA</button>
+          <button class="btn small" data-speed="1">NORMAL</button>
+          <button class="btn small" data-speed="1.8">RÁPIDA</button>
+        </div>
+        <div class="rules-box" id="rules-box">
+          <div class="rules-head"><b>📜 Reglas de la partida</b><button class="btn small yellow" id="btn-room-rules">⚙ CAMBIAR REGLAS</button></div>
+          <div class="rules-sum" id="rules-sum"></div>
+        </div>
       </div>
-      <div class="share-row">
-        <button class="btn small" id="btn-share">Compartir…</button>
-        <a class="btn small green" id="btn-wa" target="_blank" rel="noopener">WhatsApp</a>
-      </div>
-      <p class="share-warn hidden" id="link-warn"></p>
+      <aside class="room-side" id="room-side">
+        <div id="room-code-box" class="share-box invite-card">
+          <div class="ic-top"><span>Invita a tus amigos</span><span class="ic-code-wrap">Código <b id="room-code" class="ic-code">----</b></span></div>
+          <div class="share-row">
+            <input id="room-link" readonly>
+            <button class="btn cyan" id="btn-copy">Copiar</button>
+          </div>
+          <div class="share-row">
+            <a class="btn small green" id="btn-wa" target="_blank" rel="noopener">WhatsApp</a>
+            <button class="btn small" id="btn-share">Compartir…</button>
+          </div>
+          <p class="share-warn hidden" id="link-warn"></p>
+        </div>
+        <div class="chatbox" id="room-chatbox">
+          <div class="sec-title"><b>💬 Chat</b></div>
+          <div class="chat-log" id="room-chat"></div>
+          <div class="qc qc-room" id="qc-room"></div>
+          <div class="chat-row"><input id="room-chat-in" placeholder="Escribe un mensaje…" maxlength="200"><button class="btn small cyan" id="room-chat-send">Enviar</button></div>
+        </div>
+      </aside>
     </div>
-    <div id="seats" class="seats"></div>
-    <p class="muted watchers hidden" id="room-watchers"></p>
-    <div class="row gap wrap" id="host-tools">
-      <span class="muted">Añadir bot:</span>
-      <button class="btn small" data-addbot="1"><span class="st">★</span> NOVATO</button>
-      <button class="btn small" data-addbot="2"><span class="st">★★</span> NORMAL</button>
-      <button class="btn small" data-addbot="3"><span class="st">★★★</span> DIFÍCIL</button>
-      <button class="btn small pink" data-addbot="4"><span class="st">★★★★</span> EXPERTO</button>
-    </div>
-    <div class="row gap" id="speed-row">
-      <span class="muted">Velocidad de los bots:</span>
-      <button class="btn small" data-speed="0.6">LENTA</button>
-      <button class="btn small" data-speed="1">NORMAL</button>
-      <button class="btn small" data-speed="1.8">RÁPIDA</button>
-    </div>
-    <div class="rules-box" id="rules-box">
-      <div class="rules-head"><b>📜 Reglas de la partida</b><button class="btn small yellow" id="btn-room-rules">⚙ CAMBIAR REGLAS</button></div>
-      <div class="rules-sum" id="rules-sum"></div>
-    </div>
-    <button class="btn big pink" id="btn-start">▶ EMPEZAR PARTIDA</button>
-    <button class="btn big green hidden" id="btn-take-seat">▶ JUGAR EN ESTA SALA</button>
-    <p class="muted" id="room-wait"></p>
-    <div class="chatbox" id="room-chatbox">
-      <div class="chat-log" id="room-chat"></div>
-      <div class="chat-row"><input id="room-chat-in" placeholder="Escribe un mensaje…" maxlength="200"><button class="btn small cyan" id="room-chat-send">Enviar</button></div>
-      <div class="qc qc-room" id="qc-room"></div>
-    </div>
+    <footer class="room-foot">
+      <p class="muted" id="room-wait"></p>
+      <button class="btn big pink start-btn" id="btn-start">▶ EMPEZAR PARTIDA</button>
+      <button class="btn big green hidden" id="btn-take-seat">▶ JUGAR EN ESTA SALA</button>
+    </footer>
   </div>
 </section>
 

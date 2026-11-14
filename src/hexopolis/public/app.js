@@ -382,7 +382,11 @@ function isHost() { return App.room && App.room.hostSeat === App.you; }
 function renderRoom() {
   const r = App.room; if (!r) return;
   const host = isHost();
-  $('#room-title').textContent = r.local ? 'PARTIDA CONTRA BOTS' : r.name.toUpperCase();
+  $('#room-title').textContent = r.local ? 'Partida contra bots' : r.name;
+  $('#room-kicker').textContent = r.local ? 'SIN CONEXIÓN' : r.isPublic ? 'SALA ONLINE · PÚBLICA' : 'SALA ONLINE · PRIVADA';
+  $('#room-panel').classList.toggle('solo', !!r.local);
+  const st = r.started && !r.over ? '<span class="rh-chip live">● En partida</span>' : r.over ? '<span class="rh-chip">Partida terminada</span>' : '<span class="rh-chip wait">Esperando jugadores</span>';
+  $('#room-meta').innerHTML = `${st}<span class="rh-chip">👥 ${r.seats.length}/${r.max || 4}</span>${(r.spectators || []).length ? `<span class="rh-chip">👁 ${(r.spectators || []).length}</span>` : ''}${r.local ? '' : `<span class="rh-chip code">#${esc(r.code)}</span>`}`;
   $('#room-code-box').classList.toggle('hidden', !!r.local);
   $('#room-code').textContent = r.code;
   if (!r.local) renderShare();
@@ -394,18 +398,25 @@ function renderRoom() {
   $('#rules-sum').innerHTML = rulesSummary(r.rules, r.seats.length) + (r.rules && Engine.teamsError(r.rules, r.seats.length) ? `<span class="rchip warn">⚠ ${Engine.teamsError(r.rules, r.seats.length)}</span>` : '');
   $('#btn-room-rules').textContent = host ? '⚙ CAMBIAR REGLAS' : '📜 VER REGLAS';
   const seats = [];
+  const lvlName = (l) => LVL_NAME[l][0] + LVL_NAME[l].slice(1).toLowerCase();
   for (let i = 0; i < Math.max(4, Math.min(maxP, r.seats.length + 1)); i++) {
     const s = r.seats[i];
-    if (!s) { seats.push(`<div class="seat empty"><span class="lbl-px">VACÍO</span></div>`); continue; }
-    const lvl = s.kind === 'bot'
-      ? (host ? `<span class="kind">Bot · elige dificultad</span><div class="lvl-pick">${[1, 2, 3, 4].map((l) => `<button data-lvl="${i}:${l}" class="${s.level === l ? 'on' : ''}" title="${LVL_NAME[l][0] + LVL_NAME[l].slice(1).toLowerCase()}"><span class="st">${'★'.repeat(l)}</span><span class="ln">${LVL_NAME[l][0] + LVL_NAME[l].slice(1).toLowerCase()}</span></button>`).join('')}</div>` : `<span class="kind">Bot ${stars(s.level)} ${LVL_NAME[s.level][0] + LVL_NAME[s.level].slice(1).toLowerCase()}</span>`)
-      : `<span class="kind">${s.host ? '👑 ANFITRIÓN' : 'HUMANO'}${i === App.you ? ' (TÚ)' : ''}${s.connected ? '' : ' · DESCONECTADO'}</span>`;
-    const kick = host && i !== App.you ? `<button class="x" data-kick="${i}" title="Quitar">✕</button>` : '';
+    if (!s) {
+      seats.push(`<div class="seat empty"><span class="seat-av">＋</span><div class="seat-id"><span class="nm">Sitio libre</span><span class="kind">${host ? (r.local ? 'Añade un bot abajo' : 'Añade un bot o comparte el enlace') : 'Esperando jugador…'}</span></div></div>`);
+      continue;
+    }
+    const me = i === App.you;
+    const tags = s.kind === 'bot' ? `<span class="sk bot">🤖 Bot ${stars(s.level)}</span>`
+      : `${s.host ? '<span class="sk host">👑 Anfitrión</span>' : ''}${me ? '<span class="sk me">Tú</span>' : ''}${!s.host && !me ? '<span class="sk">🙂 Jugador</span>' : ''}${s.connected ? '' : '<span class="sk off">Desconectado</span>'}`;
+    const av = s.kind === 'bot' ? '🤖' : s.prof ? s.prof.emblem : esc(s.name.trim()[0] || '?').toUpperCase();
+    const lvl = s.kind === 'bot' && host ? `<div class="lvl-pick">${[1, 2, 3, 4].map((l) => `<button data-lvl="${i}:${l}" class="${s.level === l ? 'on' : ''}" title="${lvlName(l)}"><span class="st">${'★'.repeat(l)}</span><span class="ln">${lvlName(l)}</span></button>`).join('')}</div>` : '';
+    const kick = host && !me ? `<button class="x" data-kick="${i}" title="Quitar">✕</button>` : '';
     const pb = s.prof ? `<button class="seat-prof" data-pcard="${i}" title="Ver el perfil de ${esc(s.name)}">${profBadge(s.prof)}<span>${Profile.rankOf(Profile.levelOf(s.prof.xp)).name} · ver perfil</span></button>` : '';
     const tOk = r.rules && r.rules.teams && !Engine.teamsError(r.rules, r.seats.length);
     const tl = tOk ? `<span class="tm-tag big" style="--tc:${Engine.TEAM_COLORS[i % (r.seats.length / r.rules.teams)]}">Equipo ${Engine.TEAM_NAMES[i % (r.seats.length / r.rules.teams)]}</span>` : '';
-    seats.push(`<div class="seat" style="--c:${s.color}">${tl}<span class="nm">${esc(s.name)}</span>${pb}${lvl}${kick}</div>`);
+    seats.push(`<div class="seat ${me ? 'me' : ''}" style="--c:${s.color}">${kick}<div class="seat-top"><span class="seat-av">${av}</span><div class="seat-id"><span class="nm">${esc(s.name)}</span><span class="seat-tags">${tags}</span></div></div>${tl}${pb}${lvl}</div>`);
   }
+  $('#seat-count').textContent = `${r.seats.length} de ${maxP}`;
   $('#seats').innerHTML = seats.join('');
   $('#seats').querySelectorAll('[data-lvl]').forEach((b) => (b.onclick = () => { const [i, l] = b.dataset.lvl.split(':').map(Number); Sfx.click(); send({ t: 'botLevel', i, level: l }); }));
   $('#seats').querySelectorAll('[data-pcard]').forEach((b) => (b.onclick = () => { Sfx.click(); const s = App.room.seats[+b.dataset.pcard]; if (s && s.prof) openModal({ kind: 'pcard', prof: s.prof }); }));
@@ -1053,12 +1064,13 @@ function toggleQChat(on) {
 // ----- chat rápido: emotes y frases -----
 const QC_EMOTES = ['👍', '👎', '😂', '😎', '😭', '😡', '🤔', '😱', '🔥', '🎉', '👏', '🙏', '🦹', '🎲', '🤝', '😴'];
 const QC_PHRASES = ['¡Buen trato!', '¿Alguien tiene madera?', '¿Alguien tiene ladrillo?', '¿Quién me da trigo?', 'Cambio lana por lo que sea', '¡El ladrón no, por favor!', '¡Te toca!', 'Bien jugado 👏', 'Nooo 😭', '¡Casi lo tengo!', 'Gracias 🙏', '¿Revancha?'];
-function qcHTML() {
+function qcHTML(emotesOnly) {
+  if (emotesOnly) return `<div class="qc-emotes">${QC_EMOTES.map((e) => `<button class="qc-e" data-qc="${e}">${e}</button>`).join('')}</div>`;
   return `<div class="qc-emotes">${QC_EMOTES.map((e) => `<button class="qc-e" data-qc="${e}">${e}</button>`).join('')}</div>
     <div class="qc-phrases">${QC_PHRASES.map((t) => `<button class="qc-p" data-qc="${esc(t)}">${esc(t)}</button>`).join('')}</div>`;
 }
 $('#qc-game').innerHTML = qcHTML();
-$('#qc-room').innerHTML = qcHTML();
+$('#qc-room').innerHTML = qcHTML(true); // en la sala: solo emoticonos
 document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-qc]'); if (!b) return;
   if (sendChat(b.dataset.qc)) { Sfx.click(); if (b.closest('#qchat-pop')) toggleQChat(false); }

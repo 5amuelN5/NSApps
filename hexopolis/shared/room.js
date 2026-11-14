@@ -46,7 +46,13 @@
 
     join(client, token, name, opts = {}) {
       const i = this.seatOf(token);
+      if (i >= 0 && opts.watch) {
+        // tiene sitio pero quiere mirar: su sitio sigue (lo juega un bot) y entra como espectador
+        if (this.seats[i].connected) this.leave(token);
+        return this.watch(client, token, name);
+      }
       if (i >= 0) {
+        this.spectators.delete(token);
         const seat = this.seats[i];
         seat.client = client; seat.connected = true; seat.discAt = null; seat.left = false; seat.name = name || seat.name;
         if (client && client.profile) seat.prof = client.profile;
@@ -196,8 +202,8 @@
     // ----- chat -----
     sysChat(text) { this.pushChat({ sys: true, text }); }
     say(token, text) {
-      const i = this.seatOf(token);
-      const spec = i < 0 ? this.spectators.get(token) : null;
+      const spec = this.spectators.get(token) || null;
+      const i = spec ? -1 : this.seatOf(token);
       if (i < 0 && !spec) return;
       text = String(text || '').slice(0, 200).trim();
       if (!text) return;
@@ -217,6 +223,7 @@
     // ----- juego -----
     action(token, a) {
       if (!this.state) return 'No hay partida';
+      if (this.spectators.has(token)) return 'Estás mirando la partida';
       const pid = this.seatOf(token);
       if (pid < 0) return 'No estás en la partida';
       const r = E.apply(this.state, pid, a);
