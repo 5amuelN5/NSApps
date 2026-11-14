@@ -35,7 +35,7 @@
     info() {
       return {
         code: this.code, name: this.name, isPublic: this.isPublic, creatorSeat: this.seats.findIndex((x) => x.kind === 'human' && x.token === this.creator), hostSeat: this.seats.findIndex((x) => x.kind === 'human' && x.token === this.host), local: this.local, speed: this.speed,
-        started: !!this.state, over: !!(this.state && this.state.phase === 'gameOver'), rules: this.rules, max: E.MAX_PLAYERS,
+        started: !!this.state, over: !!(this.state && this.state.phase === 'gameOver'), rules: this.rules, max: E.maxSeats(this.rules),
         seats: this.seats.map((s, i) => ({ i, kind: s.kind, name: s.name, level: s.level, connected: s.kind === 'bot' || s.connected, host: s.token === this.host, color: E.COLORS[i], prof: s.kind === 'human' && s.prof ? s.prof : null })),
         spectators: [...this.spectators.values()].map((x) => x.name),
         rematch: this.seats.map((x, i) => (x.kind === 'human' && this.rematch && this.rematch.has(x.token) ? i : -1)).filter((i) => i >= 0),
@@ -61,7 +61,7 @@
         return { ok: true };
       }
       // partida empezada, sala llena o quiere mirar: entra como espectador
-      if (opts.watch || this.state || this.seats.length >= E.MAX_PLAYERS) return this.watch(client, token, name);
+      if (opts.watch || this.state || this.seats.length >= E.maxSeats(this.rules)) return this.watch(client, token, name);
       if (this.spectators.has(token)) this.spectators.delete(token); // un espectador ocupa un sitio libre
       this.seats.push({ kind: 'human', token, name: name || 'Jugador', client, connected: true, prof: (client && client.profile) || null });
       if (!this.host) this.host = token;
@@ -126,7 +126,7 @@
     addBot(token, level) {
       if (token !== this.host) return 'Solo el anfitrión puede añadir bots';
       if (this.state && this.state.phase !== 'gameOver') return 'La partida ya ha empezado';
-      if (this.seats.length >= E.MAX_PLAYERS) return 'La sala está llena';
+      if (this.seats.length >= E.maxSeats(this.rules)) return this.rules.mode === 'teams' ? `En ${this.rules.teams} contra ${this.rules.teams} caben ${this.rules.teams * 2} jugadores` : 'La sala está llena';
       level = Math.max(1, Math.min(4, level | 0 || 2));
       const used = new Set(this.seats.map((s) => s.name));
       const names = B.BOT_NAMES.filter((n) => !used.has(n));

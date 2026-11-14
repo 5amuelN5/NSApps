@@ -23,9 +23,11 @@
 
   // ---------- reglas de la partida ----------
   const DEFAULT_RULES = {
+    mode: 'classic', teamRules: 'classic',
     map: 'auto', vp: 10, hand: 7, teams: 0,
     doubleSteal: false, friendlyRobber: false, peaceStart: false, doublesBonus: false,
     goldRain: false, fastStart: false, chaosNumbers: false,
+    market: false, portBoost: false, taxes: false, underdog: false, heroes: false, treasure: false, cityStart: false,
   };
   // normas especiales (activables una a una)
   const SPECIAL_RULES = [
@@ -36,18 +38,43 @@
     { key: 'goldRain', icon: '🌧️', name: 'Lluvia de oro', desc: 'Al sacar un 2 o un 12, todos los jugadores reciben 1 carta al azar del banco.' },
     { key: 'fastStart', icon: '🚀', name: 'Arranque rápido', desc: 'Recibes recursos de tus dos poblados iniciales, no solo del segundo.' },
     { key: 'chaosNumbers', icon: '🌀', name: 'Mapa caótico', desc: 'Los números del mapa se reparten sin restricciones: el 6 y el 8 pueden quedar juntos.' },
+    { key: 'market', icon: '🛒', name: 'Mercado del día', desc: 'Cada ronda hay un recurso de oferta: todos lo cambian 2 a 1 con el banco.' },
+    { key: 'portBoost', icon: '⚓', name: 'Puertos de oro', desc: 'Los puertos de «cualquier recurso» cambian 2 a 1 en lugar de 3 a 1.' },
+    { key: 'taxes', icon: '💸', name: 'Impuestos', desc: 'Cada 4 rondas, quien va primero paga 1 carta a quien va último.' },
+    { key: 'underdog', icon: '🍀', name: 'Ayuda al último', desc: 'Al empezar tu turno, si vas último en puntos, recibes 1 carta al azar del banco.' },
+    { key: 'heroes', icon: '🏅', name: 'Héroes', desc: 'El camino más largo y el ejército más grande valen 3 puntos en vez de 2.' },
+    { key: 'treasure', icon: '💎', name: 'Tesoro del desierto', desc: 'El primero en construir un poblado junto a cada desierto gana una carta de desarrollo gratis.' },
+    { key: 'cityStart', icon: '🏙️', name: 'Ciudad inicial', desc: 'Tu segundo poblado inicial empieza ya convertido en ciudad.' },
   ];
+  const MODES = ['classic', 'teams', 'custom'];
   const HAND_OPTS = [5, 7, 9, 12, 99];
+  // modos: clásica (reglas fijas), por equipos (2 contra 2 en mapa normal o 3 contra 3 en mapa grande,
+  // con reglas clásicas o personalizadas) y personalizada (todo a elegir)
   function normRules(r) {
     r = r && typeof r === 'object' ? r : {};
-    const o = Object.assign({}, DEFAULT_RULES);
-    if (['auto', 'normal', 'big'].includes(r.map)) o.map = r.map;
-    if (r.vp != null && Number.isFinite(+r.vp)) o.vp = Math.max(5, Math.min(16, Math.round(+r.vp)));
-    if (HAND_OPTS.includes(r.hand | 0)) o.hand = r.hand | 0;
-    if ([0, 2, 3].includes(r.teams | 0)) o.teams = r.teams | 0;
-    for (const x of SPECIAL_RULES) o[x.key] = !!r[x.key];
+    const custom = () => {
+      const c = {};
+      if (['auto', 'normal', 'big'].includes(r.map)) c.map = r.map;
+      if (r.vp != null && Number.isFinite(+r.vp)) c.vp = Math.max(5, Math.min(16, Math.round(+r.vp)));
+      if (HAND_OPTS.includes(r.hand | 0)) c.hand = r.hand | 0;
+      for (const x of SPECIAL_RULES) c[x.key] = !!r[x.key];
+      return c;
+    };
+    let mode = MODES.includes(r.mode) ? r.mode : null;
+    if (!mode) { // reglas guardadas antes de existir los modos
+      const c = custom();
+      mode = (r.teams | 0) ? 'teams' : (c.map && c.map !== 'auto') || (c.vp && c.vp !== 10) || (c.hand && c.hand !== 7) || SPECIAL_RULES.some((x) => c[x.key]) ? 'custom' : 'classic';
+    }
+    const o = Object.assign({}, DEFAULT_RULES, { mode });
+    if (mode === 'classic') return o;
+    if (mode === 'custom') return Object.assign(o, custom(), { teams: 0 });
+    o.teams = (r.teams | 0) === 3 ? 3 : 2;
+    o.teamRules = r.teamRules === 'custom' ? 'custom' : 'classic';
+    if (o.teamRules === 'custom') Object.assign(o, custom());
+    o.map = o.teams === 2 ? 'normal' : 'big';
     return o;
   }
+  function maxSeats(rules) { return rules && rules.mode === 'teams' ? (rules.teams | 0) * 2 : MAX_PLAYERS; }
   function R(s) { return s.rules || DEFAULT_RULES; }
 
   // ---------- equipos ----------
@@ -57,7 +84,7 @@
   function teamsError(rules, n) {
     const t = (rules && rules.teams) | 0;
     if (!t) return null;
-    if (n % t || n / t < 2) return t === 2 ? 'En parejas hacen falta 4 o 6 jugadores' : 'En tríos hacen falta 6 jugadores';
+    if (n !== t * 2) return t === 2 ? `2 contra 2: hacen falta 4 jugadores` : `3 contra 3: hacen falta 6 jugadores`;
     return null;
   }
   function teamTarget(vpGoal, size) { return Math.round(vpGoal * size * 0.75); }
@@ -321,17 +348,19 @@
     const r = { wood: 4, brick: 4, sheep: 4, wheat: 4, ore: 4 };
     for (const V of s.board.vertices) {
       if (!V.b || V.b.owner !== pid || !V.port) continue;
-      if (V.port === 'any') { for (const k of RES) r[k] = Math.min(r[k], 3); }
+      if (V.port === 'any') { const q = R(s).portBoost ? 2 : 3; for (const k of RES) r[k] = Math.min(r[k], q); }
       else r[V.port] = 2;
     }
+    if (R(s).market && s.market) r[s.market] = Math.min(r[s.market], 2);
     return r;
   }
   function vp(s, pid, hidden) {
     const P = s.players[pid];
     const pc = piecesOf(s);
     let v = (pc.settlements - P.settlements) + 2 * (pc.cities - P.cities);
-    if (s.longestRoad.owner === pid) v += 2;
-    if (s.largestArmy.owner === pid) v += 2;
+    const bonus = R(s).heroes ? 3 : 2;
+    if (s.longestRoad.owner === pid) v += bonus;
+    if (s.largestArmy.owner === pid) v += bonus;
     if (hidden && P.dev) v += P.dev.vp;
     return v;
   }
@@ -461,13 +490,50 @@
     s.trade = null;
     s.current = (s.current + 1) % s.players.length;
     s.turn++;
-    if (s.current === s.first) recordVP(s); // una muestra de puntos por ronda
+    if (s.current === s.first) { recordVP(s); newRound(s, ev); } // una muestra de puntos por ronda
     s.rolled = false; s.devPlayed = false; s.dice = null;
     s.phase = 'roll';
     ev.push({ type: 'turn', pid: s.current });
+    if (R(s).underdog) underdogHelp(s, ev);
     checkWin(s, ev);
     checkStall(s, ev);
   }
+  // ---------- normas que actúan al empezar cada ronda o turno ----------
+  function randomCard(s, from) {
+    const pool = []; RES.forEach((r) => { for (let i = 0; i < from[r]; i++) pool.push(r); });
+    return pool.length ? pool[randInt(s, pool.length)] : null;
+  }
+  function newRound(s, ev) {
+    const RU = R(s), n = s.players.length;
+    const round = Math.floor((s.turn - 1) / n) + 1;
+    if (RU.market) {
+      s.market = RES[randInt(s, RES.length)];
+      log(s, `🛒 Mercado del día: esta ronda ${RES_NAMES[s.market]} se cambia 2 a 1 con el banco`);
+    }
+    if (RU.taxes && round > 1 && (round - 1) % 4 === 0) {
+      const v = s.players.map((p) => vp(s, p.id, false));
+      const hi = Math.max(...v), lo = Math.min(...v);
+      const rich = v.filter((x) => x === hi).length === 1 ? v.indexOf(hi) : -1, poor = v.indexOf(lo);
+      if (rich >= 0 && rich !== poor && hi > lo) {
+        const c = randomCard(s, s.players[rich].res);
+        if (c) {
+          s.players[rich].res[c]--; s.players[poor].res[c]++;
+          ev.push({ type: 'steal', pid: poor, from: rich, res: c, private: [poor, rich], tax: true });
+          log(s, `💸 Impuestos: ${nm(s, rich)} (va primero) paga 1 carta a ${nm(s, poor)} (va último)`);
+        } else log(s, `💸 Impuestos: ${nm(s, rich)} no tiene cartas para pagar`);
+      }
+    }
+  }
+  function underdogHelp(s, ev) {
+    const v = s.players.map((p) => vp(s, p.id, false)), me = s.current;
+    if (v.some((x, i) => i !== me && x <= v[me])) return; // solo si vas último en solitario
+    const c = randomCard(s, s.bank);
+    if (!c) return;
+    s.bank[c]--; s.players[me].res[c]++;
+    ev.push({ type: 'produce', gains: [{ pid: me, res: c, n: 1, hex: null }], rain: true });
+    log(s, `🍀 Ayuda al último: ${nm(s, me)} recibe una carta`);
+  }
+
   // salvaguarda: si en 12 rondas nadie suma puntos ni construye, gana quien más puntos tenga
   const STALL_ROUNDS = 12;
   function checkStall(s, ev) {
@@ -516,6 +582,10 @@
           V.b = { owner: pid, type: 'settlement' }; P.settlements--;
           ev.push({ type: 'build', kind: 'settlement', pid, v: a.v });
           log(s, `🏠 ${P.name} coloca un poblado`);
+          if (R(s).cityStart && s.setup.idx >= s.players.length && P.cities > 0) {
+            V.b.type = 'city'; P.cities--; P.settlements++;
+            ev.push({ type: 'build', kind: 'city', pid, v: a.v });
+          }
           if (s.setup.idx >= s.players.length || R(s).fastStart) {
             const gains = [];
             for (const h of V.hexes) {
@@ -538,6 +608,16 @@
         V.b = { owner: pid, type: 'settlement' }; P.settlements--;
         ev.push({ type: 'build', kind: 'settlement', pid, v: a.v });
         log(s, `🏠 ${P.name} construye un poblado`);
+        if (R(s).treasure) {
+          s.treasure = s.treasure || {};
+          const d = V.hexes.find((h) => B.hexes[h].res === 'desert' && !s.treasure[h]);
+          if (d != null && s.devDeck.length) {
+            s.treasure[d] = pid;
+            const c = s.devDeck.pop(); P.dev[c]++; P.devNew[c]++;
+            ev.push({ type: 'buyDev', pid, card: c, private: [pid], free: true });
+            log(s, `💎 ${P.name} encuentra el tesoro del desierto: ¡una carta de desarrollo gratis!`);
+          }
+        }
         updateLongest(s, ev);
         checkWin(s, ev);
         return;
@@ -552,7 +632,7 @@
           ev.push({ type: 'build', kind: 'road', pid, e: a.e });
           s.setup.idx++;
           if (s.setup.idx >= s.setup.order.length) {
-            s.phase = 'roll'; s.current = s.first; s.turn = 1; s.setup.step = null; recordVP(s);
+            s.phase = 'roll'; s.current = s.first; s.turn = 1; s.setup.step = null; recordVP(s); newRound(s, ev);
             ev.push({ type: 'turn', pid: s.current });
             log(s, `¡Comienza la partida! Turno de ${nm(s, s.current)}`);
           } else {
@@ -920,7 +1000,7 @@
   return {
     RES, RES_NAMES, COST, PIPS, DEV_NAMES, COLORS, WIN_VP, MAX_PLAYERS, DEFAULT_RULES, SPECIAL_RULES, HAND_OPTS,
     TEAM_NAMES, TEAM_COLORS, teamsError, teamTarget, teamOf, sameTeam, teamVP, teamGoal,
-    BIG_ONLY, normRules, winVP, rulesOf: R, piecesFor, piecesOf, robberHexOk, mapKind,
+    BIG_ONLY, MODES, maxSeats, normRules, winVP, rulesOf: R, piecesFor, piecesOf, robberHexOk, mapKind,
     createGame, apply, viewFor, filterEvents,
     canSettle, canRoad, legalSettlements, legalRoads, legalCities, tradeRatios, robberVictims,
     vp, total, has, emptyRes, longestRoadFor, fmtRes,

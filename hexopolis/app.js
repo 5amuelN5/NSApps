@@ -412,12 +412,14 @@ function renderRoom() {
   $('#speed-row').classList.toggle('hidden', !r.local);
   document.querySelectorAll('[data-speed]').forEach((b) => b.classList.toggle('on', +b.dataset.speed === r.speed));
   const maxP = r.max || 4;
-  $('#host-tools').classList.toggle('hidden', !host || r.seats.length >= maxP);
-  $('#rules-sum').innerHTML = roomRulesHTML(r.rules, r.seats.length);
-  $('#btn-room-rules').textContent = host ? '⚙ Cambiar' : '📜 Ver detalles';
+  $('#host-tools').classList.add('hidden'); // se añade desde el hueco libre de la lista
+  setHTML($('#rules-sum'), roomRulesHTML(r.rules, r.seats.length));
+  bindRoomRules();
+  $('#btn-room-rules').textContent = '📜 Detalles';
   const seats = [];
   const lvlName = (l) => LVL_NAME[l][0] + LVL_NAME[l].slice(1).toLowerCase();
-  for (let i = 0; i < Math.max(4, Math.min(maxP, r.seats.length + 1)); i++) {
+  const canGrow = r.seats.length < maxP && !(r.started && !r.over);
+  for (let i = 0; i < r.seats.length + (canGrow ? 1 : 0); i++) {
     const s = r.seats[i];
     if (!s) {
       seats.push(host && !(r.started && !r.over)
@@ -540,23 +542,58 @@ function gameSummaryHTML(v) {
 
 // ----- reglas de la partida -----
 // fichas de la sala: mapa, puntos, límite con el 7 y equipos, y debajo las normas especiales
+function randomRules(R) {
+  const keys = Engine.SPECIAL_RULES.map((x) => x.key).sort(() => Math.random() - 0.5);
+  const k = 2 + Math.floor(Math.random() * 3);
+  const o = Object.assign({}, R, Object.fromEntries(keys.map((key, i) => [key, i < k])));
+  o.vp = 6 + Math.floor(Math.random() * 9);
+  o.hand = [5, 7, 7, 9, 12, 99][Math.floor(Math.random() * 6)];
+  if (R.mode !== 'teams') o.map = ['auto', 'auto', 'normal', 'big'][Math.floor(Math.random() * 4)];
+  return o;
+}
+function bindRoomRules() {
+  const r = App.room; if (!r || !isHost() || (r.started && !r.over)) return;
+  const put = (patch) => { Sfx.click(); send({ t: 'setRules', rules: Object.assign({}, r.rules, patch) }); };
+  document.querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => put({ mode: b.dataset.mode, teams: b.dataset.mode === 'teams' ? (r.rules.teams || 2) : 0 })));
+  document.querySelectorAll('[data-tfmt]').forEach((b) => (b.onclick = () => put({ teams: +b.dataset.tfmt })));
+  document.querySelectorAll('[data-trules]').forEach((b) => (b.onclick = () => put({ teamRules: b.dataset.trules })));
+  if ($('#rr-adjust')) $('#rr-adjust').onclick = () => { Sfx.click(); openModal({ kind: 'roomRules' }); };
+  if ($('#rr-rand')) $('#rr-rand').onclick = () => { put(randomRules(r.rules)); toast('🎲 ¡Reglas sorpresa!', true); };
+}
 function roomRulesHTML(R, n) {
   if (!R) return '';
+  const r = App.room || {};
+  const host = isHost() && !(r.started && !r.over);
+  const dis = host ? '' : 'disabled';
+  const MODES = [['classic', '🏛️', 'Clásica', 'Las reglas de siempre'], ['teams', '👥', 'Por equipos', '2 contra 2 o 3 contra 3'], ['custom', '🎨', 'Personalizada', 'Tú eliges las reglas']];
+  const modes = `<div class="mode-pick">${MODES.map(([k, ic, t, d]) => `<button class="mode ${R.mode === k ? 'on' : ''}" data-mode="${k}" ${dis}><span class="mi">${ic}</span><b>${t}</b><small>${d}</small></button>`).join('')}</div>`;
+  const seg = (attr, opts, cur) => `<div class="seg rr-seg mode-seg">${opts.map(([v, l]) => `<button data-${attr}="${v}" class="${String(cur) === String(v) ? 'on' : ''}" ${dis}>${l}</button>`).join('')}</div>`;
+  let extra = '';
+  if (R.mode === 'classic') extra = '<p class="rs-none">🔒 Reglas fijas: la partida de siempre, a 10 puntos. Para cambiar algo, elige «Personalizada».</p>';
+  if (R.mode === 'teams') {
+    extra = `<div class="mode-row"><span>Formato</span>${seg('tfmt', [[2, '2 contra 2 · mapa normal'], [3, '3 contra 3 · mapa grande']], R.teams)}</div>
+      <div class="mode-row"><span>Reglas</span>${seg('trules', [['classic', 'Clásicas'], ['custom', 'Personalizadas']], R.teamRules)}</div>`;
+  }
+  const editable = R.mode === 'custom' || (R.mode === 'teams' && R.teamRules === 'custom');
+  const tools = editable && host ? `<div class="row gap wrap"><button class="btn small yellow" id="rr-adjust">⚙ Elegir reglas</button><button class="btn small cyan" id="rr-rand">🎲 Todo al azar</button></div>` : '';
+  return `${modes}${extra}${rulesTilesHTML(R, n, editable)}${tools}`;
+}
+function rulesTilesHTML(R, n, showSpecials) {
   const big = Engine.mapKind(R, n) === 'big';
   const tile = (ic, lbl, val, sub) => `<div class="rt"><span class="rt-ic">${ic}</span><span class="rt-txt"><small>${lbl}</small><b>${val}</b>${sub ? `<em>${sub}</em>` : ''}</span></div>`;
   const pc = Engine.piecesFor(R.vp);
   const tiles = [
     tile('🗺️', 'Mapa', big ? 'Grande' : 'Normal', `${big ? '30' : '19'} casillas${R.map === 'auto' ? ' · automático' : ''}`),
-    tile('🏆', 'Para ganar', R.teams ? `${Engine.teamTarget(R.vp, R.teams)} por equipo` : `${R.vp} puntos`, R.vp > 10 ? `${pc.settlements} poblados · ${pc.cities} ciudades` : 'lo normal son 10'),
+    tile('🏆', 'Para ganar', R.teams ? `${Engine.teamTarget(R.vp, R.teams)} por equipo` : `${R.vp} puntos`, R.teams ? `sumando los ${R.teams} del equipo` : R.vp > 10 ? `${pc.settlements} poblados · ${pc.cities} ciudades` : 'lo normal son 10'),
     tile('🃏', 'Con un 7', R.hand === 99 ? 'Sin límite' : `Más de ${R.hand} cartas`, R.hand === 99 ? 'nadie descarta' : 'descartas la mitad'),
-    tile('👥', 'Equipos', R.teams === 2 ? 'Parejas' : R.teams === 3 ? 'Tríos' : 'Cada uno', R.teams ? 'suman puntos juntos' : 'juego individual'),
+    tile('👥', 'Equipos', R.teams ? `${R.teams} contra ${R.teams}` : 'Cada uno', R.teams ? 'suman puntos juntos' : 'juego individual'),
   ].join('');
   const sp = Engine.SPECIAL_RULES.filter((x) => R[x.key]);
   const spHTML = sp.length
     ? `<div class="rs-list">${sp.map((x) => `<div class="rs" title="${esc(x.desc)}"><span class="rs-ic">${x.icon}</span><span><b>${x.name}</b><small>${esc(x.desc)}</small></span></div>`).join('')}</div>`
     : '<p class="rs-none">✨ Sin normas especiales: partida clásica.</p>';
   const warn = Engine.teamsError(R, n) ? `<p class="rr-warn">⚠ ${Engine.teamsError(R, n)} (ahora sois ${n}).</p>` : '';
-  return `<div class="rt-grid">${tiles}</div>${warn}<div class="rs-head">Normas especiales <span class="muted">(${sp.length})</span></div>${spHTML}`;
+  return `<div class="rt-grid">${tiles}</div>${warn}${showSpecials ? `<div class="rs-head">Normas especiales <span class="muted">(${sp.length})</span></div>${spHTML}` : ''}`;
 }
 function handLimit(v) { return Engine.rulesOf(v).hand; }
 function devReady(v, P, c) { return P.dev[c] - P.devNew[c]; }
@@ -737,6 +774,7 @@ function handleEvents(events, prev) {
       case 'steal': {
         const from = elCenter(plEl(e.from)), to = elCenter(e.pid === me ? $('#hand') : plEl(e.pid));
         fx.fly(Sprites.get(e.res || 'card', 4), from, to, 300, () => bump(e.pid === me ? $('#hand') : plEl(e.pid)), 30);
+        if (e.tax) { if (e.pid === me && e.res) toast(`💸 Impuestos: recibes ${RN[e.res]} de ${v.players[e.from].name}`, true); if (e.from === me && e.res) toast(`💸 Impuestos: pagas ${RN[e.res]} a ${v.players[e.pid].name}`); break; }
         if (e.pid === me && e.res) toast(`Robaste ${RN[e.res]} a ${v.players[e.from].name}`, true);
         if (e.from === me && e.res) toast(`${v.players[e.pid].name} te robó ${RN[e.res]}`);
         break;
@@ -1445,7 +1483,9 @@ function renderModal() {
     case 'ranking': renderRanking(m, box); break;
     case 'roomRules': {
       const r = App.room; if (!r) { closeModal(); return; }
-      const R = r.rules, host = isHost(), n = r.seats.length;
+      const R = r.rules, n = r.seats.length;
+      const editable = R.mode === 'custom' || (R.mode === 'teams' && R.teamRules === 'custom');
+      const host = isHost() && editable && !(r.started && !r.over);
       const dis = host ? '' : 'disabled';
       const seg = (attr, opts, cur) => `<div class="seg rr-seg">${opts.map(([val, lbl, tip]) => `<button data-${attr}="${val}" class="${cur === val ? 'on' : ''}" ${dis} ${tip ? `title="${tip}"` : ''}>${lbl}</button>`).join('')}</div>`;
       const autoTxt = `Automático · ahora ${Engine.mapKind(R, n) === 'big' ? 'grande' : 'normal'}`;
@@ -1455,21 +1495,20 @@ function renderModal() {
       const specials = Engine.SPECIAL_RULES.map((x) => `<button class="rr-sp ${R[x.key] ? 'on' : ''}" data-rsp="${x.key}" ${dis}>
           <span class="ic">${x.icon}</span><span class="tx"><b>${x.name}</b><small>${x.desc}</small></span><span class="sw"><i></i></span></button>`).join('');
       const nOn = Engine.SPECIAL_RULES.filter((x) => R[x.key]).length;
-      h = `<div class="row between"><h2>📜 Reglas de la partida</h2><button class="btn small ghost" data-close>Cerrar</button></div>
-        ${host ? '' : '<p class="muted">Solo el anfitrión puede cambiarlas. Se aplican al empezar la partida.</p>'}
+      const title = R.mode === 'classic' ? '🏛️ Reglas clásicas' : R.mode === 'teams' ? `👥 ${R.teams} contra ${R.teams} · reglas ${R.teamRules === 'custom' ? 'personalizadas' : 'clásicas'}` : '🎨 Reglas personalizadas';
+      h = `<div class="row between"><h2>${title}</h2><button class="btn small ghost" data-close>Cerrar</button></div>
+        ${!editable ? '<p class="muted">🔒 En este modo las reglas son fijas.</p>' : host ? '' : '<p class="muted">Solo el anfitrión puede cambiarlas. Se aplican al empezar la partida.</p>'}
         <div class="rr">
-          <div class="rr-row"><div class="rr-lbl"><b>Mapa</b><small>El grande tiene 30 casillas, 11 puertos y más cartas.</small></div>
-            ${seg('rmap', [['auto', autoTxt, 'Normal hasta 4 jugadores, grande con 5 o más'], ['normal', 'Normal (2-5)', forced ? 'Con 6 o más jugadores no se puede elegir' : ''], ['big', 'Grande (5-7)']], shownMap).replace('data-rmap="normal"', forced ? 'data-rmap="normal" disabled data-off="1"' : 'data-rmap="normal"')}</div>
-          ${warn}
+          ${R.mode === 'teams' ? `<p class="muted">🗺️ Mapa ${R.teams === 2 ? 'normal' : 'grande'} (lo fija el formato ${R.teams} contra ${R.teams}).</p>` : `<div class="rr-row"><div class="rr-lbl"><b>Mapa</b><small>El grande tiene 30 casillas, 11 puertos y más cartas.</small></div>`}
+            ${R.mode === 'teams' ? '' : seg('rmap', [['auto', autoTxt, 'Normal hasta 4 jugadores, grande con 5 o más'], ['normal', 'Normal (2-5)', forced ? 'Con 6 o más jugadores no se puede elegir' : ''], ['big', 'Grande (5-7)']], shownMap).replace('data-rmap="normal"', forced ? 'data-rmap="normal" disabled data-off="1"' : 'data-rmap="normal"') + '</div>'}
+          ${R.mode === 'teams' ? '' : warn}
           <div class="rr-row"><div class="rr-lbl"><b>Puntos para ganar</b><small>Lo normal son 10 (de 5 a 16). ${piecesTxt(R.vp)}</small></div>
             <div class="rr-step"><button data-rvp="-1" ${dis}>−</button><b>${R.vp}</b><button data-rvp="1" ${dis}>+</button></div></div>
-          <div class="rr-row"><div class="rr-lbl"><b>Equipos</b><small>${R.teams ? `Meta del equipo: ${Engine.teamTarget(R.vp, R.teams)} puntos sumando a todos. Los compañeros se sientan alternos, ven sus cartas, pueden regalárselas y no se roban.` : 'Cada uno juega por su cuenta.'}</small></div>
-            ${seg('rteams', [['0', 'Sin equipos'], ['2', 'Parejas (4 o 6)'], ['3', 'Tríos (6)']], String(R.teams || 0))}</div>
-          ${Engine.teamsError(R, n) ? `<p class="rr-warn">${Engine.teamsError(R, n)} (ahora sois ${n}).</p>` : ''}
+          ${R.teams ? `<p class="muted">👥 Meta del equipo: ${Engine.teamTarget(R.vp, R.teams)} puntos sumando a todos.</p>` : ''}
           <div class="rr-row"><div class="rr-lbl"><b>Límite de cartas al salir un 7</b><small>Quien tenga más descarta la mitad.</small></div>
             ${seg('rhand', Engine.HAND_OPTS.map((x) => [String(x), x === 99 ? 'Sin límite' : String(x)]), String(R.hand))}</div>
           <div class="rr-sub"><h4>Normas especiales <span class="muted">(${nOn} activas)</span></h4>
-            ${host ? '<div class="row gap"><button class="btn small yellow" id="rr-random">🎲 Normas al azar</button><button class="btn small ghost" id="rr-none">Quitar todas</button></div>' : ''}</div>
+            ${host ? '<div class="row gap"><button class="btn small yellow" id="rr-random">🎲 Normas al azar</button><button class="btn small cyan" id="rr-randall">🎲 Todo al azar</button><button class="btn small ghost" id="rr-none">Quitar todas</button></div>' : ''}</div>
           <div class="rr-list">${specials}</div>
         </div>
         <div class="row gap between">${host ? '<button class="btn small ghost" id="rr-reset">Restablecer todo</button>' : '<span></span>'}<button class="btn pink" data-close>Listo</button></div>`;
@@ -1493,7 +1532,8 @@ function renderModal() {
           put(pickd);
           toast('🎲 Normas sorpresa elegidas', true);
         };
-        $('#rr-reset').onclick = () => put(Object.assign({}, Engine.DEFAULT_RULES));
+        $('#rr-reset').onclick = () => put(Object.assign({}, Engine.DEFAULT_RULES, { mode: R.mode, teams: R.teams, teamRules: R.teamRules }));
+        $('#rr-randall').onclick = () => { put(randomRules(R)); toast('🎲 ¡Reglas sorpresa!', true); };
       }
       break;
     }
