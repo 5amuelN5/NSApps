@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>NS Games</title>
-<meta name="description" content="Juegos para el navegador: estrategia online con amigos, arcade, idle y puzles. Sin instalar nada.">
+<title>NS Apps</title>
+<meta name="description" content="Juegos y herramientas para el navegador: estrategia online con amigos, arcade, puzles y un editor de planos en 3D. Sin instalar nada.">
 <meta name="theme-color" content="#0d0b1a">
 <link rel="icon" type="image/svg+xml" href="logo.svg">
-<meta property="og:title" content="NS Games">
-<meta property="og:description" content="Juegos para el navegador. Sin instalar nada.">
+<meta property="og:title" content="NS Apps">
+<meta property="og:description" content="Juegos y herramientas para el navegador. Sin instalar nada.">
 <meta property="og:image" content="covers/hexopolis.jpg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,6 +21,7 @@
     --grad: linear-gradient(120deg, var(--g1), var(--g2) 50%, var(--g3));
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html { scroll-behavior: smooth; }
   body { margin: 0; background: var(--bg); color: var(--text); font-family: Nunito, system-ui, sans-serif; min-height: 100vh; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
   a { color: inherit; }
@@ -45,6 +46,14 @@
   .wordmark b { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .count { font-weight: 800; font-size: 13px; color: var(--muted); border: 1px solid var(--line); background: rgba(255,255,255,.04); padding: 8px 14px; border-radius: 999px; }
   .count span { color: var(--text); }
+  .tabs { display: flex; gap: 4px; padding: 4px; border-radius: 999px; background: rgba(255,255,255,.05); border: 1px solid var(--line); }
+  .tab { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 18px; border-radius: 999px; text-decoration: none; font: 800 15px Nunito, sans-serif; color: var(--muted); transition: background .2s, color .2s; }
+  .tab:hover { color: var(--text); }
+  .tab:focus-visible { outline: 2px solid var(--g2); outline-offset: 2px; }
+  .tab[aria-selected="true"] { background: var(--text); color: var(--bg); }
+  .tab svg { width: 17px; height: 17px; }
+  .tab .n { font-size: 12px; padding: 1px 8px; border-radius: 999px; background: rgba(255,255,255,.1); font-variant-numeric: tabular-nums; }
+  .tab[aria-selected="true"] .n { background: rgba(13,11,26,.12); }
 
   /* ---------- portada destacada ---------- */
   .hero { position: relative; display: grid; grid-template-columns: 1.05fr 1fr; gap: 0; border-radius: 28px; overflow: hidden; background: var(--card); border: 1px solid var(--line); margin: 14px 0 56px; box-shadow: 0 30px 80px -30px color-mix(in srgb, var(--c) 55%, transparent); text-decoration: none; isolation: isolate; }
@@ -116,7 +125,9 @@
     .wrap { padding: 0 16px; }
     .games { grid-template-columns: 1fr; }
     .wordmark { font-size: 22px; }
-    .count { display: none; }
+    header { flex-wrap: wrap; gap: 14px; }
+    .tabs { width: 100%; }
+    .tab { flex: 1; padding: 9px 10px; }
     .bar h2 { font-size: 26px; }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -129,18 +140,21 @@
 
 <div class="wrap">
   <header>
-    <a class="brand" href="./" aria-label="NS Games, inicio">
+    <a class="brand" href="./" aria-label="NS Apps, inicio">
       <img src="logo.svg" alt="">
-      <span class="wordmark">NS <b>Games</b></span>
+      <span class="wordmark">NS <b>Apps</b></span>
     </a>
-    <span class="count"><span id="n">0</span> juegos · gratis en el navegador</span>
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Secciones">
+      <a class="tab" role="tab" href="#juegos" data-s="juegos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="6"/><path d="M7 10v4M5 12h4"/><circle cx="16" cy="11" r="1" fill="currentColor"/><circle cx="18" cy="13.5" r="1" fill="currentColor"/></svg>Juegos <span class="n" id="nJ">0</span></a>
+      <a class="tab" role="tab" href="#herramientas" data-s="herramientas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>Herramientas <span class="n" id="nH">0</span></a>
+    </nav>
   </header>
 
   <a class="hero" id="hero" href="#"></a>
 
   <section aria-labelledby="todos">
     <div class="bar">
-      <h2 id="todos">Todos los juegos <small id="shown"></small></h2>
+      <h2 id="todos"><span id="secTitle">Todos los juegos</span> <small id="shown"></small></h2>
       <div class="controls">
         <div class="chips" id="chips" role="group" aria-label="Filtrar por tipo"></div>
         <select class="sort" id="sort" aria-label="Ordenar">
@@ -153,30 +167,34 @@
   </section>
 
   <footer>
-    <span>NS Games · hechos con cariño, sin anuncios</span>
-    <a href="https://github.com/5amuelN5/nsgames">Código en GitHub →</a>
+    <span>NS Apps · juegos y herramientas hechos con cariño, sin anuncios</span>
+    <a href="https://github.com/5amuelN5/NSApps">Código en GitHub →</a>
   </footer>
 </div>
 
 <script>
 (() => {
-// Para añadir un juego: una entrada más aquí (carpeta, carátula en covers/, fecha para ordenar).
-const GAMES = [
-  { id: 'dominium', name: 'Dominium', date: '2026-11-14', color: '#f2b33d', badge: 'Online',
+// Para añadir algo: una entrada más aquí (carpeta, sección 'juegos' o 'herramientas', carátula en covers/, fecha para ordenar).
+const APPS = [
+  { id: 'planta-libre', sec: 'herramientas', name: 'Planta Libre', date: '2026-11-16', color: '#5aa7f0', badge: '3D',
+    desc: 'Dibuja tu piso a escala, amuéblalo con más de 40 muebles y recórrelo por dentro en 3D.',
+    long: 'Dibuja los muros de tu casa con medidas reales y las estancias aparecen solas con sus m². Pon puertas correderas o abatibles, ventanas y más de 40 muebles que se pegan a las paredes y te avisan si no caben. Prueba varias distribuciones del mismo piso y paséate por dentro en 3D con gran angular.',
+    tags: ['Planos', '3D', 'Interiorismo'] },
+  { sec: 'juegos', id: 'dominium', name: 'Dominium', date: '2026-11-14', color: '#f2b33d', badge: 'Online',
     desc: 'Conquista el mundo por turnos con dados, cartas y alianzas que duran lo que dura un turno. Salas online con amigos o bots de 4 niveles.',
     long: 'La conquista mundial por turnos de toda la vida: refuerza tus territorios, ataca con los dados, canjea cartas y domina continentes enteros. Doce mapas (el mundo clásico, cinco continentes, España, Estados Unidos, Italia, Alemania, Islas Británicas y un continente de fantasía), de 2 a 8 jugadores, con modos cortos, equipos y pactos. Crea una sala y pasa el código a tus amigos, o juega contra bots de recluta a mariscal.',
     tags: ['Estrategia', 'Multijugador'] },
-  { id: 'hexopolis', name: 'Hexópolis', date: '2026-11-13', color: '#ff9a4d', badge: 'Online',
+  { sec: 'juegos', id: 'hexopolis', name: 'Hexópolis', date: '2026-11-13', color: '#ff9a4d', badge: 'Online',
     desc: 'Coloniza una isla que cambia en cada partida. Comercia, construye y gana a tus amigos en salas online o a bots de 4 niveles.',
     long: 'Una isla hexagonal distinta en cada partida. Consigue recursos, comercia, construye caminos y ciudades y llega a los puntos de victoria antes que nadie. De 2 a 7 jugadores, con mapa grande y reglas a tu gusto. Crea una sala y pasa el enlace a tus amigos, o juega contra bots de novato a experto.',
     tags: ['Estrategia', 'Multijugador'] },
-  { id: 'minemergematic', name: 'MineMergeMatic', date: '2026-10-10', color: '#ffb547',
+  { sec: 'juegos', id: 'minemergematic', name: 'MineMergeMatic', date: '2026-10-10', color: '#ffb547',
     desc: 'Mina, fusiona y automatiza tu cueva hasta encontrar el legendario Galactium.',
     tags: ['Idle', 'Fusión', 'Automatización'] },
-  { id: 'bills-must-be-paid', name: 'Bills Must Be Paid', date: '2026-10-09', color: '#ff86b4',
+  { sec: 'juegos', id: 'bills-must-be-paid', name: 'Bills Must Be Paid', date: '2026-10-09', color: '#ff86b4',
     desc: 'Rompe cerditos hucha a martillazos para pagar todas tus facturas antes de que te ahoguen.',
     tags: ['Arcade', 'Clicker', 'Humor'] },
-  { id: '2048', name: '2048', date: '2026-10-06T23:11', color: '#8b7bff',
+  { sec: 'juegos', id: '2048', name: '2048', date: '2026-10-06T23:11', color: '#8b7bff',
     desc: 'Une fichas iguales hasta llegar a 2048, y entrena a un bot que aprende a jugar solo.',
     tags: ['Puzle', 'IA'] },
 ];
@@ -185,41 +203,61 @@ const $ = (s) => document.querySelector(s);
 const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const arrow = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>';
 const playIcon = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 2.5v11l9.5-5.5z"/></svg>';
+const openIcon = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3H3v10h10v-3M9 2h5v5M14 2 7.5 8.5"/></svg>';
+const SECS = {
+  juegos: { title: 'Todos los juegos', one: 'juego', many: 'juegos', cta: 'Jugar ahora', icon: playIcon, alt: 'Partida de', empty: 'No hay juegos de este tipo todavía.', tags: ['Estrategia', 'Multijugador', 'Arcade', 'Idle', 'Puzle'] },
+  herramientas: { title: 'Herramientas', one: 'herramienta', many: 'herramientas', cta: 'Abrir', icon: openIcon, alt: 'Vista de', empty: 'No hay herramientas de este tipo todavía.', tags: null },
+};
 const byNew = (a, b) => b.date.localeCompare(a.date);
-const newest = [...GAMES].sort(byNew);
 const isNew = (g) => (Date.now() - new Date(g.date)) / 864e5 < 14;
+$('#nJ').textContent = APPS.filter((a) => a.sec === 'juegos').length;
+$('#nH').textContent = APPS.filter((a) => a.sec === 'herramientas').length;
 
-$('#n').textContent = GAMES.length;
+let sec = 'juegos', filter = 'Todos', order = 'new', list = [], newest = [];
+try { order = localStorage.getItem('ns_sort') || 'new'; } catch (e) { /* */ }
+$('#sort').value = order;
 
-// portada: el juego más reciente
-const feat = newest[0];
-const hero = $('#hero');
-hero.href = feat.id + '/';
-hero.style.setProperty('--c', feat.color);
-hero.innerHTML = `
+function setSection() {
+  sec = location.hash === '#herramientas' ? 'herramientas' : 'juegos';
+  const S = SECS[sec];
+  list = APPS.filter((a) => a.sec === sec);
+  newest = [...list].sort(byNew);
+  filter = 'Todos';
+  document.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', String(t.dataset.s === sec)));
+  document.title = 'NS Apps · ' + (sec === 'juegos' ? 'Juegos' : 'Herramientas');
+  $('#secTitle').textContent = S.title;
+  // portada: lo más reciente de la sección
+  const feat = newest[0];
+  const hero = $('#hero');
+  hero.hidden = !feat;
+  if (feat) {
+    hero.href = feat.id + '/';
+    hero.style.setProperty('--c', feat.color);
+    hero.innerHTML = `
   <div class="hero-txt">
     <div class="eyebrow">${isNew(feat) ? '<span class="pill hot">Nuevo</span>' : ''}${feat.tags.includes('Multijugador') ? '<span class="pill live">Juega con amigos</span>' : ''}${feat.tags.map((t) => `<span class="pill">${esc(t)}</span>`).join('')}</div>
     <h1>${esc(feat.name)}</h1>
     <p>${esc(feat.long || feat.desc)}</p>
-    <span class="play">${playIcon} Jugar ahora</span>
+    <span class="play">${S.icon} ${S.cta}</span>
   </div>
-  <div class="hero-img"><img src="covers/${feat.id}.jpg" alt="Partida de ${esc(feat.name)}"></div>`;
-
-// filtros
-const TAGS = ['Todos', ...['Estrategia', 'Multijugador', 'Arcade', 'Idle', 'Puzle'].filter((t) => GAMES.some((g) => g.tags.includes(t)))];
-let filter = 'Todos';
-let order = 'new';
-try { order = localStorage.getItem('ns_sort') || 'new'; } catch (e) { /* */ }
-$('#sort').value = order;
-$('#chips').innerHTML = TAGS.map((t) => `<button class="chip" type="button" data-t="${esc(t)}" aria-pressed="${t === filter}">${esc(t)}</button>`).join('');
+  <div class="hero-img"><img src="covers/${feat.id}.jpg" alt="${S.alt} ${esc(feat.name)}"></div>`;
+  }
+  // filtros de la sección
+  const all = [...new Set(list.flatMap((a) => a.tags))];
+  const tags = ['Todos', ...(S.tags ? S.tags.filter((t) => all.includes(t)) : all)];
+  $('#chips').innerHTML = tags.length > 2 ? tags.map((t) => `<button class="chip" type="button" data-t="${esc(t)}" aria-pressed="${t === filter}">${esc(t)}</button>`).join('') : '';
+  render();
+}
 $('#chips').addEventListener('click', (e) => { const b = e.target.closest('.chip'); if (!b) return; filter = b.dataset.t; document.querySelectorAll('.chip').forEach((c) => c.setAttribute('aria-pressed', c === b)); render(); });
 $('#sort').addEventListener('change', (e) => { order = e.target.value; try { localStorage.setItem('ns_sort', order); } catch (er) { /* */ } render(); });
+window.addEventListener('hashchange', () => { setSection(); });
 
 function render() {
-  let list = GAMES.filter((g) => filter === 'Todos' || g.tags.includes(filter));
-  list.sort(order === 'az' ? (a, b) => a.name.localeCompare(b.name, 'es') : byNew);
-  $('#shown').textContent = list.length + (list.length === 1 ? ' juego' : ' juegos');
-  $('#games').innerHTML = list.length ? list.map((g, i) => `
+  const S = SECS[sec];
+  const shown = list.filter((g) => filter === 'Todos' || g.tags.includes(filter));
+  shown.sort(order === 'az' ? (a, b) => a.name.localeCompare(b.name, 'es') : byNew);
+  $('#shown').textContent = shown.length + ' ' + (shown.length === 1 ? S.one : S.many);
+  $('#games').innerHTML = shown.length ? shown.map((g, i) => `
     <a class="card" href="${g.id}/" style="--c:${g.color};--i:${i}">
       <div class="cover">
         <img src="covers/${g.id}.jpg" alt="" loading="lazy">
@@ -231,9 +269,9 @@ function render() {
         <p>${esc(g.desc)}</p>
         <div class="foot"><div class="tags">${g.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}</div><span class="go" aria-hidden="true">${arrow}</span></div>
       </div>
-    </a>`).join('') : '<div class="empty">No hay juegos de este tipo todavía.</div>';
+    </a>`).join('') : `<div class="empty">${S.empty}</div>`;
 }
-render();
+setSection();
 
 // inclinación suave al pasar el ratón
 if (matchMedia('(hover: hover) and (prefers-reduced-motion: no-preference)').matches) {
