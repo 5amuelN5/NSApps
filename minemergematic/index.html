@@ -2191,7 +2191,7 @@ function renderPanel(kind, tEl, tabs, mB) {
   } else if (kind === 'settings') {
     tEl.textContent = 'Ajustes';
     tabs.innerHTML = SET_TABS.map(([k, n]) => `<button class="tab ${setTab === k ? 'on' : ''}" data-act="stab" data-t="${k}">${n}</button>`).join('');
-    mB.innerHTML = `<button class="btn exitbtn" data-act="exitmenu"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>Guardar y volver al menú de NSgames</button>` + settingsHTML();
+    mB.innerHTML = `<button class="btn exitbtn" data-act="exitmenu"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>Guardar y volver al menú de NS Apps</button>` + settingsHTML();
   } else if (kind === 'clickmode') {
     tEl.textContent = 'Elige tu modo de clic'; tabs.innerHTML = '';
     mB.innerHTML = `<div class="big">En este juego se hace bastante clic.<br>Si prefieres algo más relajado, activa el <b>auto-clic</b>: basta con mantener pulsado.<br><span class="mut">Puedes cambiarlo cuando quieras en Ajustes.</span></div>
@@ -2999,9 +2999,9 @@ document.addEventListener('click', e => {
     case 'infodone': endInfoMove(); break;
     case 'inforeset': S.set.infoPos = 'bl'; S.set.keysPos = 'auto'; applySettings(); endInfoMove(); toast('Tarjetas en su sitio original'); break;
     case 'exitmenu': {
-      // Guarda y vuelve a la galería de NSgames (relativa en la web, absoluta si se juega en local)
+      // Guarda y vuelve a la galería de NS Apps (relativa en la web, absoluta si se juega en local)
       save();
-      const url = location.pathname.includes('/nsgames/') ? '../' : 'https://5amueln5.github.io/nsgames/';
+      const url = /\/nsapps\//i.test(location.pathname) ? '../' : 'https://5amueln5.github.io/NSApps/';
       document.body.style.transition = 'opacity .35s'; document.body.style.opacity = '0';
       setTimeout(() => { location.href = url; }, 350);
       break;

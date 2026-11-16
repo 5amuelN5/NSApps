@@ -1141,6 +1141,6 @@ body.spec .spec-qc { display: flex; margin-top: 8px; }
 .tmr { display: table; margin: 4px auto 0; padding: 1px 8px; border-radius: 999px; background: rgba(242,193,78,0.16); color: var(--yellow); font-size: 0.9em; }
 .tmr.hot { background: rgba(255,107,107,0.2); color: #ff8a8a; animation: nwblink 1s ease-in-out infinite; }
 
-/* volver al portal de NS Games (menú de inicio) */
+/* volver al portal de NS Apps (menú de inicio) */
 .hub-back { position: fixed; top: 12px; left: 12px; z-index: 30; display: inline-flex; align-items: center; gap: 4px; padding: 7px 14px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 4px 14px rgba(0,0,0,0.3); color: var(--text); font-family: var(--px); font-weight: 600; font-size: 14px; text-decoration: none; }
 .hub-back:hover { border-color: var(--yellow); color: var(--yellow); }

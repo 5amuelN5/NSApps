@@ -1,16 +1,28 @@
-# NS Games
+# NS Apps
 
-Juegos para el navegador: https://5amueln5.github.io/nsgames/
+Juegos y herramientas para el navegador: https://5amueln5.github.io/NSApps/
 
-Para añadir un juego al menú: mete su carpeta aquí, una carátula 4:3 en `covers/<carpeta>.jpg` y una entrada en la lista `GAMES` de `index.html`.
+La portada tiene dos secciones: **Juegos** (`#juegos`) y **Herramientas** (`#herramientas`).
+
+Para añadir algo al menú: mete su carpeta aquí, una carátula 4:3 en `covers/<carpeta>.jpg` y una entrada en la lista `APPS` de `index.html` con `sec: 'juegos'` o `sec: 'herramientas'`.
+
+## Juegos
 
 | Juego | Jugar | Código |
 |---|---|---|
-| Dominium — conquista mundial por turnos, salas online con amigos y bots de 4 niveles | [`dominium/`](https://5amueln5.github.io/nsgames/dominium/) | [`src/dominium`](src/dominium) |
-| Hexópolis — colonizar una isla, salas online con amigos y bots de 4 niveles | [`hexopolis/`](https://5amueln5.github.io/nsgames/hexopolis/) | [`src/hexopolis`](src/hexopolis) |
-| MineMergeMatic — mina, fusiona y automatiza | [`minemergematic/`](https://5amueln5.github.io/nsgames/minemergematic/) | |
-| Bills Must Be Paid — rompe huchas para pagar facturas | [`bills-must-be-paid/`](https://5amueln5.github.io/nsgames/bills-must-be-paid/) | |
-| 2048 — con un bot que aprende a jugar | [`2048/`](https://5amueln5.github.io/nsgames/2048/) | |
+| Dominium — conquista mundial por turnos, salas online con amigos y bots de 4 niveles | [`dominium/`](https://5amueln5.github.io/NSApps/dominium/) | [`src/dominium`](src/dominium) |
+| Hexópolis — colonizar una isla, salas online con amigos y bots de 4 niveles | [`hexopolis/`](https://5amueln5.github.io/NSApps/hexopolis/) | [`src/hexopolis`](src/hexopolis) |
+| MineMergeMatic — mina, fusiona y automatiza | [`minemergematic/`](https://5amueln5.github.io/NSApps/minemergematic/) | |
+| Bills Must Be Paid — rompe huchas para pagar facturas | [`bills-must-be-paid/`](https://5amueln5.github.io/NSApps/bills-must-be-paid/) | |
+| 2048 — con un bot que aprende a jugar | [`2048/`](https://5amueln5.github.io/NSApps/2048/) | |
+
+## Herramientas
+
+| Herramienta | Abrir | Código |
+|---|---|---|
+| Planta Libre — dibuja tu piso a escala, amuéblalo y recórrelo en 3D | [`planta-libre/`](https://5amueln5.github.io/NSApps/planta-libre/) | [`planta-libre/index.html`](planta-libre/index.html) (un solo archivo) |
+
+Planta Libre funciona también descargando `planta-libre/index.html` y abriéndolo con doble clic. Los planos se guardan en el navegador; para pasarlos a otro ordenador usa Exportar → JSON.
 
 ## Cómo está montado Hexópolis
 
