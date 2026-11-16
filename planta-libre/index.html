@@ -209,6 +209,27 @@ footer .m{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 .dlg header h2{margin:0;font-family:var(--f-cond);font-size:19px;font-weight:600;text-wrap:balance}
 .dlg .body{padding:14px 16px;overflow:auto;display:grid;gap:12px}
 .plist{display:grid;gap:6px}
+.dlg.wide{width:min(1000px,100%);max-height:min(780px,calc(100% - 32px))}
+.ptools{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.ptools input{flex:1;min-width:160px;height:32px;border:1px solid var(--line);border-radius:7px;background:var(--raise);padding:0 10px}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.pcard{position:relative;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:10px;background:var(--raise);overflow:hidden;cursor:pointer;text-align:left;padding:0;min-width:0}
+.pcard:hover,.pcard:focus-visible{border-color:var(--accent);outline:none}
+.pcard.cur{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.pthumb{display:block;width:100%;aspect-ratio:4/3;background:var(--paper);border-bottom:1px solid var(--line)}
+.pinfo{padding:9px 11px 4px;display:grid;gap:2px;min-width:0}
+.pinfo b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pinfo small{color:var(--muted);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ptag{display:inline-block;font-size:10.5px;font-weight:600;color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:0 5px;margin-right:4px}
+.pacts{display:flex;gap:2px;padding:2px 6px 7px}
+.pacts button{display:inline-flex;align-items:center;justify-content:center;height:28px;min-width:28px;padding:0 6px;border:0;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer;font-size:12px;font-weight:600}
+.pacts button:hover{background:var(--chrome);color:var(--text)}
+.pacts button.danger:hover,.pacts button.sure{color:var(--bad)}
+.pacts svg{width:15px;height:15px}
+.pnew{align-items:center;justify-content:center;gap:6px;border-style:dashed;color:var(--accent);min-height:200px;text-align:center;padding:16px}
+.pnew .pplus{font-size:34px;line-height:1;font-weight:300}
+.pnew b{font-weight:600}.pnew small{color:var(--muted);font-size:11.5px}
+.cards button.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 .pitem{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:var(--raise)}
 .pitem.cur{border-color:var(--accent)}
 .pitem div{flex:1;min-width:0}
@@ -333,7 +354,7 @@ footer .m{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
       <button class="tool on" data-view="2d" title="Plano: la vista 2D donde dibujas y amueblas">Plano</button>
       <button class="tool" data-view="3d" title="3D: mira el piso en tres dimensiones y recórrelo por dentro (3)">3D</button>
     </div>
-    <button class="btn" id="btnPlans" title="Mis planos: abre, crea, duplica o importa planos"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 5h5l2 2h7v9H3z"/></svg><span class="wide-only">Mis planos</span></button>
+    <button class="btn" id="btnPlans" title="Mis proyectos: crea proyectos nuevos y abre, renombra, duplica o borra los que ya tienes"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 5h5l2 2h7v9H3z"/></svg><span class="wide-only">Mis proyectos</span></button>
     <button class="btn pri" id="btnExport" title="Exportar: guarda el plano como imagen PNG, dibujo SVG, archivo JSON o imprímelo"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 3v10M6 9l4 4 4-4M4 16h12"/></svg><span class="wide-only">Exportar</span></button>
     <button class="btn icon ghost" id="btnTheme" title="Cambiar entre tema claro y oscuro" aria-label="Cambiar tema"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="6.5"/><path d="M10 3.5a6.5 6.5 0 0 0 0 13z" fill="currentColor"/></svg></button>
     <button class="btn icon ghost" id="btnHelp" title="Ayuda: guía rápida y todos los atajos de teclado (?)" aria-label="Ayuda"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="7.5"/><path d="M7.8 7.8a2.3 2.3 0 1 1 3.1 2.2c-.6.3-.9.7-.9 1.4v.4"/><circle cx="10" cy="14.3" r=".6" fill="currentColor"/></svg></button>
@@ -460,6 +481,7 @@ const IC={
   side:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 10h14"/><path d="M6 10a4 4 0 0 1 8 0" stroke-dasharray="2 2"/><path d="M10 13v4M8 15l2 2 2-2"/></svg>',
   hinge:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 14h14M4 14V5"/><path d="M4 5a9 9 0 0 1 9 9" stroke-dasharray="2 2"/></svg>',
   walls:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3.5" y="3.5" width="13" height="13"/></svg>',
+  down:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 3v10M6 9l4 4 4-4M4 16h12"/></svg>',
   edit:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 16l1-4 8-8 3 3-8 8z"/></svg>'};
 
 /* =========================================================
@@ -870,8 +892,8 @@ const store={mode:'local',db:null,uid:null,
   async init(){try{if(window.claude&&typeof window.claude.use==='function'){const [db,user]=await Promise.all([window.claude.use('db'),window.claude.use('user')]);
     if(db&&user){const id=await user.id();if(id){this.db=db;this.uid=id;this.mode='cloud'}}}}catch(e){}},
   col(){return this.db.collection('data/users/'+this.uid)},
-  async list(){if(this.mode==='cloud'){const s=await this.col().get();return s.docs.filter(d=>d.exists).map(d=>{const v=d.data()||{};return{id:d.id,name:v.name||'Sin título',updated:v.updated||0,n:(v.items||[]).length}}).sort((a,b)=>b.updated-a.updated)}
-    return(lsGet('planta:index')||[]).sort((a,b)=>b.updated-a.updated)},
+  async list(){if(this.mode==='cloud'){const s=await this.col().get();return s.docs.filter(d=>d.exists).map(d=>projSummary(d.id,d.data()||{})).sort((a,b)=>b.updated-a.updated)}
+    return(lsGet('planta:index')||[]).map(x=>projSummary(x.id,lsGet('planta:p:'+x.id)||x)).sort((a,b)=>b.updated-a.updated)},
   async load(id){if(this.mode==='cloud'){const d=await this.col().doc(id).get();return d.exists?clone(d.data()):null}return lsGet('planta:p:'+id)},
   async save(id,p){if(this.mode==='cloud'){try{await this.col().doc(id).set(p);return}catch(e){if(e&&e.code==='invalid_argument'&&JSON.stringify(p).length<250000){this.mode='local'}else throw e}}
     if(!lsSet('planta:p:'+id,p))throw{code:'local'};const idx=(lsGet('planta:index')||[]).filter(x=>x.id!==id);idx.push({id,name:p.name,updated:p.updated,n:p.items.length});lsSet('planta:index',idx)},
@@ -889,10 +911,13 @@ function syncVariant(){if(plan.variants&&plan.variants[plan.vi])plan.variants[pl
 function payload(){syncVariant();return{name:plan.name,updated:Date.now(),items:plan.items,variants:plan.variants,vi:plan.vi,v:3}}
 function fromSaved(p,name){const variants=Array.isArray(p.variants)&&p.variants.length?p.variants:[{id:uid(),name:'Distribución 1',items:Array.isArray(p.items)?p.items:[]}];const vi=clamp(p.vi|0,0,variants.length-1);
   return{name:name||p.name||'Sin título',variants,vi,items:variants[vi].items}}
-async function openPlan(id){try{const p=await store.load(id);if(!p||!(Array.isArray(p.items)||Array.isArray(p.variants))){toast('No se encontró ese plano');return false}
+function projSummary(id,v){const vs=Array.isArray(v.variants)&&v.variants.length?v.variants:null;const items=vs?(vs[clamp(v.vi|0,0,vs.length-1)].items||[]):(Array.isArray(v.items)?v.items:[]);
+  const rooms=items.filter(i=>i.k==='room'&&Array.isArray(i.pts));return{id,name:v.name||'Sin título',updated:v.updated||0,items,n:items.length,rooms:rooms.length,area:rooms.reduce((a,r)=>a+Math.abs(polyArea(r.pts))/1e4,0),nv:vs?vs.length:1}}
+async function flushSave(){if(saveT&&!isSample&&$('#saveState').dataset.s==='pending'){clearTimeout(saveT);saveT=null;await saveNow()}else if(saving){await new Promise(r=>setTimeout(r,250))}}
+async function openPlan(id){await flushSave();try{const p=await store.load(id);if(!p||!(Array.isArray(p.items)||Array.isArray(p.variants))){toast('No se encontró ese plano');return false}
   plan=fromSaved(p);prepareItems();curId=id;isSample=false;lsSet('planta:last',id);sel.clear();$('#planName').value=plan.name;resetHistory();renderVarbar();setSave('saved');fitView();changed();renderProps();plan3dChanged(true);return true}
   catch(e){toast('No se pudo abrir el plano');return false}}
-function newPlan(items,name,src){clearTimeout(saveT);plan=src?fromSaved(src,name):fromSaved({items},name);prepareItems();renderVarbar();curId=uid();isSample=false;sel.clear();$('#planName').value=name;resetHistory();fitView();changed();renderProps();saveNow();plan3dChanged(true)}
+async function newPlan(items,name,src){await flushSave();clearTimeout(saveT);plan=src?fromSaved(src,name):fromSaved({items},name);prepareItems();renderVarbar();curId=uid();isSample=false;sel.clear();$('#planName').value=name;resetHistory();fitView();changed();renderProps();saveNow();plan3dChanged(true)}
 
 /* =========================================================
    Zoom y desplazamiento
@@ -1391,17 +1416,69 @@ for(const ev of ['pointerdown','wheel','keydown','dragstart'])document.addEventL
 /* =========================================================
    Ventanas: planos, contorno, ayuda, exportar
    ========================================================= */
-function openModal(title,html){$('#mTitle').textContent=title;$('#mBody').innerHTML=html;$('#modal').hidden=false;const f=$('#mBody').querySelector('input,button');if(f)setTimeout(()=>f.focus(),20)}
+function openModal(title,html){$('#modal .dlg').classList.remove('wide');$('#mTitle').textContent=title;$('#mBody').innerHTML=html;$('#modal').hidden=false;const f=$('#mBody').querySelector('input,button');if(f)setTimeout(()=>f.focus(),20)}
 function closeModal(){$('#modal').hidden=true;if($('#modal').dataset.welcome){delete $('#modal').dataset.welcome;lsSet('planta:welcomed',1)}}
 $('#mClose').onclick=closeModal;$('#modal').addEventListener('pointerdown',e=>{if(e.target.id==='modal')closeModal()});
 const fmtDate=t=>t?new Date(t).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
-async function showPlans(){openModal('Mis planos','<p class="note">Cargando…</p>');let list=[];try{list=await store.list()}catch(e){}
-  const where=store.mode==='cloud'?'Tus planos se guardan en tu cuenta y solo los ves tú.':'Tus planos se guardan en este navegador. Exporta el JSON si quieres una copia o pasarlo a otro ordenador.';
-  let h=`<div class="cards"><button data-m="outline"><b>Contorno con medidas</b><span>Indica ancho y largo y se crean los muros exteriores</span></button><button data-m="new"><b>Plano en blanco</b><span>Empieza a dibujar desde cero</span></button><button data-m="sample"><b>Piso de ejemplo</b><span>Una copia del piso de 2 dormitorios</span></button><button data-m="import"><b>Importar JSON</b><span>Abre un plano exportado antes</span></button></div><p class="note">${where}</p><div class="plist">`;
-  if(isSample)h+=`<div class="pitem cur"><div><b>Piso de ejemplo</b><small>Abierto ahora · se guarda en cuanto lo cambies</small></div></div>`;
-  h+=list.map(p=>`<div class="pitem${p.id===curId?' cur':''}"><div><b>${esc(p.name)}</b><small>${fmtDate(p.updated)} · ${p.n} elementos${p.id===curId?' · abierto':''}</small></div>${p.id===curId?'':`<button class="btn" data-open="${p.id}">Abrir</button>`}<button class="btn ghost danger" data-del="${p.id}" aria-label="Eliminar ${esc(p.name)}">Eliminar</button></div>`).join('');
-  if(!list.length&&!isSample)h+='<p class="ok">Aún no tienes planos guardados.</p>';
-  $('#mBody').innerHTML=h+'</div>'}
+let PROJ=[],projQ='',projSort='recent';
+function relDate(t){if(!t)return'';const d=(Date.now()-t)/1000;if(d<60)return'Editado ahora mismo';if(d<3600)return'Editado hace '+Math.round(d/60)+' min';const dt=new Date(t),now=new Date();const hm=dt.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+  if(dt.toDateString()===now.toDateString())return'Editado hoy, '+hm;const y=new Date(now);y.setDate(now.getDate()-1);if(dt.toDateString()===y.toDateString())return'Editado ayer, '+hm;
+  return'Editado el '+dt.toLocaleDateString('es-ES',{day:'numeric',month:'short',year:dt.getFullYear()===now.getFullYear()?undefined:'numeric'})}
+function thumbSvg(items){const walls=items.filter(i=>i.k==='wall'),rooms=items.filter(i=>i.k==='room'&&Array.isArray(i.pts)),furn=items.filter(i=>i.k==='furn');const pts=[];
+  for(const w of walls)pts.push({x:w.x1,y:w.y1},{x:w.x2,y:w.y2});for(const r of rooms)pts.push(...r.pts);for(const f of furn)pts.push(...furnPoly(f));
+  if(!pts.length)return `<svg class="pthumb" viewBox="0 0 400 300" aria-hidden="true"><text x="200" y="158" text-anchor="middle" font-size="22" style="fill:var(--muted)">Plano vacío</text></svg>`;
+  const b=aabbOf(pts),pad=Math.max(40,(b.x2-b.x1)*.06);let x=b.x1-pad,y=b.y1-pad,w=b.x2-b.x1+2*pad,h=b.y2-b.y1+2*pad;if(w/h>4/3){const nh=w*3/4;y-=(nh-h)/2;h=nh}else{const nw=h*4/3;x-=(nw-w)/2;w=nw}const sw=w/320;
+  return `<svg class="pthumb" viewBox="${n1(x)} ${n1(y)} ${n1(w)} ${n1(h)}" aria-hidden="true">`
+   +rooms.map(r=>`<polygon points="${r.pts.map(p=>n1(p.x)+','+n1(p.y)).join(' ')}" fill="${r.color||'#7B8D99'}" fill-opacity=".22"/>`).join('')
+   +furn.filter(f=>!(CAT[f.type]||{}).rug).map(f=>`<polygon points="${furnPoly(f).map(p=>n1(p.x)+','+n1(p.y)).join(' ')}" style="fill:var(--furn2);stroke:var(--ink)" stroke-width="${n1(sw)}"/>`).join('')
+   +walls.map(q=>`<line x1="${q.x1}" y1="${q.y1}" x2="${q.x2}" y2="${q.y2}" style="stroke:var(--wall)" stroke-width="${q.t||10}" stroke-linecap="square"/>`).join('')+'</svg>'}
+async function showPlans(){openModal('Mis proyectos','<p class="note">Cargando tus proyectos…</p>');$('#modal .dlg').classList.add('wide');await flushSave();try{PROJ=await store.list()}catch(e){PROJ=[]}
+  const where=store.mode==='cloud'?'Tus proyectos se guardan en tu cuenta y solo los ves tú.':'Tus proyectos se guardan en este navegador. Descarga una copia (JSON) si quieres pasarlos a otro ordenador.';
+  $('#mBody').innerHTML=`<div class="ptools"><input id="pq" type="search" placeholder="Buscar proyecto…" value="${esc(projQ)}" aria-label="Buscar proyecto" autocomplete="off"><select id="psort" class="sel-sm" aria-label="Ordenar proyectos" title="Ordenar los proyectos"><option value="recent">Más recientes</option><option value="name">Por nombre</option></select><button class="btn" data-pa="import" title="Importar: abre un proyecto que descargaste antes en JSON">Importar</button><button class="btn pri" data-pa="new" title="Crear un proyecto nuevo">+ Nuevo proyecto</button></div><div class="pgrid" id="pg"></div><p class="note">${where}</p>`;
+  $('#psort').value=projSort;renderProjects()}
+function projCard(p){const cur=p.id===curId;
+  return `<div class="pcard${cur?' cur':''}" data-popen="${p.id}" role="button" tabindex="0" title="${cur?'Este es el proyecto abierto ahora':'Abrir '+esc(p.name)}">${thumbSvg(p.items||[])}<div class="pinfo"><b>${esc(p.name)}</b><small>${cur?'<span class="ptag">Abierto</span>':''}${relDate(p.updated)}</small><small>${dec(p.area||0,1)} m² · ${p.rooms} ${p.rooms===1?'estancia':'estancias'}${p.nv>1?' · '+p.nv+' distribuciones':''}</small></div>
+    <div class="pacts"><button data-pa="rename" data-id="${p.id}" title="Renombrar">${IC.edit}</button><button data-pa="dup" data-id="${p.id}" title="Duplicar: crea una copia para probar cambios">${IC.dup}</button><button data-pa="json" data-id="${p.id}" title="Descargar una copia en JSON">${IC.down}</button><button data-pa="del" data-id="${p.id}" class="danger" title="Eliminar el proyecto">${IC.del}</button></div></div>`}
+function renderProjects(){const pg=$('#pg');if(!pg)return;const norm=x=>x.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();const q=norm(projQ.trim());
+  const L=PROJ.filter(p=>!q||norm(p.name).includes(q)).sort(projSort==='name'?(a,b)=>a.name.localeCompare(b.name,'es'):(a,b)=>b.updated-a.updated);
+  let h=q?'':`<button class="pcard pnew" data-pa="new" title="Crear un proyecto nuevo"><span class="pplus">+</span><b>Nuevo proyecto</b><small>En blanco, con medidas o desde el ejemplo</small></button>`;
+  if(isSample&&!q)h+=`<div class="pcard cur" data-pa="close" role="button" tabindex="0" title="Seguir con el ejemplo">${thumbSvg(plan.items)}<div class="pinfo"><b>Piso de ejemplo</b><small><span class="ptag">Abierto</span>Sin guardar: se guarda al editarlo</small><small>${dec(plan.items.filter(i=>i.k==='room').reduce((a,r)=>a+Math.abs(polyArea(r.pts))/1e4,0),1)} m²</small></div><div class="pacts"></div></div>`;
+  h+=L.map(projCard).join('');
+  if(q&&!L.length)h+=`<p class="ok">Ningún proyecto se llama así.</p>`;
+  pg.innerHTML=h}
+async function projAction(a,id){
+  if(a==='new'){showNewProject();return}if(a==='import'){$('#fileIn').click();return}if(a==='close'){closeModal();return}if(a==='back'){showPlans();return}
+  const p=PROJ.find(x=>x.id===id);
+  if(a==='rename'){openModal('Renombrar proyecto',`${txt('pr_name','Nombre',p?p.name:'')}<div class="acts"><button class="btn pri" data-pa="renameOk" data-id="${id}">Guardar</button><button class="btn" data-pa="back">Cancelar</button></div>`);setTimeout(()=>{const i=$('#pr_name');if(i){i.focus();i.select()}},30);return}
+  if(a==='renameOk'){const v=($('#pr_name').value||'').trim();if(!v){toast('Escribe un nombre');return}
+    if(id===curId){plan.name=v;$('#planName').value=v;clearTimeout(saveT);await saveNow()}else{const d=await store.load(id);if(d){d.name=v;d.updated=Date.now();await store.save(id,d)}}toast('Renombrado: '+v);showPlans();return}
+  if(a==='dup'){const d=id===curId?payload():await store.load(id);if(!d)return;const c=clone(d);c.name=(c.name||'Proyecto')+' (copia)';c.updated=Date.now();try{await store.save(uid(),c);toast('Copia creada: '+c.name)}catch(e){toast('No se pudo duplicar')}showPlans();return}
+  if(a==='json'){const d=id===curId?payload():await store.load(id);if(d)saveFile((d.name||'proyecto').replace(/[\\/:*?"<>|]+/g,'')+'.json',JSON.stringify(Object.assign({app:'Planta Libre'},d),null,1));return}
+  if(a==='open'){if(id===curId){closeModal();return}if(await openPlan(id)){closeModal();toast('Abierto: '+plan.name,1400)}return}}
+async function deleteProject(id){try{await store.remove(id)}catch(e){toast('No se pudo eliminar');return}const gone=(PROJ.find(x=>x.id===id)||{}).name||'Proyecto';
+  if(id===curId){clearTimeout(saveT);saveT=null;curId=null;const rest=(await store.list()).filter(x=>x.id!==id);
+    if(rest.length)await openPlan(rest[0].id);else{plan=fromSaved({items:samplePlan()},'Piso de ejemplo');prepareItems();isSample=true;sel.clear();$('#planName').value=plan.name;resetHistory();renderVarbar();setSave('sample');fitView();changed();renderProps();plan3dChanged(true)}}
+  toast('Eliminado: '+gone);showPlans()}
+function showNewProject(){openModal('Nuevo proyecto',`${txt('np_name','Nombre del proyecto','Mi piso')}
+  <div class="fld"><label>¿Cómo quieres empezar?</label><div class="cards" id="npOpts"><button data-np="outline" class="on" aria-pressed="true"><b>Con medidas</b><span>Indica ancho y largo y se levantan los muros exteriores</span></button><button data-np="blank" aria-pressed="false"><b>En blanco</b><span>Dibuja los muros desde cero</span></button><button data-np="sample" aria-pressed="false"><b>Desde el ejemplo</b><span>Una copia del piso de 2 dormitorios para cambiarla</span></button></div></div>
+  <div class="row" id="npOutline">${num('np_w','Ancho',8,'m',.05,'min="1"')}${num('np_h','Largo',10,'m',.05,'min="1"')}</div>
+  <div class="acts"><button class="btn pri" data-pa="create">Crear proyecto</button><button class="btn" data-pa="back">Volver a mis proyectos</button></div>
+  <p class="note">El proyecto que tienes abierto ya está guardado; podrás volver a él desde Mis proyectos.</p>`);setTimeout(()=>{const i=$('#np_name');if(i){i.focus();i.select()}},30)}
+async function createProject(){const name=($('#np_name').value||'').trim()||'Mi piso';const mode=($('#npOpts .on')||{}).dataset?.np||'outline';
+  if(mode==='outline'){const W=parseFloat(String($('#np_w').value).replace(',','.'))*100,L=parseFloat(String($('#np_h').value).replace(',','.'))*100;if(!(W>=100&&L>=100)){toast('Indica un ancho y un largo de al menos 1 m');return}
+    const T=20,pts=[{x:0,y:0},{x:W,y:0},{x:W,y:L},{x:0,y:L}],items=[];for(let i=0;i<4;i++){const a=pts[i],c=pts[(i+1)%4];items.push({id:uid(),k:'wall',x1:a.x,y1:a.y,x2:c.x,y2:c.y,t:T})}
+    items.unshift({id:uid(),k:'room',name:'Interior',color:ROOM_COLORS[7],floor:'parquet',pts:[{x:T/2,y:T/2},{x:W-T/2,y:T/2},{x:W-T/2,y:L-T/2},{x:T/2,y:L-T/2}]});
+    closeModal();await newPlan(items,name);opt.wallT=10;setTool('wall');toast('Proyecto creado. Divide el interior con Muro (W) o Habitación (R).',3800)}
+  else if(mode==='blank'){closeModal();await newPlan([],name);setTool('wall');toast('Proyecto creado. Dibuja los muros clic a clic o usa Habitación (R).',3600)}
+  else{closeModal();await newPlan(samplePlan(),name);toast('Proyecto creado a partir del ejemplo',2400)}}
+$('#mBody').addEventListener('click',e=>{const np=e.target.closest('[data-np]');if(np){document.querySelectorAll('#npOpts [data-np]').forEach(b=>{b.classList.toggle('on',b===np);b.setAttribute('aria-pressed',String(b===np))});$('#npOutline').hidden=np.dataset.np!=='outline';return}
+  const b=e.target.closest('[data-pa]');if(b){e.stopPropagation();const a=b.dataset.pa;
+    if(a==='del'){if(!b.classList.contains('sure')){b.classList.add('sure');b.innerHTML='¿Borrar?';b.title='Pulsa otra vez para borrarlo para siempre';setTimeout(()=>{if(b.isConnected){b.classList.remove('sure');b.innerHTML=IC.del}},3500);return}deleteProject(b.dataset.id);return}
+    if(a==='create'){createProject();return}projAction(a,b.dataset.id);return}
+  const c=e.target.closest('[data-popen]');if(c)projAction('open',c.dataset.popen)},true);
+$('#mBody').addEventListener('input',e=>{if(e.target.id==='pq'){projQ=e.target.value;renderProjects()}});
+$('#mBody').addEventListener('change',e=>{if(e.target.id==='psort'){projSort=e.target.value;renderProjects()}});
+$('#mBody').addEventListener('keydown',e=>{if(e.key==='Enter'){if(e.target.id==='pr_name'){$('#mBody [data-pa="renameOk"]').click();return}if(e.target.id==='np_name'||e.target.id==='np_w'||e.target.id==='np_h'){createProject();return}const c=e.target.closest&&e.target.closest('[data-popen]');if(c)projAction('open',c.dataset.popen)}});
 function showOutline(){openModal('Contorno del piso',`<p class="note">Mide el piso por fuera (o usa las medidas del plano de la inmobiliaria). Después divide el interior con <b>Muro</b> o <b>Habitación</b>.</p>
   <div class="row">${num('ol_w','Ancho',8,'m',.05,'min="1"')}${num('ol_h','Largo',10,'m',.05,'min="1"')}</div>${num('ol_t','Grosor del muro exterior',20,'cm',1,'min="5"')}
   <label class="chk"><input type="checkbox" id="ol_room" checked> Añadir una estancia que ocupe todo el interior</label>
@@ -1427,10 +1504,11 @@ function showHelp(){openModal('Cómo se usa Planta Libre',`<ol class="steps">
   <kbd>W A S D · flechas</kbd><span>Caminar en el modo Recorrer (con ángulo ajustable y gran angular)</span><kbd>Distribuciones</kbd><span>Abajo en el plano: crea copias para probar otras formas de repartir el piso</span></div></div>`)}
 function showWelcome(){openModal('Bienvenido a Planta Libre',`<p class="note" style="font-size:13px">Dibuja tu piso a escala, amuéblalo y míralo en 3D. Todo se guarda solo.</p>
   <ol class="steps"><li><span><b>Contorno y estancias</b> con medidas reales en cm.</span></li><li><span><b>Más de 40 muebles</b> que se pegan a las paredes y avisan si no caben.</span></li><li><span><b>Vista 3D</b> y paseo por dentro.</span></li></ol>
-  <div class="cards"><button data-m="welcomeSample"><b>Ver el piso de ejemplo</b><span>Explóralo y cámbialo a tu gusto</span></button><button data-m="outline"><b>Empezar mi plano</b><span>Crea el contorno con tus medidas</span></button></div>`);$('#modal').dataset.welcome='1'}
+  <div class="cards"><button data-m="welcomeSample"><b>Ver el piso de ejemplo</b><span>Explóralo y cámbialo a tu gusto</span></button><button data-pa="new"><b>Empezar mi proyecto</b><span>Ponle nombre y crea el contorno con tus medidas</span></button></div>`);$('#modal').dataset.welcome='1'}
 $('#btnPlans').onclick=showPlans;$('#btnHelp').onclick=showHelp;
 $('#mBody').addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;const m=b.dataset.m;
   if(m==='close'||m==='welcomeSample'){closeModal();return}
+  if(m==='newProject'){showNewProject();return}
   if(m==='vrSave'){const v=$('#vr_name').value.trim();if(v){plan.variants[plan.vi].name=v;renderVarbar();markDirty()}closeModal();return}
   if(m==='vrDup'){closeModal();addVariant();return}
   if(m==='vrDel'){if(b.dataset.sure!=='1'){b.dataset.sure='1';b.textContent='¿Seguro? Pulsa otra vez';return}const gone=plan.variants[plan.vi].name;plan.variants.splice(plan.vi,1);plan.vi=Math.max(0,plan.vi-1);plan.items=plan.variants[plan.vi].items;prepareItems();sel.clear();resetHistory();renderVarbar();changed();renderProps();plan3dChanged();markDirty();closeModal();toast('Eliminada: '+gone);return}
