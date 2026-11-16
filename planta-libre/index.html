@@ -279,6 +279,8 @@ footer .m{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 .fu text.lab{font-family:var(--f-cond);font-weight:500;paint-order:stroke;stroke:var(--furn);stroke-width:3px;stroke-linejoin:round}
 .fu.bad .hb{stroke:var(--bad);stroke-width:2;stroke-dasharray:5 3}
 .ink{fill:none;stroke:var(--ink);stroke-width:1.2;vector-effect:non-scaling-stroke}
+.wpe{fill:var(--wall);stroke:var(--wall-edge);stroke-width:2.6;vector-effect:non-scaling-stroke;stroke-linejoin:miter}
+.wpf{fill:var(--wall)}
 .ink.th{stroke-width:2.2}
 .ink.t{stroke-width:.8}
 .ink.dash{stroke-dasharray:5 4}
@@ -648,12 +650,27 @@ function splitSegs(walls){const cuts=walls.map(()=>[]);
   const out=[];walls.forEach((w,i)=>{const g=wg(w);const ts=[0,...cuts[i].sort((a,b)=>a-b),g.L].filter((t,k,arr)=>k===0||t-arr[k-1]>EPS);if(ts[ts.length-1]<g.L)ts[ts.length-1]=g.L;
     for(let k=0;k<ts.length-1;k++)out.push({w,k,x1:r2(w.x1+g.dx*ts[k]),y1:r2(w.y1+g.dy*ts[k]),x2:r2(w.x1+g.dx*ts[k+1]),y2:r2(w.y1+g.dy*ts[k+1]),t:w.t})});return out}
 function parallel(a,b){const ga=wg(a),gb=wg(b);return Math.abs(ga.dx*gb.dy-ga.dy*gb.dx)<.01}
+function hull(P){const pts=P.slice().sort((a,b)=>a.x-b.x||a.y-b.y);if(pts.length<3)return pts;const cr=(o,a,b)=>(a.x-o.x)*(b.y-o.y)-(a.y-o.y)*(b.x-o.x);const lo=[],up=[];
+  for(const p of pts){while(lo.length>=2&&cr(lo[lo.length-2],lo[lo.length-1],p)<=0)lo.pop();lo.push(p)}for(let i=pts.length-1;i>=0;i--){const p=pts[i];while(up.length>=2&&cr(up[up.length-2],up[up.length-1],p)<=0)up.pop();up.push(p)}up.pop();lo.pop();return lo.concat(up)}
+/* en cada esquina o cruce, una pieza que rellena la unión justo hasta las caras de los muros (sin remates que asomen) */
+function wallJoints(walls){const nodes=new Map();
+  for(const w of walls)for(const k of [1,2]){const x=w['x'+k],y=w['y'+k],o=k===1?2:1,ox=w['x'+o],oy=w['y'+o],L=Math.hypot(ox-x,oy-y);if(L<1)continue;const key=Math.round(x*2)+','+Math.round(y*2);
+    let n=nodes.get(key);if(!n){n={x,y,e:[]};nodes.set(key,n)}n.e.push({ux:(ox-x)/L,uy:(oy-y)/L,t:w.t,ang:Math.atan2(oy-y,ox-x)})}
+  const out=[];for(const [key,n] of nodes){const E=n.e;if(E.length<2)continue;
+    if(E.length===2&&Math.abs(E[0].ux*E[1].uy-E[0].uy*E[1].ux)<.01&&E[0].ux*E[1].ux+E[0].uy*E[1].uy<0)continue;
+    E.sort((a,b)=>a.ang-b.ang);const P=[];let tm=0;
+    for(const e of E){const h=e.t/2;tm=Math.max(tm,e.t);P.push({x:n.x-e.uy*h,y:n.y+e.ux*h},{x:n.x+e.uy*h,y:n.y-e.ux*h})}
+    for(let i=0;i<E.length;i++){const a=E[i],b=E[(i+1)%E.length];const pa={x:n.x-a.uy*a.t/2,y:n.y+a.ux*a.t/2},pb={x:n.x+b.uy*b.t/2,y:n.y-b.ux*b.t/2};
+      const den=a.ux*b.uy-a.uy*b.ux;if(Math.abs(den)<1e-6)continue;const k=((pb.x-pa.x)*b.uy-(pb.y-pa.y)*b.ux)/den;const X={x:pa.x+a.ux*k,y:pa.y+a.uy*k};if(Math.hypot(X.x-n.x,X.y-n.y)<tm*2)P.push(X)}
+    out.push({key,pts:hull(P)})}
+  return out}
+const ptsAttr=P=>P.map(p=>n1(p.x)+','+n1(p.y)).join(' ');
 function lineX(a,b){const rx=a.x2-a.x1,ry=a.y2-a.y1,sx=b.x2-b.x1,sy=b.y2-b.y1,den=rx*sy-ry*sx;if(Math.abs(den)<1e-9)return null;const t=((b.x1-a.x1)*sy-(b.y1-a.y1)*sx)/den;return{x:a.x1+rx*t,y:a.y1+ry*t}}
 function joinWallEnds(W){for(const w of W)for(const k of [1,2]){const P={x:w['x'+k],y:w['y'+k]};
   if(W.some(o=>o!==w&&[1,2].some(j=>Math.hypot(o['x'+j]-P.x,o['y'+j]-P.y)<.6)))continue;
   if(W.some(o=>{if(o===w)return false;const q=projW(P,o);return q.d<.6&&q.raw>-.6&&q.raw<q.g.L+.6}))continue;
   let best=null;for(const o of W){if(o===w||parallel(o,w))continue;const q=projW(P,o);
-    if(q.d>o.t/2+1||q.raw<-o.t/2-1||q.raw>q.g.L+o.t/2+1)continue;const X=lineX(w,o);if(!X)continue;const mv=Math.hypot(X.x-P.x,X.y-P.y);if(mv>o.t/2+w.t/2+2)continue;if(!best||mv<best.mv)best={o,X,mv}}
+    if(q.d>o.t/2+12||q.raw<-o.t/2-12||q.raw>q.g.L+o.t/2+12)continue;const X=lineX(w,o);if(!X)continue;const mv=Math.hypot(X.x-P.x,X.y-P.y);if(mv>o.t/2+w.t/2+14)continue;if(!best||mv<best.mv)best={o,X,mv}}
   if(!best)continue;w['x'+k]=r2(best.X.x);w['y'+k]=r2(best.X.y);
   const o=best.o,q=projW(best.X,o);if(q.raw<-.6||q.raw>q.g.L+.6){const j=q.raw<0?1:2;o['x'+j]=r2(best.X.x);o['y'+j]=r2(best.X.y)}}}
 function normalizeWalls(){const ops=plan.items.filter(i=>i.k==='door'||i.k==='window');const anchors=ops.map(o=>{const P=openingPos(o);return{o,P:P?{x:P.x,y:P.y}:null,wall:o.wall}});
@@ -661,6 +678,9 @@ function normalizeWalls(){const ops=plan.items.filter(i=>i.k==='door'||i.k==='wi
   let again=true,guard=0;while(again&&guard++<400){again=false;
     for(let i=0;i<W.length&&!again;i++)for(let j=i+1;j<W.length&&!again;j++){const a=W[i],b=W[j];if(!parallel(a,b))continue;const pa=projW({x:b.x1,y:b.y1},a),pb=projW({x:b.x2,y:b.y2},a);if(pa.d>.6||pb.d>.6)continue;
       const g=pa.g,t1=Math.min(pa.raw,pb.raw),t2=Math.max(pa.raw,pb.raw);const lo=Math.max(0,t1),hi=Math.min(g.L,t2);if(hi-lo<.6)continue;
+      if(Math.abs(a.t-b.t)>.5){const thick=a.t>b.t?a:b,thin=thick===a?b:a;const q1=projW({x:thin.x1,y:thin.y1},thick).raw,q2=projW({x:thin.x2,y:thin.y2},thick).raw,u1=Math.min(q1,q2),u2=Math.max(q1,q2),gt=wg(thick);
+        const pcs=[];if(u1<-.6)pcs.push([u1,Math.min(u2,0)]);if(u2>gt.L+.6)pcs.push([Math.max(u1,gt.L),u2]);
+        W=W.filter(x=>x!==thin);pcs.forEach(([p1,p2],i)=>W.push({...thin,id:i?uid():thin.id,x1:r2(thick.x1+gt.dx*p1),y1:r2(thick.y1+gt.dy*p1),x2:r2(thick.x1+gt.dx*p2),y2:r2(thick.y1+gt.dy*p2)}));again=true;break}
       const A=Math.min(0,t1),Bv=Math.max(g.L,t2);const nw={...a,x1:r2(a.x1+g.dx*A),y1:r2(a.y1+g.dy*A),x2:r2(a.x1+g.dx*Bv),y2:r2(a.y1+g.dy*Bv),t:Math.max(a.t,b.t),locked:a.locked||b.locked};W[i]=nw;W.splice(j,1);again=true}}
   const pieces=splitSegs(W);const used=new Set();W=pieces.map(pc=>{const keep=!used.has(pc.w.id);used.add(pc.w.id);return{...pc.w,id:keep?pc.w.id:uid(),x1:pc.x1,y1:pc.y1,x2:pc.x2,y2:pc.y2}}).filter(w=>Math.hypot(w.x2-w.x1,w.y2-w.y1)>=1);
   again=true;guard=0;while(again&&guard++<400){again=false;const nodes=new Map();
@@ -678,10 +698,10 @@ function cleanPoly(pts,th){let P=pts.map((p,i)=>({x:p.x,y:p.y,t:th[i]}));let ch=
       if(Math.hypot(a.x-b.x,a.y-b.y)<.3){a.t=b.t;P.splice(i,1);ch=true;break}
       if(Math.hypot(a.x-c.x,a.y-c.y)<.3){a.t=c.t;const ci=(i+1)%n;P.splice(Math.max(i,ci),1);P.splice(Math.min(i,ci),1);ch=true;break}
       const ux=b.x-a.x,uy=b.y-a.y,vx=c.x-b.x,vy=c.y-b.y,cr=ux*vy-uy*vx,dt=ux*vx+uy*vy;
-      if(Math.abs(cr)<1e-3*Math.hypot(ux,uy)*Math.hypot(vx,vy)+1e-6&&dt>0){a.t=Math.max(a.t,b.t);P.splice(i,1);ch=true;break}}}
+      if(Math.abs(cr)<1e-3*Math.hypot(ux,uy)*Math.hypot(vx,vy)+1e-6&&dt>0&&Math.abs((a.t||0)-(b.t||0))<.5){P.splice(i,1);ch=true;break}}}
   return P}
-function insetPoly(P){const n=P.length,L=[];for(let i=0;i<n;i++){const a=P[i],b=P[(i+1)%n],dx=b.x-a.x,dy=b.y-a.y,l=Math.hypot(dx,dy)||1,h=(a.t||10)/2;L.push({px:a.x-dy/l*h,py:a.y+dx/l*h,dx:dx/l,dy:dy/l})}
-  const out=[];for(let i=0;i<n;i++){const l1=L[(i-1+n)%n],l2=L[i],den=l1.dx*l2.dy-l1.dy*l2.dx;if(Math.abs(den)<1e-6){out.push({x:l2.px,y:l2.py});continue}
+function insetPoly(P){const n=P.length,L=[];for(let i=0;i<n;i++){const a=P[i],b=P[(i+1)%n],dx=b.x-a.x,dy=b.y-a.y,l=Math.hypot(dx,dy)||1,h=(a.t||10)/2;L.push({px:a.x-dy/l*h,py:a.y+dx/l*h,dx:dx/l,dy:dy/l,nx:-dy/l*h,ny:dx/l*h})}
+  const out=[];for(let i=0;i<n;i++){const l1=L[(i-1+n)%n],l2=L[i],den=l1.dx*l2.dy-l1.dy*l2.dx;if(Math.abs(den)<1e-6){const v=P[i];const A={x:r2(v.x+l1.nx),y:r2(v.y+l1.ny)},Bp={x:r2(v.x+l2.nx),y:r2(v.y+l2.ny)};out.push(A);if(Math.hypot(A.x-Bp.x,A.y-Bp.y)>.3)out.push(Bp);continue}
     const t=((l2.px-l1.px)*l2.dy-(l2.py-l1.py)*l2.dx)/den;out.push({x:r2(l1.px+l1.dx*t),y:r2(l1.py+l1.dy*t)})}return out}
 function computeFaces(walls,outer){const segs=splitSegs(walls);const nodes=new Map();const N=(x,y)=>{const k=Math.round(x*2)+','+Math.round(y*2);let n=nodes.get(k);if(!n){n={x,y,out:[]};nodes.set(k,n)}return n};const half=[];
   for(const s of segs){if(Math.hypot(s.x2-s.x1,s.y2-s.y1)<1)continue;const a=N(s.x1,s.y1),b=N(s.x2,s.y2);if(a===b)continue;
@@ -711,7 +731,7 @@ function moveWallSeg(w,dx,dy){if(Math.hypot(dx,dy)<.01)return;const g=wg(w);cons
     E.fill=fixed?{P,P2}:null}
   w.x1=r2(w.x1+dx);w.y1=r2(w.y1+dy);w.x2=r2(w.x2+dx);w.y2=r2(w.y2+dy);
   for(const E of ends){if(!E.fill)continue;const {P,P2}=E.fill;if(dist(P,P2)<1)continue;
-    const covered=plan.items.some(o=>o.k==='wall'&&o.id!==w.id&&projW(P,o).d<.8&&projW(P2,o).d<.8);
+    const covered=plan.items.some(o=>o.k==='wall'&&o.id!==w.id&&o.t>=w.t-.5&&projW(P,o).d<.8&&projW(P2,o).d<.8);
     if(!covered)plan.items.push({id:uid(),k:'wall',x1:P.x,y1:P.y,x2:P2.x,y2:P2.y,t:w.t})}
   reindex()}
 function prepareItems(){normalizeWalls();syncRooms()}
@@ -811,14 +831,15 @@ function renderLayers(s){const it=plan.items;const roomsNow=it.filter(i=>i.k==='
   for(const x of it){switch(x.k){
     case'room':L.rooms.push([x.id,roomPoly(x,true)]);L.rl.push([x.id,roomLabel(x,s)]);if(opt.dims)L.ms.push(['r'+x.id,roomEdgeLabels(x,s)]);break;
     case'furn':L.furn.push([x.id,furnSvg(x,true,s)]);if(opt.clr){const z=clrZones(x);if(z.length)L.clr.push([x.id,`<g>${z.map(q=>`<polygon class="clrz" points="${q.poly.map(p=>n1(p.x)+','+n1(p.y)).join(' ')}"/>`).join('')}</g>`])}break;
-    case'wall':{const a=`x1="${x.x1}" y1="${x.y1}" x2="${x.x2}" y2="${x.y2}"`;
-      L.we.push([x.id,`<line ${a} stroke="var(--wall-edge)" stroke-width="${n1(x.t+2.6/s)}" stroke-linecap="square"/>`]);
-      L.wf.push([x.id,`<line ${a} stroke="var(--wall)" stroke-width="${x.t}" stroke-linecap="square"/>`]);
+    case'wall':{const a=`x1="${x.x1}" y1="${x.y1}" x2="${x.x2}" y2="${x.y2}"`,pp=ptsAttr(wallPoly(x));
+      L.we.push([x.id,`<polygon class="wpe" points="${pp}"/>`]);
+      L.wf.push([x.id,`<polygon class="wpf" points="${pp}"/>`]);
       L.wh.push([x.id,`<line data-id="${x.id}" ${a} stroke="transparent" stroke-width="${n1(Math.max(x.t,14/s))}"/>`]);
       if(opt.dims&&!wallBordersRoom(x,roomsNow))L.ms.push([x.id,wallMeasure(x,s)]);break}
     case'door':case'window':L.op.push([x.id,openingSvg(x,s,true)]);break;
     case'dim':L.dm.push([x.id,dimSvg(x,s,true)]);break;
     case'text':L.tx.push([x.id,`<text class="tx" data-id="${x.id}" x="${x.x}" y="${x.y}" font-size="${x.size}">${esc(x.text)}</text>`]);break}}
+  for(const j of wallJoints(it.filter(i=>i.k==='wall'))){const pp=ptsAttr(j.pts);L.we.push(['j'+j.key,`<polygon class="wpe" points="${pp}"/>`]);L.wf.push(['j'+j.key,`<polygon class="wpf" points="${pp}"/>`])}
   patch($('#gRooms'),L.rooms);patch($('#gClr'),L.clr);patch($('#gFurn'),L.furn);patch($('#gWallE'),L.we);patch($('#gWallF'),L.wf);patch($('#gWallH'),L.wh);
   patch($('#gOpen'),L.op);patch($('#gMeas'),L.ms);patch($('#gRoomLab'),L.rl);patch($('#gDims'),L.dm);patch($('#gText'),L.tx)}
 /* versión estática para exportar */
@@ -826,8 +847,9 @@ function planStatic(s){const it=plan.items,o=[];
   for(const r of it)if(r.k==='room')o.push(roomPoly(r,false));
   for(const f of it)if(f.k==='furn')o.push(furnSvg(f,false,s));
   const walls=it.filter(i=>i.k==='wall');
-  for(const w of walls)o.push(`<line x1="${w.x1}" y1="${w.y1}" x2="${w.x2}" y2="${w.y2}" stroke="var(--wall-edge)" stroke-width="${n1(w.t+2.6/s)}" stroke-linecap="square"/>`);
-  for(const w of walls)o.push(`<line x1="${w.x1}" y1="${w.y1}" x2="${w.x2}" y2="${w.y2}" stroke="var(--wall)" stroke-width="${w.t}" stroke-linecap="square"/>`);
+  const polys=[...walls.map(w=>wallPoly(w)),...wallJoints(walls).map(j=>j.pts)];
+  for(const P of polys)o.push(`<polygon points="${ptsAttr(P)}" style="fill:var(--wall);stroke:var(--wall-edge)" stroke-width="${n1(2.6/s)}" stroke-linejoin="miter"/>`);
+  for(const P of polys)o.push(`<polygon points="${ptsAttr(P)}" style="fill:var(--wall)"/>`);
   for(const x of it)if(x.k==='door'||x.k==='window')o.push(openingSvg(x,s,false));
   if(opt.dims){const rs=it.filter(i=>i.k==='room');for(const r of rs)o.push(roomEdgeLabels(r,s));for(const w of walls)if(!wallBordersRoom(w,rs))o.push(wallMeasure(w,s))}
   for(const r of it)if(r.k==='room')o.push(roomLabel(r,s));
@@ -1656,7 +1678,7 @@ function rebuild3D(){if(!G)return;V3.dirty=false;if(V3.group){V3.group.traverse(
   for(const w of plan.items){if(w.k!=='wall')continue;const g=wg(w),t=w.t/100,ry=-Math.atan2(g.dy,g.dx),x0=w.x1/100,z0=w.y1/100;
     const ops=plan.items.filter(o=>(o.k==='door'||o.k==='window')&&o.wall===w.id).map(o=>{const P=openingPos(o);return{o,a:(P.pos-o.w/2)/100,b:(P.pos+o.w/2)/100}}).sort((p,q)=>p.a-q.a);
     const seg=(a,b,y0,y1,m=wallM)=>{if(b-a<.004||y1-y0<.004)return;const mid=(a+b)/2;addMesh(grp,B,m,x0+g.dx*mid,(y0+y1)/2,z0+g.dy*mid,b-a,y1-y0,t,ry);if(V3.low&&y1>=H-.001)addMesh(grp,B,capM,x0+g.dx*mid,H+.004,z0+g.dy*mid,b-a,.008,t,ry,false)};
-    let cur=-t/2;const L=g.L/100;
+    let cur=0;const L=g.L/100;
     for(const p of ops){seg(cur,p.a,0,H);const top=(p.o.k==='window'?(p.o.top??210):210)/100;if(top<H)seg(p.a,p.b,top,H);
       const mid=(p.a+p.b)/2,cx=x0+g.dx*mid,cz=z0+g.dy*mid,wd=p.b-p.a;
       if(p.o.k==='window'){const sill=(p.o.sill??90)/100,tp=Math.min(top,H);if(sill>0)seg(p.a,p.b,0,Math.min(sill,H));
@@ -1673,7 +1695,9 @@ function rebuild3D(){if(!G)return;V3.dirty=false;if(V3.group){V3.group.traverse(
         else if(p.o.style==='pocket'){const dir=p.o.flip?1:-1;addMesh(dg,B,doorM,dir*(wO/2-.04),dh/2,0,.08,dh,.035)}
         else if(p.o.style==='barn'){const dir=p.o.flip?1:-1,z=sg*(t/2+.035);addMesh(dg,B,mat('#9A7552',{roughness:.7}),dir*wO*.45,dh/2+.02,z,wO+.08,dh+.04,.035);addMesh(dg,B,handleM,0,dh+.1,sg*(t/2+.015),wO*2.1,.03,.025)}}
       cur=p.b}
-    seg(cur,L+t/2,0,H)}
+    seg(cur,L,0,H)}
+  for(const j of wallJoints(plan.items.filter(i=>i.k==='wall'))){const sh=new THREE.Shape(j.pts.map(p=>new THREE.Vector2(p.x/100,-p.y/100)));const geo=new THREE.ExtrudeGeometry(sh,{depth:H,bevelEnabled:false});geo.rotateX(-Math.PI/2);
+    const me=new THREE.Mesh(geo,V3.low?[capM,wallM]:wallM);me.castShadow=true;me.receiveShadow=true;grp.add(me)}
   for(const f of plan.items){if(f.k==='furn')furn3D(grp,f)}
   const b=allBounds()||{x1:0,y1:0,x2:500,y2:400};const cx=(b.x1+b.x2)/200,cz=(b.y1+b.y2)/200,span=Math.max(4,(b.x2-b.x1)/100,(b.y2-b.y1)/100);V3.center={x:cx,z:cz,span};
   const s=G.sun;s.position.set(cx+span*.55,span*1.3,cz+span*.85);s.target.position.set(cx,0,cz);const sc=s.shadow.camera;sc.left=-span*.85;sc.right=span*.85;sc.top=span*.85;sc.bottom=-span*.85;sc.near=.5;sc.far=span*4;sc.updateProjectionMatrix();
