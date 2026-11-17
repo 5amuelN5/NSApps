@@ -360,6 +360,7 @@ footer .m{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
       <button class="tool" data-view="3d" title="3D: mira el piso en tres dimensiones y recórrelo por dentro (3)">3D</button>
     </div>
     <button class="btn" id="btnPlans" title="Mis proyectos: crea proyectos nuevos y abre, renombra, duplica o borra los que ya tienes"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 5h5l2 2h7v9H3z"/></svg><span class="wide-only">Mis proyectos</span></button>
+    <button class="btn" id="btnShare" title="Compartir: crea un enlace que abre Planta Libre con este plano dentro" aria-label="Compartir"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="5" cy="10" r="2.2"/><circle cx="15" cy="4.5" r="2.2"/><circle cx="15" cy="15.5" r="2.2"/><path d="M7 9l6-3.3M7 11l6 3.3"/></svg><span class="wide-only">Compartir</span></button>
     <button class="btn pri" id="btnExport" title="Exportar: guarda el plano como imagen PNG, dibujo SVG, archivo JSON o imprímelo"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 3v10M6 9l4 4 4-4M4 16h12"/></svg><span class="wide-only">Exportar</span></button>
     <button class="btn icon ghost" id="btnSettings" title="Ajustes: brillo y reflejo de los blancos en la vista 3D" aria-label="Ajustes"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6h7M15 6h1M4 14h1M9 14h7"/><circle cx="13" cy="6" r="2"/><circle cx="7" cy="14" r="2"/></svg></button>
     <button class="btn icon ghost" id="btnTheme" title="Cambiar entre tema claro y oscuro" aria-label="Cambiar tema"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="6.5"/><path d="M10 3.5a6.5 6.5 0 0 0 0 13z" fill="currentColor"/></svg></button>
@@ -485,6 +486,7 @@ const IC={
   fold:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3v14"/><path d="M4 17h12"/><path d="M4 6l9 9" stroke-dasharray="2 2"/><path d="M13 4a9 9 0 0 1 3 9"/><path d="M14 12.5l2 .7.6-2"/></svg>',
   diag:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="6" y="6" width="8" height="8" rx="1" transform="rotate(45 10 10)"/><path d="M3 17h14" stroke-dasharray="2 2"/></svg>',
   rot:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M15.5 8A6 6 0 1 0 16 12"/><path d="M16 3.5V8h-4.5"/></svg>',
+  share:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="5" cy="10" r="2.2"/><circle cx="15" cy="4.5" r="2.2"/><circle cx="15" cy="15.5" r="2.2"/><path d="M7 9l6-3.3M7 11l6 3.3"/></svg>',
   mirror:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 2v16" stroke-dasharray="2 2"/><path d="M7.5 5L3 15h4.5zM12.5 5L17 15h-4.5z"/></svg>',
   dup:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M13 7V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13H7"/></svg>',
   del:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h12M8 6V4h4v2M6 6l1 11h6l1-11"/></svg>',
@@ -1601,7 +1603,7 @@ async function showPlans(){openModal('Mis proyectos','<p class="note">Cargando t
   $('#psort').value=projSort;renderProjects()}
 function projCard(p){const cur=p.id===curId;
   return `<div class="pcard${cur?' cur':''}" data-popen="${p.id}" role="button" tabindex="0" title="${cur?'Este es el proyecto abierto ahora':'Abrir '+esc(p.name)}">${thumbSvg(p.items||[])}<div class="pinfo"><b>${esc(p.name)}</b><small>${cur?'<span class="ptag">Abierto</span>':''}${relDate(p.updated)}</small><small>${dec(p.area||0,1)} m² · ${p.rooms} ${p.rooms===1?'estancia':'estancias'}${p.nv>1?' · '+p.nv+' distribuciones':''}</small></div>
-    <div class="pacts"><button data-pa="rename" data-id="${p.id}" title="Renombrar">${IC.edit}</button><button data-pa="dup" data-id="${p.id}" title="Duplicar: crea una copia para probar cambios">${IC.dup}</button><button data-pa="json" data-id="${p.id}" title="Descargar una copia en JSON">${IC.down}</button><button data-pa="del" data-id="${p.id}" class="danger" title="Eliminar el proyecto">${IC.del}</button></div></div>`}
+    <div class="pacts"><button data-pa="rename" data-id="${p.id}" title="Renombrar">${IC.edit}</button><button data-pa="dup" data-id="${p.id}" title="Duplicar: crea una copia para probar cambios">${IC.dup}</button><button data-pa="share" data-id="${p.id}" title="Compartir: crea un enlace que abre este plano">${IC.share}</button><button data-pa="json" data-id="${p.id}" title="Descargar una copia en JSON">${IC.down}</button><button data-pa="del" data-id="${p.id}" class="danger" title="Eliminar el proyecto">${IC.del}</button></div></div>`}
 function renderProjects(){const pg=$('#pg');if(!pg)return;const norm=x=>x.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();const q=norm(projQ.trim());
   const L=PROJ.filter(p=>!q||norm(p.name).includes(q)).sort(projSort==='name'?(a,b)=>a.name.localeCompare(b.name,'es'):(a,b)=>b.updated-a.updated);
   let h=q?'':`<button class="pcard pnew" data-pa="new" title="Crear un proyecto nuevo"><span class="pplus">+</span><b>Nuevo proyecto</b><small>En blanco, con medidas o desde el ejemplo</small></button>`;
@@ -1616,6 +1618,7 @@ async function projAction(a,id){
   if(a==='renameOk'){const v=($('#pr_name').value||'').trim();if(!v){toast('Escribe un nombre');return}
     if(id===curId){plan.name=v;$('#planName').value=v;clearTimeout(saveT);await saveNow()}else{const d=await store.load(id);if(d){d.name=v;d.updated=Date.now();await store.save(id,d)}}toast('Renombrado: '+v);showPlans();return}
   if(a==='dup'){const d=id===curId?payload():await store.load(id);if(!d)return;const c=clone(d);c.name=(c.name||'Proyecto')+' (copia)';c.updated=Date.now();try{await store.save(uid(),c);toast('Copia creada: '+c.name)}catch(e){toast('No se pudo duplicar')}showPlans();return}
+  if(a==='share'){shareProject(id);return}
   if(a==='json'){const d=id===curId?payload():await store.load(id);if(d)saveFile((d.name||'proyecto').replace(/[\\/:*?"<>|]+/g,'')+'.json',JSON.stringify(Object.assign({app:'Planta Libre'},d),null,1));return}
   if(a==='open'){if(id===curId){closeModal();return}if(await openPlan(id)){closeModal();toast('Abierto: '+plan.name,1400)}return}}
 async function deleteProject(id){try{await store.remove(id)}catch(e){toast('No se pudo eliminar');return}const gone=(PROJ.find(x=>x.id===id)||{}).name||'Proyecto';
@@ -1979,14 +1982,49 @@ function samplePlan(){const it=[];let n=0;const id=()=>'s'+(++n)+uid().slice(1,5
   return it}
 
 /* =========================================================
+   Compartir por enlace: el plano va comprimido dentro del enlace
+   ========================================================= */
+const SHARE_HOME='https://5amueln5.github.io/NSApps/planta-libre/';
+const b64u={enc(b){let s='';for(let i=0;i<b.length;i+=0x8000)s+=String.fromCharCode.apply(null,b.subarray(i,i+0x8000));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')},
+  dec(t){const s=atob(t.replace(/-/g,'+').replace(/_/g,'/'));const b=new Uint8Array(s.length);for(let i=0;i<s.length;i++)b[i]=s.charCodeAt(i);return b}};
+const pipeBytes=async(bytes,tr)=>new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(tr)).arrayBuffer());
+async function packPlan(p){const raw=new TextEncoder().encode(JSON.stringify(p));
+  if(typeof CompressionStream==='function'){try{return 'z'+b64u.enc(await pipeBytes(raw,new CompressionStream('deflate-raw')))}catch(e){}}
+  return 'j'+b64u.enc(raw)}
+async function unpackPlan(code){const t=code[0];let raw=b64u.dec(code.slice(1));
+  if(t==='z'){if(typeof DecompressionStream!=='function')throw{code:'old'};raw=await pipeBytes(raw,new DecompressionStream('deflate-raw'))}else if(t!=='j')throw{code:'bad'};
+  const p=JSON.parse(new TextDecoder().decode(raw));if(!p||!(Array.isArray(p.items)||Array.isArray(p.variants)))throw{code:'bad'};return p}
+const shareBase=()=>/^https?:$/.test(location.protocol)&&(/\.github\.io$/.test(location.hostname)||/^(localhost|127\.0\.0\.1)$/.test(location.hostname))?location.origin+location.pathname:SHARE_HOME;
+const shareKey=s=>{let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return(h>>>0).toString(36)+'.'+s.length};
+async function shareProject(id){let d=null;try{d=!id||id===curId?payload():await store.load(id)}catch(e){}if(!d){toast('No se encontró ese plano');return}
+  const p={name:d.name,items:d.items,variants:d.variants,vi:d.vi,ceil:d.ceil,v:d.v||3};const nm=p.name||'el plano';
+  const url=shareBase()+'#plano='+await packPlan(p);const nv=(p.variants||[]).length;
+  openModal('Compartir plano',`<p class="note" style="font-size:13px">Quien abra este enlace entrará en Planta Libre con <b>${esc(nm)}</b> ya abierto${nv>1?' (con sus '+nv+' distribuciones)':''}. Se le guardará en sus proyectos, sin tocar los que ya tenga, y podrá verlo en 3D y cambiarlo.</p>
+  <div class="fld"><label for="sh_url">Enlace</label><input id="sh_url" type="text" readonly value="${esc(url)}"></div>
+  <div class="acts"><button class="btn pri" id="shCopy">Copiar enlace</button>${navigator.share?'<button class="btn" id="shSend">Enviar…</button>':''}</div>
+  <p class="note">Es una copia del plano tal como está ahora: si luego lo cambias, comparte un enlace nuevo. El plano va dentro del propio enlace y no se sube a ningún servidor.${url.length>8000?' El enlace es largo porque lleva todo el plano, pero funciona igual.':''}</p>`);
+  const inp=$('#sh_url');inp.onfocus=()=>inp.select();
+  $('#shCopy').onclick=async()=>{let ok=false;try{await navigator.clipboard.writeText(url);ok=true}catch(e){try{inp.focus();inp.select();ok=document.execCommand('copy')}catch(e2){}}toast(ok?'Enlace copiado':'Selecciona el enlace y cópialo',1600)};
+  const sb=$('#shSend');if(sb)sb.onclick=async()=>{try{await navigator.share({title:'Planta Libre · '+nm,text:'Mira mi plano en Planta Libre: '+nm,url})}catch(e){}}}
+$('#btnShare').onclick=()=>shareProject(curId);
+function takeShareHash(){const m=/[#&]plano=([A-Za-z0-9_-]+)/.exec(location.hash);if(!m)return null;try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}return m[1]}
+async function openShared(code){let p;try{p=await unpackPlan(code)}catch(e){toast(e&&e.code==='old'?'Este navegador es demasiado antiguo para abrir el plano: actualízalo':'El enlace del plano está incompleto o dañado',3200);return false}
+  const key=shareKey(code),seen=lsGet('planta:shared')||{};
+  if(seen[key]){let list=[];try{list=await store.list()}catch(e){}if(list.some(x=>x.id===seen[key])&&await openPlan(seen[key])){closeModal();toast('Ya tenías este plano: «'+plan.name+'»',2400);return true}}
+  await newPlan(null,p.name||'Plano compartido',p);seen[key]=curId;lsSet('planta:shared',seen);closeModal();toast('Plano compartido abierto y guardado en tus proyectos',2800);return true}
+window.addEventListener('hashchange',()=>{if(!storeReady)return;const c=takeShareHash();if(c)openShared(c)});
+
+/* =========================================================
    Arranque
    ========================================================= */
 if(/\/nsapps\//i.test(location.pathname))$('#hubBack').hidden=false;
 const th=lsGet('planta:theme');if(th)applyTheme(th);
 loadPrefs();renderLib();plan=fromSaved({items:samplePlan()},'Piso de ejemplo');prepareItems();renderVarbar();resetHistory();setTool('select');setSave('sample');
 requestAnimationFrame(()=>{fitView();renderProps()});
+const shareCode=takeShareHash();
 store.init().then(async()=>{storeReady=true;let list=[];try{list=await store.list()}catch(e){}
   if(!isSample){saveNow();return}
+  if(shareCode&&await openShared(shareCode))return;
   if(list.length){const last=lsGet('planta:last');const id=list.find(p=>p.id===last)?last:list[0].id;await openPlan(id)}
   else{setSave('sample');if(!lsGet('planta:welcomed'))showWelcome()}});
 })();
