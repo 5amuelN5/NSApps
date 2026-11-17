@@ -69,7 +69,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .btn svg{width:16px;height:16px;flex:none}
 .btn:disabled{opacity:.35;cursor:default}
 .narrow-only{display:none}
-.seg{display:flex;background:var(--raise);border:1px solid var(--line);border-radius:7px;padding:2px;gap:2px;flex:none}
+.seg{display:flex;background:var(--raise);border:1px solid var(--line);border-radius:7px;padding:2px;gap:2px;flex:none}.seg.chs .tool{flex:1;justify-content:center}
 .tool{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 9px;border:0;border-radius:5px;background:transparent;cursor:pointer;white-space:nowrap;color:var(--muted)}
 .tool:hover{color:var(--text);background:var(--chrome)}
 .tool.on{background:var(--accent);color:var(--on-accent)}
@@ -555,7 +555,7 @@ def('armario','Armario','Dormitorio',200,60,(w,h)=>{let s=R(0,0,w,h,1)+Ln(3,h*.5
 def('comoda','Cómoda','Dormitorio',100,50,(w,h)=>R(0,0,w,h,2)+Ln(w/3,0,w/3,h,'t')+Ln(w*2/3,0,w*2/3,h,'t')+Ln(0,h-4,w,h-4,'t'),{clr:{f:75},m3:'box',h3:85,c3:WOOD,kw:'cajonera'});
 def('sofa3','Sofá 3 plazas','Salón',210,92,(w,h)=>dSofa(w,h,3),{clr:{f:45},m3:'sofa',c3:FAB});
 def('sofa2','Sofá 2 plazas','Salón',160,90,(w,h)=>dSofa(w,h,2),{clr:{f:45},m3:'sofa',c3:FAB});
-def('sofal','Sofá chaise longue','Salón',260,165,(w,h)=>dSofaL(w,h),{clr:{f:45},m3:'sofaL',c3:FAB,kw:'rinconera'});
+def('sofal','Sofá chaise longue','Salón',260,165,(w,h)=>dSofaL(w,h),{clr:{f:45},m3:'sofaL',c3:FAB,chaise:true,kw:'rinconera chaiselongue izquierda derecha'});
 def('sillon','Sillón','Salón',85,85,(w,h)=>dSofa(w,h,1),{clr:{f:45},m3:'sofa',c3:'#A8927A',kw:'butaca'});
 def('centro','Mesa de centro','Salón',110,60,(w,h)=>R(0,0,w,h,4)+R(6,6,w-12,h-12,2,'n t'),{m3:'coffee',h3:40,c3:WOOD});
 def('tv','Mueble TV','Salón',180,45,(w,h)=>R(0,0,w,h,2)+R(w*.16,5,w*.68,5,1,'k'),{m3:'tv',h3:50,c3:WOOD,kw:'televisión'});
@@ -1316,7 +1316,7 @@ function doAct(a){const it=byId([...sel][0]);switch(a){
   case'door':toggleDoors([...sel]);break;
   case'wallHalf':case'wallFull':{let n=0;for(const id of sel){const w=byId(id);if(w&&w.k==='wall'){if(a==='wallHalf')w.h=110;else delete w.h;n++}}if(n){commit();changed();renderProps();toast(a==='wallHalf'?'Muro a media altura (1,10 m)':'Muro hasta el techo',1400)}break}
   case'del':deleteSel();break;case'dup':dupSel();break;case'copy':copySel();break;case'paste':paste();break;
-  case'rotL':rotSel(-90);break;case'rotR':rotSel(90);break;case'rot45':rotSel(45);break;case'rot45L':rotSel(-45);break;case'mirror':mirrorSel();break;case'lock':lockSel();break;
+  case'rotL':rotSel(-90);break;case'rotR':rotSel(90);break;case'rot45':rotSel(45);break;case'rot45L':rotSel(-45);break;case'mirror':mirrorSel();break;case'chaiseL':case'chaiseR':{const L=a==='chaiseL';let n=0;for(const id of sel){const f=byId(id);if(f&&f.k==='furn'&&(CAT[f.type]||{}).chaise&&!f.locked&&!!f.mirror!==L){f.mirror=L;n++}}if(n){commit();changed();renderProps();toast(L?'Chaise longue a la izquierda':'Chaise longue a la derecha',1200)}break}case'lock':lockSel();break;
   case'front':order(true);break;case'back':order(false);break;case'zoomSel':zoomToSel();break;
   case'planR':rotatePlan(1);break;case'planL':rotatePlan(-1);break;
   case'all':sel=new Set(plan.items.map(i=>i.id));render();renderProps();break;case'fit':fitView(true);break;
@@ -1333,7 +1333,7 @@ function selbarHtml(){const items=[...sel].map(byId).filter(Boolean);if(!items.l
   if(items.length>1){const fur=items.some(i=>i.k==='furn');return `<span class="sz">${items.length} elementos</span>${fur?b('rotR',IC.rot,'Girar 90° (E)')+b('rot45',IC.diag,'Girar 45°, en diagonal (Alt+E)'):''}${b('dup',IC.dup,'Duplicar (Ctrl+D)')}${lockB}${b('del',IC.del,'Eliminar (Supr)','danger')}`}
   const it=items[0];
   switch(it.k){
-    case'furn':return `<span class="sz">${Math.round(it.w)}×${Math.round(it.h)}</span>${isFold(it)?b('fold',IC.fold,CAT[it.type].fold[isOpenF(it)?1:0]+' (O)',isOpenF(it)?'on':''):''}${b('rotR',IC.rot,'Girar 90° (E)')}${b('rot45',IC.diag,'Girar 45°, en diagonal (Alt+E)')}${b('mirror',IC.mirror,'Reflejar (F)')}${b('dup',IC.dup,'Duplicar (Ctrl+D)')}${lockB}${b('del',IC.del,'Eliminar (Supr)','danger')}`;
+    case'furn':return `<span class="sz">${Math.round(it.w)}×${Math.round(it.h)}</span>${isFold(it)?b('fold',IC.fold,CAT[it.type].fold[isOpenF(it)?1:0]+' (O)',isOpenF(it)?'on':''):''}${b('rotR',IC.rot,'Girar 90° (E)')}${b('rot45',IC.diag,'Girar 45°, en diagonal (Alt+E)')}${b('mirror',IC.mirror,(CAT[it.type]||{}).chaise?'Cambiar la chaise longue de lado (F)':'Reflejar (F)')}${b('dup',IC.dup,'Duplicar (Ctrl+D)')}${lockB}${b('del',IC.del,'Eliminar (Supr)','danger')}`;
     case'wall':return `<span class="sz">${dec(wg(it).L/100)} m${it.h?' · alto '+dec(it.h/100)+' m':''}</span>${b('split',IC.split,'Dividir en dos')}${b('edit',IC.edit,'Editar medidas')}${lockB}${b('del',IC.del,'Eliminar (Supr)','danger')}`;
     case'room':return `<span class="sz">${esc(it.name)} · ${dec(Math.abs(polyArea(it.pts))/1e4)} m²</span>${b('edit',IC.edit,'Renombrar, color y suelo')}`;
     case'door':return `<span class="sz">${doorName(it.style)} · ${Math.round(it.w)} cm</span>${it.style!=='opening'?b('door',IC.door,it.open===false?'Abrir la puerta (O)':'Cerrar la puerta (O)',it.open===false?'':'on'):''}${['single','double','barn'].includes(it.style)?b('side',IC.side,'Abrir hacia el otro lado (F)'):''}${['single','pocket','barn'].includes(it.style)?b('flip',IC.hinge,it.style==='single'?'Cambiar bisagra':'Deslizar hacia el otro lado'):''}${b('edit',IC.edit,'Tipo y medidas')}${b('del',IC.del,'Eliminar (Supr)','danger')}`;
@@ -1397,6 +1397,7 @@ function itemProps(it){let h=`<div class="ph"><h2>${KIND[it.k]}</h2><p class="ki
   switch(it.k){
   case'furn':{const d=CAT[it.type]||{};h+=txt('p_label','Etiqueta en el plano',it.label,'Opcional, p. ej. «Cama de Ana»');
     const fx=!canResize(it);h+=`<div class="row">${num('p_w','Ancho',it.w,'cm',1,fx?'disabled':'')}${num('p_h','Fondo',it.h,'cm',1,fx?'disabled':'')}</div>${fx?'<p class="note">Medida estándar: los sanitarios, electrodomésticos y sillas no se estiran.</p>':''}<div class="row">${num('p_rot','Giro',it.rot,'°',15)}<div class="fld"><label>Girar</label><div class="acts"><button class="btn icon" data-act="rotL" aria-label="Girar −90°" title="Girar −90° (Q)">⟲</button><button class="btn icon" data-act="rotR" aria-label="Girar +90°" title="Girar +90° (E)">⟳</button><button class="btn icon" data-act="rot45L" aria-label="Girar −45°" title="Girar −45°, en diagonal (Alt+Q)">−45</button><button class="btn icon" data-act="rot45" aria-label="Girar +45°" title="Girar +45°, en diagonal (Alt+E)">45</button><button class="btn icon" data-act="mirror" aria-label="Reflejar" title="Reflejar (F)">⇋</button></div></div></div>`;
+    if(d.chaise){const L=!!it.mirror;h+=`<div class="fld"><label title="Mirando el sofá de frente">Chaise longue (mirándolo de frente)</label><div class="seg chs" role="group" aria-label="Lado de la chaise longue"><button class="tool${L?' on':''}" data-act="chaiseL" aria-pressed="${L}">A la izquierda</button><button class="tool${L?'':' on'}" data-act="chaiseR" aria-pressed="${!L}">A la derecha</button></div></div>`}
     if(isFold(it)){const fd=CAT[it.type].fold;h+=`<div class="acts"><button class="btn" data-act="fold" title="También con la tecla O o haciendo clic en él en 3D">${fd[isOpenF(it)?1:0]}</button></div>`}
     h+=`<div class="row">${num('p_x','Posición X',r2(it.x/100),'m',.05)}${num('p_y','Posición Y',r2(it.y/100),'m',.05)}</div>`;
     h+=`<div class="acts"><button class="btn" data-act="dup">Duplicar</button><button class="btn" data-act="front">Al frente</button><button class="btn" data-act="back">Al fondo</button><button class="btn" data-act="lock">${it.locked?'Desbloquear':'Bloquear'}</button><button class="btn danger" data-act="del">Eliminar</button></div>`;
