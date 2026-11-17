@@ -263,6 +263,7 @@ footer .m{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 #varbar .vt.add{color:var(--accent);font-weight:500}
 .chip.rng{display:inline-flex;align-items:center;gap:8px;color:var(--text)}
 .chip.rng input{width:110px;accent-color:var(--accent)}
+.lkrow{display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 12px;margin:10px 0}.lkrow label{font-size:13px;color:var(--text)}.lkrow output{font:12px var(--f-mono);color:var(--muted);min-width:40px;text-align:right}.lkrow input{grid-column:1/-1;width:100%;accent-color:var(--accent)}
 @media (max-width:900px){#varbar{max-width:calc(100% - 24px);bottom:44px}}
 #toast{position:fixed;left:50%;bottom:48px;transform:translateX(-50%);background:var(--text);color:var(--panel);padding:8px 14px;border-radius:8px;font-size:12.5px;z-index:80;pointer-events:none;max-width:calc(100% - 32px);box-shadow:var(--shadow)}
 
@@ -360,6 +361,7 @@ footer .m{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
     </div>
     <button class="btn" id="btnPlans" title="Mis proyectos: crea proyectos nuevos y abre, renombra, duplica o borra los que ya tienes"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 5h5l2 2h7v9H3z"/></svg><span class="wide-only">Mis proyectos</span></button>
     <button class="btn pri" id="btnExport" title="Exportar: guarda el plano como imagen PNG, dibujo SVG, archivo JSON o imprímelo"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 3v10M6 9l4 4 4-4M4 16h12"/></svg><span class="wide-only">Exportar</span></button>
+    <button class="btn icon ghost" id="btnSettings" title="Ajustes: brillo y reflejo de los blancos en la vista 3D" aria-label="Ajustes"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6h7M15 6h1M4 14h1M9 14h7"/><circle cx="13" cy="6" r="2"/><circle cx="7" cy="14" r="2"/></svg></button>
     <button class="btn icon ghost" id="btnTheme" title="Cambiar entre tema claro y oscuro" aria-label="Cambiar tema"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="6.5"/><path d="M10 3.5a6.5 6.5 0 0 0 0 13z" fill="currentColor"/></svg></button>
     <button class="btn icon ghost" id="btnHelp" title="Ayuda: guía rápida y todos los atajos de teclado (?)" aria-label="Ayuda"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="7.5"/><path d="M7.8 7.8a2.3 2.3 0 1 1 3.1 2.2c-.6.3-.9.7-.9 1.4v.4"/><circle cx="10" cy="14.3" r=".6" fill="currentColor"/></svg></button>
   </div>
@@ -1696,6 +1698,16 @@ $('#mBody').addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='vr
 $('#fileIn').addEventListener('change',async e=>{const f=e.target.files[0];e.target.value='';if(!f)return;
   try{const data=JSON.parse(await f.text());const items=Array.isArray(data)?data:data.items;if(!Array.isArray(items))throw 0;closeModal();newPlan(items,data.name||f.name.replace(/\.json$/i,''),Array.isArray(data)?null:data);toast('Plano importado')}
   catch(err){toast('Ese archivo no es un plano válido de Planta Libre')}});
+$('#btnSettings').onclick=()=>{openModal('Ajustes',`<div class="sec" style="padding:0;border:0"><h3>Vista 3D</h3>
+  <p class="note" style="margin-top:6px">Si los blancos de paredes, techo y muebles deslumbran, bájalos aquí. Se ve al momento y se guarda en este navegador.</p>
+  <div class="acts" style="margin-top:10px"><button class="btn" id="lkSoft" title="Brillo al 85 % y reflejo de los blancos al 30 %">Suavizar blancos</button><button class="btn ghost" id="lkReset">Restablecer</button></div>
+  <div class="lkrow"><label for="lkB">Brillo</label><output id="lkBo"></output><input type="range" id="lkB" min="50" max="120" step="1"></div>
+  <div class="lkrow"><label for="lkW">Reflejo de los blancos</label><output id="lkWo"></output><input type="range" id="lkW" min="0" max="100" step="1"></div></div>`);
+  const sync=()=>{$('#lkB').value=LOOK.b;$('#lkW').value=LOOK.w;$('#lkBo').textContent=LOOK.b+' %';$('#lkWo').textContent=LOOK.w+' %'};sync();
+  const upd=()=>{LOOK.b=+$('#lkB').value;LOOK.w=+$('#lkW').value;sync();saveLook();applyLook()};
+  $('#lkB').oninput=upd;$('#lkW').oninput=upd;
+  $('#lkSoft').onclick=()=>{LOOK.b=85;LOOK.w=30;sync();saveLook();applyLook();toast('Blancos suavizados',1200)};
+  $('#lkReset').onclick=()=>{LOOK.b=100;LOOK.w=100;sync();saveLook();applyLook();toast('Brillo y reflejo como al principio',1200)}};
 $('#btnExport').onclick=()=>openModal('Exportar plano',`<div class="cards"><button data-x="png"><b>Imagen PNG</b><span>Alta resolución, para enviar o enseñar</span></button><button data-x="svg"><b>Dibujo SVG</b><span>Vectorial a escala, se puede ampliar sin perder calidad</span></button><button data-x="json"><b>Archivo JSON</b><span>Copia editable para importar después</span></button>${EMBEDDED?'':'<button data-x="print"><b>Imprimir a escala</b><span>En A4 apaisado a escala real (1:50, 1:100…), o guárdalo como PDF</span></button>'}</div><p class="note">Incluye el plano entero con sus medidas, el nombre y una barra de escala.</p>`);
 
 function exportSvg(printScale){const b=allBounds()||{x1:0,y1:0,x2:500,y2:400};const pad=80,x=b.x1-pad,y=b.y1-pad-40,w=b.x2-b.x1+2*pad,h=b.y2-b.y1+2*pad+90;const sz=printScale?`width="${n1(w*10/printScale)}mm" height="${n1(h*10/printScale)}mm"`:`width="${Math.round(w)}" height="${Math.round(h)}"`;
@@ -1769,7 +1781,7 @@ function rebuild3D(){if(!G)return;V3.dirty=false;V3.doorAnims=new Map();if(V3.gr
   const grp=new THREE.Group();V3.group=grp;G.scene.add(grp);const B=G.BOX;
   const H=(V3.low?110:ceilCm())/100,wallM=mat('#F2F0EB',{roughness:.92}),capM=mat('#3C4448',{roughness:.9}),glassM=mat('#A9D0EA',{transparent:true,opacity:.28,roughness:.05,metalness:.1,depthWrite:false}),frameM=mat('#F7F7F5',{roughness:.5}),doorM=mat('#E9E3D8',{roughness:.6}),handleM=mat('#9EA4A8',{roughness:.3,metalness:.6});
   for(const r of plan.items){if(r.k!=='room')continue;const sh=new THREE.Shape(r.pts.map(p=>new THREE.Vector2(p.x/100,-p.y/100)));const g=new THREE.ShapeGeometry(sh);g.rotateX(-Math.PI/2);
-    const me=new THREE.Mesh(g,new THREE.MeshStandardMaterial({map:floorTex(r.floor||'parquet'),roughness:r.floor==='tile'||r.floor==='stone'?.45:.8}));me.material.userData.room=true;me.position.y=.002;me.receiveShadow=true;grp.add(me);if(!V3.low){const c=polyCentroid(r.pts);const lamp=new THREE.Mesh(G.CYL,mat('#FFFBEF',{emissive:'#fff3d6'}));lamp.scale.set(.32,.025,.32);lamp.position.set(c.x/100,H-.013,c.y/100);lamp.userData.ceiling=true;lamp.visible=V3.ceil;grp.add(lamp)}}
+    const me=new THREE.Mesh(g,new THREE.MeshStandardMaterial({map:floorTex(r.floor||'parquet'),roughness:r.floor==='tile'||r.floor==='stone'?.45:.8}));me.material.userData.room=true;me.position.y=.002;me.receiveShadow=true;grp.add(me);if(!V3.low){const c=polyCentroid(r.pts);const lamp=new THREE.Mesh(G.CYL,mat('#FFFBEF',{emissive:'#fff3d6'}));lamp.scale.set(.32,.025,.32);lamp.position.set(c.x/100,H-.013,c.y/100);lamp.userData.ceiling=true;lamp.visible=V3.ceil;grp.add(lamp);const pl=new THREE.PointLight(0xfff1dc,.55,Math.max(6,Math.sqrt(Math.abs(polyArea(r.pts)))/100*2.2),1.6);pl.position.set(c.x/100,H-.35,c.y/100);pl.userData.roomLight=true;pl.visible=false;grp.add(pl)}}
   if(!V3.low)for(const f of computeFaces(plan.items.filter(i=>i.k==='wall'),true)){const P=insetPoly(f.raw);const sh=new THREE.Shape(P.map(q=>new THREE.Vector2(q.x/100,-q.y/100)));const cg=new THREE.ShapeGeometry(sh);cg.rotateX(-Math.PI/2);
     const ce=new THREE.Mesh(cg,mat('#F7F6F2',{side:THREE.BackSide,roughness:.95,emissive:'#8a8781'}));ce.position.y=H+.001;ce.userData.ceiling=true;ce.visible=V3.ceil;grp.add(ce)}
   for(const w of plan.items){if(w.k!=='wall')continue;const g=wg(w),t=w.t/100,ry=-Math.atan2(g.dy,g.dx),x0=w.x1/100,z0=w.y1/100;const HW=Math.min(V3.low?1.1:9,(w.h||ceilCm())/100);
@@ -1800,7 +1812,14 @@ function rebuild3D(){if(!G)return;V3.dirty=false;V3.doorAnims=new Map();if(V3.gr
   for(const f of plan.items){if(f.k==='furn')furn3D(grp,f)}
   const b=allBounds()||{x1:0,y1:0,x2:500,y2:400};const cx=(b.x1+b.x2)/200,cz=(b.y1+b.y2)/200,span=Math.max(4,(b.x2-b.x1)/100,(b.y2-b.y1)/100);V3.center={x:cx,z:cz,span};
   const s=G.sun;s.position.set(cx+span*.55,span*1.3,cz+span*.85);s.target.position.set(cx,0,cz);const sc=s.shadow.camera;sc.left=-span*.85;sc.right=span*.85;sc.top=span*.85;sc.bottom=-span*.85;sc.near=.5;sc.far=span*4;sc.updateProjectionMatrix();
-  G.ground.position.set(cx,-.012,cz);G.ctl.maxDistance=span*4;G.renderer.shadowMap.needsUpdate=true;V3.needs=true}
+  G.ground.position.set(cx,-.012,cz);G.ctl.maxDistance=span*4;G.renderer.shadowMap.needsUpdate=true;V3.needs=true;applyLight()}
+const LOOK=(()=>{const d={b:100,w:100};try{return Object.assign(d,JSON.parse(localStorage.getItem('pl_look')||'{}'))}catch(e){return d}})();
+function saveLook(){try{localStorage.setItem('pl_look',JSON.stringify(LOOK))}catch(e){}}
+function applyLook(){if(!G)return;G.renderer.toneMappingExposure=1.05*LOOK.b/100;const r=LOOK.w/100;
+  if(V3.group)V3.group.traverse(o=>{const ms=o.material?(Array.isArray(o.material)?o.material:[o.material]):[];for(const m of ms){if(!m||!m.isMeshStandardMaterial)continue;let B=m.userData.look;
+    if(!B)B=m.userData.look={c:m.color.clone(),r:m.roughness,e:m.emissive.clone(),w:!m.map&&(m.color.r+m.color.g+m.color.b)/3>.55};if(!B.w)continue;
+    m.color.copy(B.c).multiplyScalar(.7+.3*r);m.roughness=Math.min(1,B.r+(1-B.r)*(1-r));m.emissive.copy(B.e).multiplyScalar(.3+.7*r)}});V3.needs=true}
+function applyLight(){if(!G)return;const indoor=!!V3.walk&&V3.ceil&&!V3.low;G.sun.castShadow=!indoor;G.sun.intensity=indoor?.3:1.35;G.hemi.intensity=V3.walk?(indoor?1.15:1.05):.75;if(V3.group)V3.group.traverse(o=>{if(o.userData&&o.userData.roomLight)o.visible=indoor});G.renderer.shadowMap.needsUpdate=true;applyLook()}
 function furn3D(grp,f){const d=CAT[f.type]||CAT.generico;const g=new THREE.Group();g.position.set(f.x/100,0,f.y/100);g.rotation.y=-f.rot*Math.PI/180;if(f.mirror)g.scale.x=-1;grp.add(g);
   const w=f.w/100,dd=f.h/100,base=d.c3||'#c8c2b8';const m=mat(base),m2=mat('#'+new THREE.Color(base).multiplyScalar(.8).getHexString()),B=G.BOX,C=G.CYL;
   const box=(x0,z0,bw,bd,y0,bh,mm=m,cast=true)=>addMesh(g,B,mm,-w/2+x0+bw/2,y0+bh/2,-dd/2+z0+bd/2,Math.max(.004,bw),Math.max(.004,bh),Math.max(.004,bd),0,cast);
@@ -1905,7 +1924,7 @@ $('#v3walk').onclick=()=>V3.walk?exitWalk():enterWalk();
 function applyWalkFov(){if(!G||!V3.walk)return;const a=G.cam.aspect||1.5;G.cam.fov=2*Math.atan(Math.tan(V3.hfov*Math.PI/360)/a)*180/Math.PI;G.cam.updateProjectionMatrix();
   $('#v3fov').value=V3.hfov;$('#v3fovOut').textContent=Math.round(V3.hfov)+'°';$('#v3wide').setAttribute('aria-pressed',String(V3.hfov>=100));V3.needs=true}
 $('#v3fov').addEventListener('input',e=>{V3.hfov=+e.target.value;applyWalkFov()});
-$('#v3ceil').onclick=()=>{V3.ceil=!V3.ceil;try{localStorage.setItem('pl_ceil',V3.ceil?'1':'0')}catch(e){}$('#v3ceil').setAttribute('aria-pressed',String(V3.ceil));if(G)G.scene.traverse(o=>{if(o.userData&&o.userData.ceiling)o.visible=V3.ceil});V3.needs=true;toast(V3.ceil?'Con techo':'Sin techo',1200)};
+$('#v3ceil').onclick=()=>{V3.ceil=!V3.ceil;try{localStorage.setItem('pl_ceil',V3.ceil?'1':'0')}catch(e){}$('#v3ceil').setAttribute('aria-pressed',String(V3.ceil));if(G)G.scene.traverse(o=>{if(o.userData&&o.userData.ceiling)o.visible=V3.ceil});applyLight();toast(V3.ceil?'Con techo':'Sin techo',1200)};
 $('#v3wide').onclick=()=>{V3.hfov=V3.hfov>=100?85:110;applyWalkFov();toast(V3.hfov>=100?'Gran angular: 110°':'Ángulo normal: 85°',1200)};
 function loop3D(t){V3.raf=requestAnimationFrame(loop3D);if(!V3.open||!G)return;const dt=Math.min(.05,(t-V3.last)/1000);V3.last=t;
   if(V3.anim){const a=V3.anim,k=Math.min(1,(t-a.st)/450),e=1-Math.pow(1-k,3);G.cam.position.lerpVectors(a.p0,a.pos,e);G.ctl.target.lerpVectors(a.t0,a.tgt,e);if(k>=1)V3.anim=null;V3.needs=true}
@@ -1919,8 +1938,8 @@ function enterWalk(){if(!G)return;if(V3.low){V3.low=false;$('#v3low').setAttribu
   const c=r?polyCentroid(r.pts):{x:(V3.center||{x:5}).x*100,y:(V3.center||{z:4}).z*100};V3.saved={p:G.cam.position.clone(),t:G.ctl.target.clone()};
   const ctr=V3.center||{x:c.x/100,z:c.y/100};let yaw=0,bestD=-1;for(let k=0;k<24;k++){const a=k/24*Math.PI*2,fx=-Math.sin(a),fz=-Math.cos(a);let d=0;while(d<1500&&!blocked(c.x+fx*(d+10),c.y+fz*(d+10)))d+=10;if(d>bestD){bestD=d;yaw=a}}
   V3.walk={x:c.x,y:c.y,yaw,pitch:-.08,keys:new Set(),drag:null};G.ctl.enabled=false;G.cam.rotation.order='YXZ';$('#v3fovWrap').hidden=false;$('#v3wide').hidden=false;$('#v3ceil').hidden=false;$('#v3ceil').setAttribute('aria-pressed',String(V3.ceil));
-  $('#walkpad').hidden=false;applyWalkFov();$('#v3walk').textContent='Salir del recorrido';$('#v3help').textContent='Arrastra para mirar · W A S D o flechas para caminar · «Gran angular» abre la vista para ver la estancia entera · Esc para salir';V3.needs=true;G.renderer.domElement.focus()}
-function exitWalk(){if(!V3.walk)return;V3.walk=null;G.hemi.intensity=.75;G.ctl.enabled=true;$('#v3fovWrap').hidden=true;$('#v3wide').hidden=true;$('#v3ceil').hidden=true;G.cam.fov=50;resize3D();if(V3.saved){G.cam.position.copy(V3.saved.p);G.ctl.target.copy(V3.saved.t);G.ctl.update()}$('#walkpad').hidden=true;$('#v3walk').textContent='Recorrer';$('#v3help').textContent='Arrastra para girar · rueda o pellizco para acercar · clic derecho o dos dedos para desplazar · clic en una puerta para abrirla o cerrarla';V3.needs=true}
+  $('#walkpad').hidden=false;applyWalkFov();$('#v3walk').textContent='Salir del recorrido';$('#v3help').textContent='Arrastra para mirar · W A S D o flechas para caminar · «Gran angular» abre la vista para ver la estancia entera · Esc para salir';applyLight();G.renderer.domElement.focus()}
+function exitWalk(){if(!V3.walk)return;V3.walk=null;G.hemi.intensity=.75;G.ctl.enabled=true;$('#v3fovWrap').hidden=true;$('#v3wide').hidden=true;$('#v3ceil').hidden=true;G.cam.fov=50;resize3D();if(V3.saved){G.cam.position.copy(V3.saved.p);G.ctl.target.copy(V3.saved.t);G.ctl.update()}$('#walkpad').hidden=true;$('#v3walk').textContent='Recorrer';$('#v3help').textContent='Arrastra para girar · rueda o pellizco para acercar · clic derecho o dos dedos para desplazar · clic en una puerta para abrirla o cerrarla';applyLight()}
 function updateWalk(dt){const W=V3.walk,k=W.keys;let f=0,s=0,turn=0;if(k.has('f'))f+=1;if(k.has('b'))f-=1;if(k.has('l'))s-=1;if(k.has('r'))s+=1;if(k.has('tl'))turn+=1;if(k.has('tr'))turn-=1;
   W.yaw+=turn*1.9*dt;if(f||s){const sp=(k.has('fast')?260:140)*dt;const fx=-Math.sin(W.yaw),fz=-Math.cos(W.yaw),rx=Math.cos(W.yaw),rz=-Math.sin(W.yaw);let nx=W.x+(fx*f+rx*s)*sp,ny=W.y+(fz*f+rz*s)*sp;
     if(!blocked(nx,W.y))W.x=nx;if(!blocked(W.x,ny))W.y=ny}
